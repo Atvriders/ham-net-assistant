@@ -1,0 +1,8 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-body, system-ui, sans-serif);
+  color: var(--color-fg, #101828);
+  background: var(--color-bg, #ffffff);
+}
+button { font: inherit; }
