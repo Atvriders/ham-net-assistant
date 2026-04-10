@@ -10,6 +10,7 @@ import { sessionsRouter } from './routes/sessions.js';
 import { checkinsRouter } from './routes/checkins.js';
 import { statsRouter } from './routes/stats.js';
 import { themesRouter } from './routes/themes.js';
+import { logosRouter } from './routes/logos.js';
 import { usersRouter } from './routes/users.js';
 import { mountStatic } from './static.js';
 
@@ -30,6 +31,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/checkins', checkins.flat);
   app.use('/api/stats', statsRouter(prisma));
   app.use('/api/themes', themesRouter());
+  app.use('/api/themes', logosRouter());
   app.use('/api/users', usersRouter(prisma));
 
   mountStatic(app);

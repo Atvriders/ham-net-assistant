@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider.js';
+import { effectiveLogoUrl } from './theme/registry.js';
 import { RequireRole } from './auth/RequireRole.js';
 import { LoginPage } from './auth/LoginPage.js';
 import { RegisterPage } from './auth/RegisterPage.js';
@@ -28,7 +29,7 @@ function NavBar() {
         borderBottom: '1px solid var(--color-border)',
       }}
     >
-      <img src={current.logoUrl} alt={current.logo.alt} style={{ height: 36 }} />
+      <img src={effectiveLogoUrl(current)} alt={current.logo.alt} style={{ height: 36 }} />
       <strong>Ham-Net-Assistant</strong>
       {user && (
         <>

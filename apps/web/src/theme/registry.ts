@@ -6,6 +6,7 @@ export interface Theme {
   font: { display: string; body: string };
   logo: { file: string; alt: string; maxHeightPx: number };
   logoUrl: string;
+  uploadedLogoUrl?: string | null;
   attribution?: string;
 }
 
@@ -38,4 +39,25 @@ export function themeBySlug(slug: string | null | undefined): Theme {
     throw new Error('No themes registered');
   }
   return found;
+}
+
+export function effectiveLogoUrl(t: Theme): string {
+  return t.uploadedLogoUrl ?? t.logoUrl;
+}
+
+export async function loadThemesFromApi(): Promise<Theme[]> {
+  try {
+    const res = await fetch('/api/themes', { credentials: 'include' });
+    if (!res.ok) return themes;
+    const remote = (await res.json()) as Array<{
+      slug: string;
+      uploadedLogoUrl: string | null;
+    }>;
+    return themes.map((base) => {
+      const r = remote.find((x) => x.slug === base.slug);
+      return r ? { ...base, uploadedLogoUrl: r.uploadedLogoUrl } : base;
+    });
+  } catch {
+    return themes;
+  }
 }

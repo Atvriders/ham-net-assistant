@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { uploadedLogoUrl } from './logos.js';
 
 interface ThemeJson {
   slug: string;
@@ -35,6 +36,8 @@ function loadThemes(): ThemeJson[] {
 export function themesRouter(): Router {
   const router = Router();
   const themes = loadThemes();
-  router.get('/', (_req, res) => res.json(themes));
+  router.get('/', (_req, res) =>
+    res.json(themes.map((t) => ({ ...t, uploadedLogoUrl: uploadedLogoUrl(t.slug) }))),
+  );
   return router;
 }

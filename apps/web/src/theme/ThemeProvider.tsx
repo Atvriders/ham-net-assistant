@@ -1,11 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { themes, themeBySlug, type Theme } from './registry.js';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { themes, themeBySlug, loadThemesFromApi, type Theme } from './registry.js';
 import { useAuth } from '../auth/AuthProvider.js';
 
 interface ThemeCtx {
   current: Theme;
   all: Theme[];
   setTheme: (slug: string) => void;
+  refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<ThemeCtx | null>(null);
@@ -34,15 +35,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [slug, setSlug] = useState<string>(
     () => user?.collegeSlug ?? localStorage.getItem(LS_KEY) ?? 'default',
   );
+  const [runtimeThemes, setRuntimeThemes] = useState<Theme[]>(themes);
+
+  const refresh = useCallback(async () => {
+    const next = await loadThemesFromApi();
+    setRuntimeThemes(next);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   useEffect(() => {
     if (user?.collegeSlug && user.collegeSlug !== slug) setSlug(user.collegeSlug);
   }, [user?.collegeSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const current: Theme =
+    runtimeThemes.find((t) => t.slug === slug) ?? themeBySlug(slug);
+
   useEffect(() => {
-    applyTheme(themeBySlug(slug));
+    applyTheme(current);
     localStorage.setItem(LS_KEY, slug);
-  }, [slug]);
+  }, [slug, current]);
 
   const setTheme = (next: string) => {
     setSlug(next);
@@ -50,7 +64,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ current: themeBySlug(slug), all: themes, setTheme }}>
+    <Ctx.Provider value={{ current, all: runtimeThemes, setTheme, refresh }}>
       {children}
     </Ctx.Provider>
   );
