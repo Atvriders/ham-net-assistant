@@ -19,11 +19,14 @@ Frontend at http://localhost:5173 (proxies /api to :3000).
 
     npm test
 
-## Build + run with Docker
+## Run with Docker Compose
 
-    docker compose up --build
+Pulls the prebuilt image from GHCR (or builds locally if you prefer):
 
-Then open http://localhost:3000. First registered user becomes ADMIN.
+    docker compose up -d        # pull latest from ghcr.io/atvriders/ham-net-assistant
+    docker compose up --build   # or build from source
+
+Then open http://localhost:3030. First registered user becomes ADMIN.
 
 ## Environment
 
