@@ -24,16 +24,25 @@ RUN npm -w @hna/web run build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+
+# Root + workspace manifests — NOTE we DO NOT copy apps/web/package.json
+# so the web workspace is absent at install time and its deps are skipped.
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/packages/shared/package.json packages/shared/
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/package.json apps/api/
+
+# Install only the API's production deps (workspace resolution picks up @hna/shared).
+RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false
+
+# Copy built artifacts
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/api/prisma apps/api/prisma
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/themes themes
-RUN npm install --omit=dev --workspaces --include-workspace-root=false \
-    && npx -w @hna/api prisma generate
+
+# Generate prisma client against the now-installed @prisma/client
+RUN npx -w @hna/api prisma generate
 ENV STATIC_DIR=/app/apps/web/dist
 ENV DATABASE_URL=file:/data/ham.db
 EXPOSE 3000
