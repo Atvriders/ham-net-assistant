@@ -32,17 +32,21 @@ COPY --from=build /app/packages/shared/package.json packages/shared/
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/package.json apps/api/
 
-# Install only the API's production deps (workspace resolution picks up @hna/shared).
-RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false
+# Prisma schema is needed before generate; copy it before the install layer
+# so that install + generate can be fused into a single layer (avoids layer
+# duplication of @prisma/client engine binaries).
+COPY --from=build /app/apps/api/prisma apps/api/prisma
+
+# Install only the API's production deps (workspace resolution picks up @hna/shared)
+# and generate the prisma client in the same layer.
+RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false \
+    && npx -w @hna/api prisma generate \
+    && npm cache clean --force
 
 # Copy built artifacts
 COPY --from=build /app/apps/api/dist apps/api/dist
-COPY --from=build /app/apps/api/prisma apps/api/prisma
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/themes themes
-
-# Generate prisma client against the now-installed @prisma/client
-RUN npx -w @hna/api prisma generate
 ENV STATIC_DIR=/app/apps/web/dist
 ENV DATABASE_URL=file:/data/ham.db
 EXPOSE 3000
