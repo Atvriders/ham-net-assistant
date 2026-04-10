@@ -1,9 +1,8 @@
 services:
   hna:
     image: ghcr.io/atvriders/ham-net-assistant:latest
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    pull_policy: always
+    restart: unless-stopped
     ports:
       - "3030:3000"
     volumes:

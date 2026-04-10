@@ -21,10 +21,15 @@ Frontend at http://localhost:5173 (proxies /api to :3000).
 
 ## Run with Docker Compose
 
-Pulls the prebuilt image from GHCR (or builds locally if you prefer):
+Uses the prebuilt image from GHCR — no local build required:
 
-    docker compose up -d        # pull latest from ghcr.io/atvriders/ham-net-assistant
-    docker compose up --build   # or build from source
+    docker compose up -d
+
+To build from source instead (requires the repo checkout):
+
+    docker build -f docker/Dockerfile -t hna:local .
+    docker run -p 3030:3000 -v hna-data:/data \
+      -e JWT_SECRET=change-me-change-me-change-me hna:local
 
 Then open http://localhost:3030. First registered user becomes ADMIN.
 
