@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
@@ -70,6 +70,33 @@ describe('logo upload', () => {
       .post('/api/themes/default/logo')
       .set('Cookie', admin)
       .attach('logo', Buffer.from('evil'), 'payload.exe');
+    expect(res.status).toBe(400);
+  });
+
+  it('admin uploads via URL (JSON body)', async () => {
+    const tinyPng = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(tinyPng, { status: 200, headers: { 'Content-Type': 'image/png' } }),
+    );
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'https://example.com/logo.png' });
+    expect(res.status).toBe(201);
+    expect(res.body.uploadedLogoUrl).toMatch(/\/api\/themes\/default\/logo\?v=/);
+    spy.mockRestore();
+  });
+
+  it('rejects non-http url', async () => {
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'file:///etc/passwd' });
     expect(res.status).toBe(400);
   });
 });

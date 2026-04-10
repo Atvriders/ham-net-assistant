@@ -1,41 +1,22 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from './ThemeProvider.js';
 import { effectiveLogoUrl, type Theme } from './registry.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { LogoUploadModal } from '../components/LogoUploadModal.js';
 
-function AdminLogoControls({ theme, onChanged }: { theme: Theme; onChanged: () => Promise<void> }) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
+function AdminLogoControls({
+  theme,
+  onChanged,
+  onOpenUpload,
+}: {
+  theme: Theme;
+  onChanged: () => Promise<void>;
+  onOpenUpload: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const form = new FormData();
-      form.append('logo', file);
-      const res = await fetch(`/api/themes/${theme.slug}/logo`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-        setErr(body.error?.message ?? `Upload failed (${res.status})`);
-      } else {
-        await onChanged();
-      }
-    } catch (ex) {
-      setErr((ex as Error).message);
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
 
   const remove = async () => {
     setBusy(true);
@@ -57,15 +38,15 @@ function AdminLogoControls({ theme, onChanged }: { theme: Theme; onChanged: () =
 
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"
-        onChange={upload}
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenUpload();
+        }}
         disabled={busy}
-        onClick={(e) => e.stopPropagation()}
-        style={{ fontSize: 11 }}
-      />
+      >
+        Upload logo
+      </Button>
       {theme.uploadedLogoUrl && (
         <Button
           variant="secondary"
@@ -87,6 +68,7 @@ export function ThemePicker() {
   const { current, all, setTheme, refresh } = useTheme();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
   return (
     <Card>
       <h3>College theme</h3>
@@ -140,10 +122,26 @@ export function ThemePicker() {
               <strong style={{ display: 'block' }}>{t.shortName}</strong>
               <small>{t.name}</small>
             </button>
-            {isAdmin && <AdminLogoControls theme={t} onChanged={refresh} />}
+            {isAdmin && (
+              <AdminLogoControls
+                theme={t}
+                onChanged={refresh}
+                onOpenUpload={() => setUploadingSlug(t.slug)}
+              />
+            )}
           </div>
         ))}
       </div>
+      {isAdmin && uploadingSlug && (
+        <LogoUploadModal
+          open={!!uploadingSlug}
+          slug={uploadingSlug}
+          onClose={() => setUploadingSlug(null)}
+          onUploaded={() => {
+            void refresh();
+          }}
+        />
+      )}
     </Card>
   );
 }

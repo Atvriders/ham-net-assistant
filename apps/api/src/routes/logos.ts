@@ -67,6 +67,49 @@ export function logosRouter(): Router {
       if (!/^[a-z][a-z0-9-]{0,40}$/.test(slug)) {
         throw new HttpError(400, 'VALIDATION', 'Invalid theme slug');
       }
+
+      if (req.is('application/json')) {
+        const body = req.body as { url?: unknown };
+        const url = typeof body.url === 'string' ? body.url : '';
+        if (!/^https?:\/\//i.test(url)) {
+          throw new HttpError(400, 'VALIDATION', 'url must start with http:// or https://');
+        }
+        let remote: Response;
+        try {
+          remote = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        } catch (e) {
+          throw new HttpError(400, 'VALIDATION', `Failed to fetch url: ${(e as Error).message}`);
+        }
+        if (!remote.ok) {
+          throw new HttpError(400, 'VALIDATION', `Remote returned ${remote.status}`);
+        }
+        const ct = (remote.headers.get('content-type') ?? '').toLowerCase();
+        let jext: '.svg' | '.png' | '.jpg';
+        if (ct.startsWith('image/svg+xml')) jext = '.svg';
+        else if (ct.startsWith('image/png')) jext = '.png';
+        else if (ct.startsWith('image/jpeg') || ct.startsWith('image/jpg')) jext = '.jpg';
+        else throw new HttpError(400, 'VALIDATION', `Unsupported remote content-type: ${ct || 'unknown'}`);
+        const arrayBuf = await remote.arrayBuffer();
+        const fileBytes = Buffer.from(arrayBuf);
+        if (fileBytes.length > MAX_BYTES) {
+          throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
+        }
+        const dir = ensureDir();
+        for (const e of ALLOWED_EXT) {
+          if (e === jext) continue;
+          const other = path.join(dir, `${slug}${e}`);
+          if (fs.existsSync(other)) fs.unlinkSync(other);
+        }
+        const abs = path.join(dir, `${slug}${jext}`);
+        fs.writeFileSync(abs, fileBytes);
+        res.status(201).json({
+          uploadedLogoUrl: uploadedLogoUrl(slug),
+          uploadedAt: new Date().toISOString(),
+          bytes: fileBytes.length,
+        });
+        return;
+      }
+
       const contentType = req.headers['content-type'] ?? '';
       const m = /boundary=([^;]+)/.exec(contentType);
       if (!m) throw new HttpError(400, 'VALIDATION', 'Expected multipart/form-data');
