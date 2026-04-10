@@ -1,0 +1,16 @@
+services:
+  hna:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - hna-data:/data
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me}
+      REGISTRATION_CODE: ${REGISTRATION_CODE:-}
+      NODE_ENV: production
+
+volumes:
+  hna-data:
