@@ -7,5 +7,12 @@ module.exports = {
   ignorePatterns: ['dist', 'build', 'coverage', 'node_modules'],
   rules: {
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }]
-  }
+  },
+  overrides: [
+    {
+      files: ['apps/web/src/**/*.{ts,tsx}'],
+      plugins: ['react-hooks'],
+      extends: ['plugin:react-hooks/recommended'],
+    },
+  ],
 };
