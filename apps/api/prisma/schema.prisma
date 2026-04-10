@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  callsign           String       @unique
+  name               String
+  email              String       @unique
+  passwordHash       String
+  role               String       @default("MEMBER")
+  collegeSlug        String?
+  createdAt          DateTime     @default(now())
+  checkIns           CheckIn[]
+  controlledSessions NetSession[] @relation("ControlOp")
+}
+
+model Repeater {
+  id         String   @id @default(cuid())
+  name       String
+  frequency  Float
+  offsetKhz  Int
+  toneHz     Float?
+  mode       String
+  coverage   String?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime @default(now())
+  nets       Net[]
+}
+
+model Net {
+  id         String       @id @default(cuid())
+  name       String
+  repeaterId String
+  repeater   Repeater     @relation(fields: [repeaterId], references: [id])
+  dayOfWeek  Int
+  startLocal String
+  timezone   String
+  theme      String?
+  scriptMd   String?
+  active     Boolean      @default(true)
+  sessions   NetSession[]
+}
+
+model NetSession {
+  id          String    @id @default(cuid())
+  netId       String
+  net         Net       @relation(fields: [netId], references: [id])
+  startedAt   DateTime
+  endedAt     DateTime?
+  controlOpId String?
+  controlOp   User?     @relation("ControlOp", fields: [controlOpId], references: [id])
+  notes       String?
+  checkIns    CheckIn[]
+}
+
+model CheckIn {
+  id            String     @id @default(cuid())
+  sessionId     String
+  session       NetSession @relation(fields: [sessionId], references: [id])
+  userId        String?
+  user          User?      @relation(fields: [userId], references: [id])
+  callsign      String
+  nameAtCheckIn String
+  checkedInAt   DateTime   @default(now())
+  comment       String?
+
+  @@index([sessionId])
+  @@index([callsign])
+}
