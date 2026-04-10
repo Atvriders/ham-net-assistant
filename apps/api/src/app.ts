@@ -11,6 +11,7 @@ import { checkinsRouter } from './routes/checkins.js';
 import { statsRouter } from './routes/stats.js';
 import { themesRouter } from './routes/themes.js';
 import { usersRouter } from './routes/users.js';
+import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
   const app = express();
@@ -31,6 +32,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/themes', themesRouter());
   app.use('/api/users', usersRouter(prisma));
 
+  mountStatic(app);
   app.use(errorHandler);
   return app;
 }
