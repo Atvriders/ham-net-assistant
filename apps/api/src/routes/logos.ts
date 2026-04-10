@@ -95,7 +95,7 @@ export function logosRouter(): Router {
       const partHeaders = body.slice(start, headersEnd).toString('utf8');
 
       const fnMatch = /filename="([^"]+)"/.exec(partHeaders);
-      if (!fnMatch) throw new HttpError(400, 'VALIDATION', 'Missing filename in multipart field');
+      if (!fnMatch || !fnMatch[1]) throw new HttpError(400, 'VALIDATION', 'Missing filename in multipart field');
       const filename = fnMatch[1];
       const ext = path.extname(filename).toLowerCase();
       if (!ALLOWED_EXT.has(ext)) {
