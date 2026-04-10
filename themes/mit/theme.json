@@ -1,0 +1,22 @@
+{
+  "slug": "mit",
+  "name": "Massachusetts Institute of Technology",
+  "shortName": "MIT",
+  "colors": {
+    "primary": "#A31F34",
+    "primaryFg": "#FFFFFF",
+    "accent": "#8A8B8C",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F7F2F3",
+    "fg": "#1C1C1C",
+    "border": "#E4D4D6",
+    "success": "#2E7D32",
+    "danger": "#7E1220"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "MIT", "maxHeightPx": 56 },
+  "attribution": "Colors per MIT identity standards. Logo not included — provide your own with permission."
+}

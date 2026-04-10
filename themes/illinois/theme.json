@@ -1,0 +1,22 @@
+{
+  "slug": "illinois",
+  "name": "University of Illinois Urbana-Champaign",
+  "shortName": "Illinois",
+  "colors": {
+    "primary": "#13294B",
+    "primaryFg": "#FFFFFF",
+    "accent": "#E84A27",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F2F3F7",
+    "fg": "#1C1C1C",
+    "border": "#CED4DF",
+    "success": "#2E7D32",
+    "danger": "#C62828"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "Illinois", "maxHeightPx": 56 },
+  "attribution": "Colors per Illinois brand. Logo not included — provide your own with permission."
+}

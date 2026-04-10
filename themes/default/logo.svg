@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="HNA">
+  <circle cx="32" cy="32" r="30" fill="#2B5B8C"/>
+  <path d="M14 40 Q32 10 50 40" stroke="#F2A900" stroke-width="3" fill="none"/>
+  <circle cx="32" cy="40" r="5" fill="#F2A900"/>
+  <text x="32" y="57" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#fff">HNA</text>
+</svg>

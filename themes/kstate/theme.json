@@ -1,0 +1,22 @@
+{
+  "slug": "kstate",
+  "name": "Kansas State University",
+  "shortName": "K-State",
+  "colors": {
+    "primary": "#512888",
+    "primaryFg": "#FFFFFF",
+    "accent": "#A7A9AC",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F4F1F8",
+    "fg": "#1C1C1C",
+    "border": "#D4C9E2",
+    "success": "#2E7D32",
+    "danger": "#C62828"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "K-State Powercat", "maxHeightPx": 64 },
+  "attribution": "Colors per K-State brand guide. Logo not included — provide your own with permission."
+}

@@ -1,0 +1,22 @@
+{
+  "slug": "virginiatech",
+  "name": "Virginia Polytechnic Institute and State University",
+  "shortName": "Virginia Tech",
+  "colors": {
+    "primary": "#630031",
+    "primaryFg": "#FFFFFF",
+    "accent": "#CF4420",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F8F1F3",
+    "fg": "#1C1C1C",
+    "border": "#E2CAD2",
+    "success": "#2E7D32",
+    "danger": "#7E1220"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "Virginia Tech", "maxHeightPx": 56 },
+  "attribution": "Colors per Virginia Tech brand. Logo not included — provide your own with permission."
+}

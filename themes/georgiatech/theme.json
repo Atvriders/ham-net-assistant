@@ -1,0 +1,22 @@
+{
+  "slug": "georgiatech",
+  "name": "Georgia Institute of Technology",
+  "shortName": "Georgia Tech",
+  "colors": {
+    "primary": "#003057",
+    "primaryFg": "#FFFFFF",
+    "accent": "#B3A369",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F3F4F7",
+    "fg": "#1C1C1C",
+    "border": "#CBD5E1",
+    "success": "#2E7D32",
+    "danger": "#C62828"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "Georgia Tech", "maxHeightPx": 56 },
+  "attribution": "Colors per Georgia Tech brand. Logo not included — provide your own with permission."
+}

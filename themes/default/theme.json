@@ -1,0 +1,22 @@
+{
+  "slug": "default",
+  "name": "Ham-Net-Assistant Default",
+  "shortName": "HNA",
+  "colors": {
+    "primary": "#2B5B8C",
+    "primaryFg": "#FFFFFF",
+    "accent": "#F2A900",
+    "bg": "#FFFFFF",
+    "bgMuted": "#F4F6F9",
+    "fg": "#101828",
+    "border": "#D0D5DD",
+    "success": "#2E7D32",
+    "danger": "#C62828"
+  },
+  "font": {
+    "display": "'Inter', system-ui, sans-serif",
+    "body": "'Inter', system-ui, sans-serif"
+  },
+  "logo": { "file": "logo.svg", "alt": "Ham-Net-Assistant", "maxHeightPx": 56 },
+  "attribution": "Original artwork, free to use."
+}
