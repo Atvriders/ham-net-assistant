@@ -5,6 +5,7 @@ import { loadUser } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { authRouter } from './routes/auth.js';
 import { repeatersRouter } from './routes/repeaters.js';
+import { netsRouter } from './routes/nets.js';
 
 export function buildApp(prisma: PrismaClient): Express {
   const app = express();
@@ -14,6 +15,7 @@ export function buildApp(prisma: PrismaClient): Express {
 
   app.use('/api/auth', authRouter(prisma));
   app.use('/api/repeaters', repeatersRouter(prisma));
+  app.use('/api/nets', netsRouter(prisma));
 
   app.use(errorHandler);
   return app;
