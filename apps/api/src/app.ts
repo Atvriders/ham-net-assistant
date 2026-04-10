@@ -6,6 +6,8 @@ import { errorHandler } from './middleware/error.js';
 import { authRouter } from './routes/auth.js';
 import { repeatersRouter } from './routes/repeaters.js';
 import { netsRouter } from './routes/nets.js';
+import { sessionsRouter } from './routes/sessions.js';
+import { checkinsRouter } from './routes/checkins.js';
 
 export function buildApp(prisma: PrismaClient): Express {
   const app = express();
@@ -16,6 +18,12 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/auth', authRouter(prisma));
   app.use('/api/repeaters', repeatersRouter(prisma));
   app.use('/api/nets', netsRouter(prisma));
+  const sessions = sessionsRouter(prisma);
+  app.use('/api/nets/:netId/sessions', sessions.nested);
+  app.use('/api/sessions', sessions.flat);
+  const checkins = checkinsRouter(prisma);
+  app.use('/api/sessions/:sessionId/checkins', checkins.nested);
+  app.use('/api/checkins', checkins.flat);
 
   app.use(errorHandler);
   return app;
