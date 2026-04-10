@@ -1,0 +1,22 @@
+{
+  "name": "ham-net-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev:api": "npm -w @hna/api run dev",
+    "dev:web": "npm -w @hna/web run dev",
+    "build": "npm -w @hna/shared run build && npm -w @hna/api run build && npm -w @hna/web run build",
+    "test": "npm -w @hna/shared run test && npm -w @hna/api run test && npm -w @hna/web run test",
+    "typecheck": "npm -w @hna/shared run typecheck && npm -w @hna/api run typecheck && npm -w @hna/web run typecheck",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "prettier": "^3.2.5",
+    "eslint-config-prettier": "^9.1.0"
+  }
+}
