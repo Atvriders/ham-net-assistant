@@ -8,6 +8,7 @@ import { repeatersRouter } from './routes/repeaters.js';
 import { netsRouter } from './routes/nets.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { checkinsRouter } from './routes/checkins.js';
+import { statsRouter } from './routes/stats.js';
 
 export function buildApp(prisma: PrismaClient): Express {
   const app = express();
@@ -24,6 +25,7 @@ export function buildApp(prisma: PrismaClient): Express {
   const checkins = checkinsRouter(prisma);
   app.use('/api/sessions/:sessionId/checkins', checkins.nested);
   app.use('/api/checkins', checkins.flat);
+  app.use('/api/stats', statsRouter(prisma));
 
   app.use(errorHandler);
   return app;
