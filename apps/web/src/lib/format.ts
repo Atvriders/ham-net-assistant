@@ -1,3 +1,12 @@
+/**
+ * Display a callsign with slashed zeros (ham radio convention for distinguishing
+ * 0 from O). Storage remains ASCII 0; this is display-only.
+ */
+export function displayCallsign(cs: string | null | undefined): string {
+  if (!cs) return '';
+  return cs.replace(/0/g, 'Ø');
+}
+
 export function formatFrequency(mhz: number): string {
   return `${mhz.toFixed(3)} MHz`;
 }

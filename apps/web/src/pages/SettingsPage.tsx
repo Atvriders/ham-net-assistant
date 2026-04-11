@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { ThemePicker } from '../theme/ThemePicker.js';
 import { useTheme } from '../theme/ThemeProvider.js';
+import { displayCallsign } from '../lib/format.js';
 
 export function SettingsPage() {
   const { user, updateMe } = useAuth();
@@ -23,7 +24,7 @@ export function SettingsPage() {
           <Button onClick={() => updateMe({ name })}>Save</Button>
         </div>
         <p>
-          Callsign: <strong>{user.callsign}</strong> (contact admin to change)
+          Callsign: <strong>{displayCallsign(user.callsign)}</strong> (permanent)
         </p>
         <p>Role: {user.role}</p>
       </Card>

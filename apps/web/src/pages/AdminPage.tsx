@@ -5,6 +5,7 @@ import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
+import { displayCallsign } from '../lib/format.js';
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
@@ -35,7 +36,7 @@ export function AdminPage() {
   }
 
   async function deleteUser(u: PublicUser) {
-    if (!window.confirm(`Delete user ${u.callsign} — ${u.name}? This cannot be undone.`)) {
+    if (!window.confirm(`Delete user ${displayCallsign(u.callsign)} — ${u.name}? This cannot be undone.`)) {
       return;
     }
     await apiFetch(`/users/${u.id}`, { method: 'DELETE' });
@@ -100,7 +101,7 @@ export function AdminPage() {
           <tbody>
             {users.map((u) => (
               <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td>{u.callsign}</td>
+                <td>{displayCallsign(u.callsign)}</td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>{u.role}</td>

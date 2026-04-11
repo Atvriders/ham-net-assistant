@@ -1,3 +1,5 @@
+// NOTE: callsigns are IMMUTABLE after registration. No endpoint allows
+// changing a user's callsign. N0CALL placeholder stays N0CALL.
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -19,7 +21,7 @@ const publicSelect = {
 export function usersRouter(prisma: PrismaClient): Router {
   const router = Router();
 
-  router.patch('/me', requireAuth, validateBody(UpdateMeInput), asyncHandler(async (req, res) => {
+  router.patch('/me', requireAuth, validateBody(UpdateMeInput.strict()), asyncHandler(async (req, res) => {
     const body = req.body as typeof UpdateMeInput._type;
     const updated = await prisma.user.update({
       where: { id: req.user!.id },
@@ -67,7 +69,7 @@ export function usersRouter(prisma: PrismaClient): Router {
     validateBody(
       z.object({
         collegeSlug: z.string().max(40).nullable().optional(),
-      }),
+      }).strict(),
     ),
     asyncHandler(async (req, res) => {
       try {

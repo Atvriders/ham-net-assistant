@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { useAuth } from './AuthProvider.js';
 import { ApiErrorException, apiFetch } from '../api/client.js';
+import { displayCallsign } from '../lib/format.js';
 
 interface LookupResult {
   callsign: string;
@@ -166,8 +167,8 @@ export function RegisterPage() {
         <h1>Create account</h1>
         {mode === 'unlicensed' && (
           <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>
-            You'll use the shared placeholder callsign N0CALL for unlicensed operators.
-            You can update it later from Settings.
+            You'll share the NØCALL placeholder with other unlicensed operators.
+            When you get your FCC license, register a new account with your real callsign.
           </div>
         )}
         {lookupNotice && (
@@ -177,7 +178,7 @@ export function RegisterPage() {
           <label>
             Callsign
             <Input
-              value={mode === 'unlicensed' ? 'N0CALL (unlicensed operator placeholder)' : form.callsign}
+              value={mode === 'unlicensed' ? 'NØCALL (unlicensed operator placeholder)' : displayCallsign(form.callsign)}
               disabled
             />
           </label>

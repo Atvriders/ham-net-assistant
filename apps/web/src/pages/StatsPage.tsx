@@ -4,6 +4,7 @@ import type { ParticipationStats } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { displayCallsign } from '../lib/format.js';
 
 export function StatsPage() {
   const [stats, setStats] = useState<ParticipationStats | null>(null);
@@ -70,7 +71,7 @@ export function StatsPage() {
           <ol>
             {stats.perMember.slice(0, 10).map((m) => (
               <li key={m.callsign}>
-                {m.callsign} — {m.name}: {m.count}
+                {displayCallsign(m.callsign)} — {m.name}: {m.count}
               </li>
             ))}
           </ol>

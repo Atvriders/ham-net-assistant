@@ -16,6 +16,7 @@ import { StatsPage } from './pages/StatsPage.js';
 import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { Button } from './components/ui/Button.js';
+import { displayCallsign } from './lib/format.js';
 
 function NavBar() {
   const { user, logout } = useAuth();
@@ -42,7 +43,7 @@ function NavBar() {
           <Link className="hna-nav-link" to="/stats">Stats</Link>
           <Link className="hna-nav-link" to="/settings">Settings</Link>
           {user.role === 'ADMIN' && <Link className="hna-nav-link" to="/admin">Admin</Link>}
-          <span style={{ marginLeft: 'auto' }}>{user.callsign}</span>
+          <span style={{ marginLeft: 'auto' }}>{displayCallsign(user.callsign)}</span>
           <Button variant="secondary" onClick={() => logout()}>Sign out</Button>
         </>
       )}

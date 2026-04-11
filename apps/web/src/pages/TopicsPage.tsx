@@ -5,6 +5,7 @@ import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { displayCallsign } from '../lib/format.js';
 
 function StatusBadge({ status }: { status: TopicStatus }) {
   const color =
@@ -147,7 +148,7 @@ export function TopicsPage() {
                     <StatusBadge status={t.status} />
                   </h3>
                   <div style={{ fontSize: 12, color: 'var(--color-border)' }}>
-                    by {t.createdByCallsign ?? 'unknown'}
+                    by {t.createdByCallsign ? displayCallsign(t.createdByCallsign) : 'unknown'}
                     {t.createdByName ? ` (${t.createdByName})` : ''} ·{' '}
                     {new Date(t.createdAt).toLocaleString()}
                   </div>

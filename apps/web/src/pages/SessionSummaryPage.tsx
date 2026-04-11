@@ -4,7 +4,7 @@ import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
-import { formatFrequency, formatOffset, formatTone } from '../lib/format.js';
+import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 
 interface SummaryResponse {
   session: NetSession;
@@ -102,7 +102,7 @@ export function SessionSummaryPage() {
               key={ci.id}
               style={{ borderBottom: '1px solid var(--color-border)', padding: '6px 0' }}
             >
-              <strong>{ci.callsign}</strong> — {ci.nameAtCheckIn}
+              <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
               <span style={{ float: 'right', color: 'var(--color-muted)' }}>
                 {new Date(ci.checkedInAt).toLocaleTimeString(undefined, { hour12: true })}
               </span>

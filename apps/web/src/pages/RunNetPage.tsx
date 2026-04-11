@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
 import { ScriptEditor } from '../components/ScriptEditor.js';
-import { formatFrequency, formatOffset, formatTone } from '../lib/format.js';
+import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 
 interface SessionResponse extends NetSession {
   checkIns: CheckIn[];
@@ -222,7 +222,7 @@ export function RunNetPage() {
               key={ci.id}
               style={{ borderBottom: '1px solid var(--color-border)', padding: '4px 0' }}
             >
-              <strong>{ci.callsign}</strong> — {ci.nameAtCheckIn}
+              <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
             </li>
           ))}
         </ul>

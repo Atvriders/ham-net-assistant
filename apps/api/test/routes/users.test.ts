@@ -47,6 +47,18 @@ describe('users', () => {
     expect(res.body[0]).toHaveProperty('name');
   });
 
+  it('PATCH /api/users/me rejects callsign field (immutable)', async () => {
+    const res = await request(app).patch('/api/users/me').set('Cookie', member)
+      .send({ callsign: 'W1ABC' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+  it('PATCH /api/users/:id [ADMIN] rejects callsign field (immutable)', async () => {
+    const res = await request(app).patch(`/api/users/${memberId}`).set('Cookie', admin)
+      .send({ callsign: 'W1ABC' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
   it('PATCH /api/users/:id [ADMIN] can change collegeSlug', async () => {
     const res = await request(app).patch(`/api/users/${memberId}`).set('Cookie', admin)
       .send({ collegeSlug: 'mit' });
