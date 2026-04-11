@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { themes, themeBySlug, loadThemesFromApi, type Theme } from './registry.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { apiFetch } from '../api/client.js';
 
 export type ColorMode = 'light' | 'dark';
 
@@ -38,9 +39,22 @@ function applyTheme(t: Theme, mode: ColorMode): void {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { user, updateMe } = useAuth();
+  const hadStoredSlug = typeof window !== 'undefined' && localStorage.getItem(LS_KEY) !== null;
   const [slug, setSlug] = useState<string>(
     () => user?.collegeSlug ?? localStorage.getItem(LS_KEY) ?? 'default',
   );
+
+  useEffect(() => {
+    if (user?.collegeSlug || hadStoredSlug) return;
+    let cancelled = false;
+    apiFetch<{ slug: string }>('/themes/default')
+      .then((r) => {
+        if (!cancelled && r?.slug) setSlug(r.slug);
+      })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [mode, setModeState] = useState<ColorMode>(() => {
     const stored = localStorage.getItem(LS_MODE_KEY);
     return stored === 'light' || stored === 'dark' ? stored : 'dark';

@@ -54,6 +54,30 @@ describe('POST /api/auth/register', () => {
     expect(res.body.error.code).toBe('CONFLICT');
   });
 
+  it('auto-assigns N0CALL on first unlicensed registration', async () => {
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'n0a@example.com', password: 'hunter2hunter2',
+      name: 'Nobody', callsign: 'N0CALL',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.callsign).toBe('N0CALL');
+  });
+
+  it('auto-assigns suffixed N0CALL on subsequent unlicensed registrations', async () => {
+    const r1 = await request(app).post('/api/auth/register').send({
+      email: 'n0b@example.com', password: 'hunter2hunter2',
+      name: 'Nobody2', callsign: 'N0CALL',
+    });
+    expect(r1.status).toBe(201);
+    expect(r1.body.callsign).toBe('N0CALL1');
+    const r2 = await request(app).post('/api/auth/register').send({
+      email: 'n0c@example.com', password: 'hunter2hunter2',
+      name: 'Nobody3', callsign: 'N0CALL',
+    });
+    expect(r2.status).toBe(201);
+    expect(r2.body.callsign).toBe('N0CALL2');
+  });
+
   it('rejects invalid callsign', async () => {
     const res = await request(app).post('/api/auth/register').send({
       email: 'charlie@example.com', password: 'hunter2hunter2',

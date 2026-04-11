@@ -34,7 +34,6 @@ export function RegisterPage() {
     password: '',
     name: '',
     callsign: '',
-    handle: '',
     inviteCode: '',
   });
   const [err, setErr] = useState<string | null>(null);
@@ -84,15 +83,10 @@ export function RegisterPage() {
     }
   }
 
-  function continueUnlicensed(e?: React.FormEvent) {
-    if (e) e.preventDefault();
+  function startUnlicensed() {
     setErr(null);
-    const handle = form.handle.trim().toUpperCase();
-    if (!/^[A-Z0-9]{3,7}$/.test(handle)) {
-      setErr('Handle must be 3–7 letters or digits.');
-      return;
-    }
-    setForm((f) => ({ ...f, callsign: handle, name: '' }));
+    setMode('unlicensed');
+    setForm((f) => ({ ...f, callsign: 'N0CALL', name: '' }));
     setLookupNotice(null);
     setStep(2);
   }
@@ -128,57 +122,6 @@ export function RegisterPage() {
     setForm((f) => ({ ...f, [k]: v }));
 
   if (step === 1) {
-    if (mode === 'unlicensed') {
-      return (
-        <div style={{ maxWidth: 420, margin: '60px auto' }}>
-          <Card>
-            <h1>Create account</h1>
-            <p>Pick a unique handle to use in place of a callsign.</p>
-            <form onSubmit={continueUnlicensed}>
-              <label>
-                Handle
-                <Input
-                  value={form.handle}
-                  onChange={(e) =>
-                    update('handle')(e.target.value.toUpperCase())
-                  }
-                  placeholder="e.g. HAM42"
-                  required
-                />
-              </label>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                3–7 characters, letters and digits only.
-              </div>
-              {err && (
-                <div
-                  role="alert"
-                  style={{ color: 'var(--color-danger)', marginTop: 12 }}
-                >
-                  {err}
-                </div>
-              )}
-              <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
-                <Button type="submit">Continue</Button>
-                <Link className="hna-nav-link" to="/login">Sign in</Link>
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setMode('licensed');
-                    setErr(null);
-                  }}
-                >
-                  I do have a callsign
-                </a>
-              </div>
-            </form>
-          </Card>
-        </div>
-      );
-    }
-
     return (
       <div style={{ maxWidth: 420, margin: '60px auto' }}>
         <Card>
@@ -205,9 +148,7 @@ export function RegisterPage() {
                 href="#"
                 onClick={(e) => {
                   e.preventDefault();
-                  setMode('unlicensed');
-                  setErr(null);
-                  setForm((f) => ({ ...f, callsign: '' }));
+                  startUnlicensed();
                 }}
               >
                 I don't have a callsign yet
@@ -225,8 +166,8 @@ export function RegisterPage() {
         <h1>Create account</h1>
         {mode === 'unlicensed' && (
           <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>
-            You're registering without a callsign — you can add one later from
-            Settings.
+            You'll be assigned a temporary placeholder callsign (e.g. N0CALL42).
+            You can update it later from Settings.
           </div>
         )}
         {lookupNotice && (
@@ -234,19 +175,24 @@ export function RegisterPage() {
         )}
         <form onSubmit={submit}>
           <label>
-            {mode === 'unlicensed' ? 'Handle' : 'Callsign'}
-            <Input value={form.callsign} disabled />
+            Callsign
+            <Input
+              value={mode === 'unlicensed' ? 'N0CALL (will be auto-assigned)' : form.callsign}
+              disabled
+            />
           </label>
           <div style={{ marginTop: 4 }}>
             <a
               href="#"
               onClick={(e) => {
                 e.preventDefault();
+                setMode('licensed');
                 setStep(1);
                 setLookupNotice(null);
+                setForm((f) => ({ ...f, callsign: '' }));
               }}
             >
-              {mode === 'unlicensed' ? 'Change handle' : 'Change callsign'}
+              {mode === 'unlicensed' ? 'I do have a callsign' : 'Change callsign'}
             </a>
           </div>
           <label style={{ display: 'block', marginTop: 12 }}>

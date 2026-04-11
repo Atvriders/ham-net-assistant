@@ -47,6 +47,18 @@ describe('users', () => {
     expect(res.body[0]).toHaveProperty('name');
   });
 
+  it('PATCH /api/users/:id [ADMIN] can change collegeSlug', async () => {
+    const res = await request(app).patch(`/api/users/${memberId}`).set('Cookie', admin)
+      .send({ collegeSlug: 'mit' });
+    expect(res.status).toBe(200);
+    expect(res.body.collegeSlug).toBe('mit');
+  });
+  it('PATCH /api/users/:id forbidden for non-admin', async () => {
+    const res = await request(app).patch(`/api/users/${memberId}`).set('Cookie', member)
+      .send({ collegeSlug: 'default' });
+    expect(res.status).toBe(403);
+  });
+
   it('PATCH /api/users/:id/role [ADMIN]', async () => {
     const res = await request(app).patch(`/api/users/${memberId}/role`).set('Cookie', admin)
       .send({ role: 'OFFICER' });

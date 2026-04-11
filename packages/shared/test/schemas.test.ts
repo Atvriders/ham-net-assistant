@@ -31,6 +31,13 @@ describe('Callsign', () => {
   it('accepts /AM aeronautical mobile suffix', () => {
     expect(Callsign.parse('w1aw/am')).toBe('W1AW/AM');
   });
+  it('accepts N0CALL placeholder', () => {
+    expect(Callsign.parse('n0call')).toBe('N0CALL');
+  });
+  it('accepts N0CALL with digits', () => {
+    expect(Callsign.parse('N0CALL42')).toBe('N0CALL42');
+    expect(Callsign.parse('N0CALL9999')).toBe('N0CALL9999');
+  });
 });
 
 describe('RegisterInput', () => {

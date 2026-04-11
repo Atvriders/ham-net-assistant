@@ -5,7 +5,7 @@ export const Callsign = z
   .trim()
   .toUpperCase()
   .regex(
-    /^([A-Z0-9]{1,4}\/)?[A-Z0-9]{3,7}(\/(M|P|MM|AM|[A-Z0-9]{1,3}))?$/,
+    /^([A-Z0-9]{1,4}\/)?[A-Z0-9]{3,7}(\/(M|P|MM|AM|[A-Z0-9]{1,3}))?$|^N0CALL\d{0,4}$/,
     'Invalid callsign format',
   );
 

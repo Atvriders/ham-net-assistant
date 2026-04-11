@@ -33,7 +33,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/sessions/:sessionId/checkins', checkins.nested);
   app.use('/api/checkins', checkins.flat);
   app.use('/api/stats', statsRouter(prisma));
-  app.use('/api/themes', themesRouter());
+  app.use('/api/themes', themesRouter(prisma));
   app.use('/api/themes', logosRouter());
   app.use('/api/users', usersRouter(prisma));
   app.use('/api/topics', topicsRouter(prisma));

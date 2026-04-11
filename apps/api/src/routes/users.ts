@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
 import { UpdateMeInput, UpdateRoleInput, PublicUser } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -59,6 +60,28 @@ export function usersRouter(prisma: PrismaClient): Router {
       throw new HttpError(404, 'NOT_FOUND', 'User not found');
     }
   }));
+
+  router.patch(
+    '/:id',
+    requireRole('ADMIN'),
+    validateBody(
+      z.object({
+        collegeSlug: z.string().max(40).nullable().optional(),
+      }),
+    ),
+    asyncHandler(async (req, res) => {
+      try {
+        const updated = await prisma.user.update({
+          where: { id: req.params.id },
+          data: { collegeSlug: (req.body as { collegeSlug?: string | null }).collegeSlug },
+          select: publicSelect,
+        });
+        res.json(PublicUser.parse(updated));
+      } catch {
+        throw new HttpError(404, 'NOT_FOUND', 'User not found');
+      }
+    }),
+  );
 
   router.patch('/:id/role', requireRole('ADMIN'), validateBody(UpdateRoleInput), asyncHandler(async (req, res) => {
     try {

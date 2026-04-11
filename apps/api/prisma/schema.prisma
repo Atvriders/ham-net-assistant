@@ -23,6 +23,12 @@ model User {
   suggestions        TopicSuggestion[] @relation("TopicCreator")
 }
 
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model TopicSuggestion {
   id          String   @id @default(cuid())
   title       String
