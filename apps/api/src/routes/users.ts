@@ -47,6 +47,19 @@ export function usersRouter(prisma: PrismaClient): Router {
     res.json(users.map((u) => PublicUser.parse(u)));
   }));
 
+  router.delete('/:id', requireRole('ADMIN'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (id === req.user!.id) {
+      throw new HttpError(400, 'VALIDATION', 'Cannot delete your own account');
+    }
+    try {
+      await prisma.user.delete({ where: { id } });
+      res.status(204).end();
+    } catch {
+      throw new HttpError(404, 'NOT_FOUND', 'User not found');
+    }
+  }));
+
   router.patch('/:id/role', requireRole('ADMIN'), validateBody(UpdateRoleInput), asyncHandler(async (req, res) => {
     try {
       const updated = await prisma.user.update({

@@ -1,11 +1,21 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
 import { Callsign, RepeaterInput } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
 import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { fetchCallookLookup } from './callsignLookup.js';
+
+const SuggestQuery = z.union([
+  z.object({ callsign: z.string() }),
+  z.object({
+    lat: z.coerce.number().min(-90).max(90),
+    lon: z.coerce.number().min(-180).max(180),
+    dist: z.coerce.number().int().min(1).max(100).default(30),
+  }),
+]);
 
 type RepeaterSuggestion = typeof RepeaterInput._type;
 
@@ -35,9 +45,10 @@ function num(v: unknown): number {
 async function fetchRepeaterbook(
   lat: number,
   lon: number,
+  dist = 30,
 ): Promise<RepeaterSuggestion[] | null> {
   try {
-    const url = `https://www.repeaterbook.com/api/export.php?qtype=prox&lat=${lat}&long=${lon}&dist=30`;
+    const url = `https://www.repeaterbook.com/api/export.php?qtype=prox&lat=${lat}&long=${lon}&dist=${dist}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
       headers: { 'User-Agent': 'HamNetAssistant/1.0' },
@@ -92,16 +103,31 @@ export function repeatersRouter(prisma: PrismaClient): Router {
     '/suggestions',
     requireRole('OFFICER'),
     asyncHandler(async (req, res) => {
-      const parsed = Callsign.safeParse(req.query.callsign);
+      const parsed = SuggestQuery.safeParse(req.query);
       if (!parsed.success) {
-        throw new HttpError(400, 'VALIDATION', 'Invalid callsign');
+        throw new HttpError(400, 'VALIDATION', 'Invalid suggestion query');
       }
-      const lookup = await fetchCallookLookup(parsed.data);
-      if (!lookup.found || lookup.latitude == null || lookup.longitude == null) {
-        res.json({ suggestions: [], reason: 'no-location' });
-        return;
+      let lat: number;
+      let lon: number;
+      let dist = 30;
+      if ('callsign' in parsed.data) {
+        const csParsed = Callsign.safeParse(parsed.data.callsign);
+        if (!csParsed.success) {
+          throw new HttpError(400, 'VALIDATION', 'Invalid callsign');
+        }
+        const lookup = await fetchCallookLookup(csParsed.data);
+        if (!lookup.found || lookup.latitude == null || lookup.longitude == null) {
+          res.json({ suggestions: [], reason: 'no-location' });
+          return;
+        }
+        lat = lookup.latitude;
+        lon = lookup.longitude;
+      } else {
+        lat = parsed.data.lat;
+        lon = parsed.data.lon;
+        dist = parsed.data.dist;
       }
-      const suggestions = await fetchRepeaterbook(lookup.latitude, lookup.longitude);
+      const suggestions = await fetchRepeaterbook(lat, lon, dist);
       if (suggestions == null) {
         res.json({ suggestions: [], reason: 'upstream-error' });
         return;

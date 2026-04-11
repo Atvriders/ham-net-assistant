@@ -3,8 +3,10 @@ import type { PublicUser, Role } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { useAuth } from '../auth/AuthProvider.js';
 
 export function AdminPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<PublicUser[]>([]);
 
   async function reload(signal?: AbortSignal) {
@@ -20,6 +22,14 @@ export function AdminPage() {
 
   async function setRole(id: string, role: Role) {
     await apiFetch(`/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+    await reload();
+  }
+
+  async function deleteUser(u: PublicUser) {
+    if (!window.confirm(`Delete user ${u.callsign} — ${u.name}? This cannot be undone.`)) {
+      return;
+    }
+    await apiFetch(`/users/${u.id}`, { method: 'DELETE' });
     await reload();
   }
 
@@ -45,7 +55,7 @@ export function AdminPage() {
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>{u.role}</td>
-                <td style={{ display: 'flex', gap: 6 }}>
+                <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {(['MEMBER', 'OFFICER', 'ADMIN'] as Role[])
                     .filter((r) => r !== u.role)
                     .map((r) => (
@@ -53,6 +63,11 @@ export function AdminPage() {
                         Make {r.toLowerCase()}
                       </Button>
                     ))}
+                  {currentUser && u.id !== currentUser.id && (
+                    <Button variant="danger" onClick={() => deleteUser(u)}>
+                      Delete
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}

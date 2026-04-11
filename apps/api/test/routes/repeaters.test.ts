@@ -178,6 +178,30 @@ describe('GET /api/repeaters/suggestions', () => {
     expect(res.body.reason).toBe('upstream-error');
   });
 
+  it('accepts lat/lon/dist variant and skips callook', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(repeaterbookOk));
+    const res = await request(app)
+      .get('/api/repeaters/suggestions?lat=39.18&lon=-96.57&dist=30')
+      .set('Cookie', officerCookie);
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const calledUrl = String(fetchSpy.mock.calls[0]?.[0] ?? '');
+    expect(calledUrl).toContain('repeaterbook.com');
+    expect(calledUrl).toContain('lat=39.18');
+    expect(calledUrl).toContain('long=-96.57');
+    expect(calledUrl).toContain('dist=30');
+    expect(res.body.suggestions).toHaveLength(2);
+  });
+
+  it('rejects invalid lat/lon query with 400', async () => {
+    const res = await request(app)
+      .get('/api/repeaters/suggestions?lat=999&lon=-96.57')
+      .set('Cookie', officerCookie);
+    expect(res.status).toBe(400);
+  });
+
   it('rejects MEMBER role with 403', async () => {
     const res = await request(app)
       .get('/api/repeaters/suggestions?callsign=W1AW')

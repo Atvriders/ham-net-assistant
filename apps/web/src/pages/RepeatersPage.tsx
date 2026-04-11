@@ -50,7 +50,14 @@ export function RepeatersPage() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<RepeaterInput[]>([]);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [topAlert, setTopAlert] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
+
+  const [coordsOpen, setCoordsOpen] = useState(false);
+  const [coordLat, setCoordLat] = useState('');
+  const [coordLon, setCoordLon] = useState('');
+  const [coordDist, setCoordDist] = useState('30');
+  const [coordErr, setCoordErr] = useState<string | null>(null);
 
   async function reload(signal?: AbortSignal) {
     const rows = await apiFetch<Repeater[]>('/repeaters', { signal });
@@ -118,35 +125,82 @@ export function RepeatersPage() {
     await reload();
   }
 
-  async function discoverLocal() {
-    if (!user?.callsign) return;
+  async function runDiscovery(query: string, openModal: boolean) {
     setSuggesting(true);
     setSuggestionError(null);
+    setTopAlert(null);
     setSuggestions([]);
-    setSuggestionsOpen(true);
+    if (openModal) setSuggestionsOpen(true);
     try {
       const result = await apiFetch<{ suggestions: RepeaterInput[]; reason?: string }>(
-        `/repeaters/suggestions?callsign=${encodeURIComponent(user.callsign)}`,
+        `/repeaters/suggestions?${query}`,
       );
+      if (result.reason === 'upstream-error') {
+        setSuggestionsOpen(false);
+        setTopAlert(
+          'Repeater databases are unreachable right now — try again later, or enter repeaters manually.',
+        );
+        return;
+      }
       if (!result.suggestions || result.suggestions.length === 0) {
         const reason = result.reason;
-        setSuggestionError(
+        const msg =
           reason === 'no-location'
             ? 'Could not locate your callsign. Callook.info had no coordinates for you.'
-            : reason === 'upstream-error'
-              ? 'Repeaterbook.com is temporarily unreachable. Try again shortly.'
-              : 'No nearby repeaters found.',
-        );
+            : 'No nearby repeaters found.';
+        if (!openModal) {
+          setSuggestionsOpen(true);
+        }
+        setSuggestionError(msg);
       } else {
+        setSuggestionsOpen(true);
         setSuggestions(result.suggestions);
       }
     } catch (ex) {
-      setSuggestionError(
-        ex instanceof ApiErrorException ? ex.payload.message : 'Discovery failed',
+      setSuggestionsOpen(false);
+      setTopAlert(
+        ex instanceof ApiErrorException
+          ? ex.payload.message
+          : 'Discovery failed — try again later, or enter repeaters manually.',
       );
     } finally {
       setSuggesting(false);
     }
+  }
+
+  async function discoverLocal() {
+    if (!user?.callsign) return;
+    await runDiscovery(`callsign=${encodeURIComponent(user.callsign)}`, true);
+  }
+
+  function openCoords() {
+    setCoordErr(null);
+    setCoordLat('');
+    setCoordLon('');
+    setCoordDist('30');
+    setCoordsOpen(true);
+  }
+
+  async function submitCoords(e: React.FormEvent) {
+    e.preventDefault();
+    setCoordErr(null);
+    const lat = Number(coordLat);
+    const lon = Number(coordLon);
+    const dist = Number(coordDist);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      setCoordErr('Latitude must be between -90 and 90');
+      return;
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      setCoordErr('Longitude must be between -180 and 180');
+      return;
+    }
+    if (!Number.isInteger(dist) || dist < 1 || dist > 100) {
+      setCoordErr('Distance must be an integer between 1 and 100 miles');
+      return;
+    }
+    setCoordsOpen(false);
+    await runDiscovery(`lat=${lat}&lon=${lon}&dist=${dist}`, true);
   }
 
   async function addSuggestion(idx: number) {
@@ -191,6 +245,9 @@ export function RepeatersPage() {
             <Button variant="secondary" onClick={discoverLocal} disabled={suggesting}>
               {suggesting ? 'Discovering…' : 'Discover local repeaters'}
             </Button>
+            <Button variant="secondary" onClick={openCoords} disabled={suggesting}>
+              Discover by coordinates
+            </Button>
             <Button onClick={openCreate}>Add repeater</Button>
           </>
         )}
@@ -199,6 +256,38 @@ export function RepeatersPage() {
       {err && (
         <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
           {err}
+        </div>
+      )}
+
+      {topAlert && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 6,
+            border: '1px solid var(--color-danger)',
+            color: 'var(--color-danger)',
+            background: 'rgba(220, 53, 69, 0.08)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <span>{topAlert}</span>
+          <button
+            type="button"
+            onClick={() => setTopAlert(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+            }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -304,6 +393,60 @@ export function RepeatersPage() {
               type="button"
               variant="secondary"
               onClick={() => setShowForm(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={coordsOpen} onClose={() => setCoordsOpen(false)}>
+        <h2>Discover by coordinates</h2>
+        <form onSubmit={submitCoords}>
+          <label style={{ display: 'block' }}>
+            Latitude
+            <Input
+              type="number"
+              step="0.0001"
+              value={coordLat}
+              onChange={(e) => setCoordLat(e.target.value)}
+              placeholder="39.18"
+              required
+            />
+          </label>
+          <label style={{ display: 'block', marginTop: 8 }}>
+            Longitude
+            <Input
+              type="number"
+              step="0.0001"
+              value={coordLon}
+              onChange={(e) => setCoordLon(e.target.value)}
+              placeholder="-96.57"
+              required
+            />
+          </label>
+          <label style={{ display: 'block', marginTop: 8 }}>
+            Distance (miles, 1-100)
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={coordDist}
+              onChange={(e) => setCoordDist(e.target.value)}
+              required
+            />
+          </label>
+          {coordErr && (
+            <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+              {coordErr}
+            </div>
+          )}
+          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+            <Button type="submit">Search</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCoordsOpen(false)}
             >
               Cancel
             </Button>
