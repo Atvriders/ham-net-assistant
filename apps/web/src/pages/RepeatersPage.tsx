@@ -25,14 +25,10 @@ const EMPTY_FORM: RepeaterInput = {
 
 function sourceLabel(source: string): string {
   switch (source) {
+    case 'ard':
+      return 'Amateur Repeater Directory (CC0)';
     case 'hearham':
-      return 'HearHam community database';
-    case 'repeaterbook-prox':
-      return 'RepeaterBook (proximity)';
-    case 'repeaterbook-row':
-      return 'RepeaterBook (worldwide)';
-    case 'repeaterbook-state':
-      return 'RepeaterBook (state-wide, sorted by distance)';
+      return 'HearHam community database (fallback)';
     case 'none':
       return 'none';
     default:
@@ -170,7 +166,12 @@ export function RepeatersPage() {
       if (Array.isArray(result.attempted)) setAttemptedSources(result.attempted);
       if (result.reason === 'upstream-error') {
         setSuggestionsOpen(false);
-        const tried = (result.attempted ?? []).join(', ') || 'all known sources';
+        const triedLabels = (result.attempted ?? []).map((s) => {
+          if (s === 'ard') return 'ARD';
+          if (s === 'hearham') return 'HearHam';
+          return s;
+        });
+        const tried = triedLabels.join(' → ') || 'all known sources';
         setTopAlert(
           `Repeater databases are unreachable right now (tried: ${tried}). Try again later, or enter repeaters manually.`,
         );

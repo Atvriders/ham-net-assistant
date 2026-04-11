@@ -3,7 +3,10 @@ import request from 'supertest';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
-import { __resetHearhamCacheForTests } from '../../src/routes/repeaters.js';
+import {
+  __resetHearhamCacheForTests,
+  __resetArdCacheForTests,
+} from '../../src/routes/repeaters.js';
 
 let app: Express; let prisma: PrismaClient; let dbFile: string;
 let officerCookie: string; let memberCookie: string;
@@ -24,6 +27,7 @@ afterAll(async () => { await cleanupTestDb(prisma, dbFile); });
 beforeEach(async () => {
   await prisma.repeater.deleteMany();
   __resetHearhamCacheForTests();
+  __resetArdCacheForTests();
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -40,38 +44,6 @@ const callookOk = {
   current: { operClass: 'Extra' },
   address: { line1: '1 Main', line2: 'MANHATTAN, KS 66502' },
   location: { latitude: '39.1836', longitude: '-96.5717', gridsquare: 'EM19jd' },
-};
-
-const repeaterbookOk = {
-  count: 2,
-  results: [
-    {
-      'State ID': '20',
-      'Rptr ID': '1',
-      Frequency: '146.940',
-      'Input Freq': '146.340',
-      PL: '88.5',
-      'Nearest City': 'Manhattan',
-      County: 'Riley',
-      State: 'Kansas',
-      Callsign: 'W0BPC',
-      Lat: '39.183055',
-      Long: '-96.574722',
-    },
-    {
-      'State ID': '20',
-      'Rptr ID': '2',
-      Frequency: '443.100',
-      'Input Freq': '448.100',
-      PL: '',
-      'Nearest City': 'Wamego',
-      County: 'Pottawatomie',
-      State: 'Kansas',
-      Callsign: 'K0WAM',
-      Lat: '39.2',
-      Long: '-96.3',
-    },
-  ],
 };
 
 const valid = {
@@ -132,8 +104,56 @@ describe('PATCH/DELETE /api/repeaters/:id', () => {
   });
 });
 
+// ARD fixture — 3 rows, 2 close to callook coords (39.1836,-96.5717), 1 far.
+const ardOk = [
+  {
+    repeaterId: 'a1',
+    outputFrequency: 146.94,
+    inputFrequency: 146.34,
+    offset: 0.6,
+    offsetSign: '-',
+    band: '2m',
+    ctcssTx: 88.5,
+    callsign: 'W0BPC',
+    latitude: 39.183,
+    longitude: -96.574,
+    state: 'Kansas',
+    county: 'Riley',
+    nearestCity: 'Manhattan',
+    isOperational: true,
+  },
+  {
+    repeaterId: 'a2',
+    outputFrequency: 443.1,
+    inputFrequency: 448.1,
+    offset: 5.0,
+    offsetSign: '+',
+    band: '70cm',
+    ctcssTx: null,
+    callsign: 'K0KSU',
+    latitude: 39.19,
+    longitude: -96.58,
+    state: 'Kansas',
+    county: 'Riley',
+    nearestCity: 'Manhattan',
+    isOperational: true,
+  },
+  // Far away — should be filtered out by distance
+  {
+    repeaterId: 'a3',
+    outputFrequency: 146.52,
+    offset: 0,
+    offsetSign: '+',
+    callsign: 'FARAWAY',
+    latitude: 0,
+    longitude: 0,
+    state: 'Nowhere',
+    isOperational: true,
+  },
+];
+
+// HearHam fixture used for the fallback test
 const hearhamOk = [
-  // Manhattan, KS — near callook coords (39.18, -96.57)
   {
     id: 101,
     callsign: 'W0BPC',
@@ -147,7 +167,6 @@ const hearhamOk = [
     offset: -600000,
     operational: 1,
   },
-  // Very near too
   {
     id: 102,
     callsign: 'K0KSU',
@@ -161,50 +180,60 @@ const hearhamOk = [
     offset: 5000000,
     operational: 1,
   },
-  // Far away — should be filtered out by distance
-  {
-    id: 103,
-    callsign: 'FARAWAY',
-    latitude: 0,
-    longitude: 0,
-    city: 'Nowhere',
-    mode: 'FM',
-    encode: '0',
-    decode: '0',
-    frequency: 146520000,
-    offset: 0,
-    operational: 1,
-  },
 ];
 
 describe('GET /api/repeaters/suggestions', () => {
-  it('returns mapped hearham results as primary source', async () => {
+  it('returns mapped ARD results as primary source', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(callookOk))
-      .mockResolvedValueOnce(jsonResponse(hearhamOk));
+      .mockResolvedValueOnce(jsonResponse(ardOk));
     const res = await request(app)
       .get('/api/repeaters/suggestions?callsign=W1AW')
       .set('Cookie', officerCookie);
     expect(res.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    // Second call should be hearham, not repeaterbook
-    const hearhamUrl = String(fetchSpy.mock.calls[1]?.[0] ?? '');
-    expect(hearhamUrl).toContain('hearham.com/api/repeaters/v1');
-    expect(res.body.source).toBe('hearham');
+    // Second call should be ARD, not hearham
+    const ardUrl = String(fetchSpy.mock.calls[1]?.[0] ?? '');
+    expect(ardUrl).toContain('Amateur-Repeater-Directory');
+    expect(ardUrl).toContain('MasterRepeater.json');
+    expect(res.body.source).toBe('ard');
+    expect(res.body.attempted).toEqual(['ard']);
     expect(res.body.suggestions).toHaveLength(2); // far-away row dropped
     const first = res.body.suggestions[0];
     expect(first.frequency).toBe(146.94);
     expect(first.offsetKhz).toBe(-600);
     expect(first.toneHz).toBe(88.5);
     expect(first.mode).toBe('FM');
-    expect(first.coverage).toBe('Manhattan, KS');
-    expect(first.name).toBe('W0BPC 146.94');
+    expect(first.coverage).toBe('Manhattan, Riley, Kansas');
+    expect(first.name).toBe('W0BPC 146.940');
     expect(first.latitude).toBeCloseTo(39.183, 2);
     const second = res.body.suggestions[1];
     expect(second.frequency).toBe(443.1);
     expect(second.offsetKhz).toBe(5000);
     expect(second.toneHz).toBeNull();
+  });
+
+  it('caches the ARD dataset across requests', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      // First request: callook + ARD.
+      .mockResolvedValueOnce(jsonResponse(callookOk))
+      .mockResolvedValueOnce(jsonResponse(ardOk))
+      // Second request: only callook should be called again — ARD is cached.
+      .mockResolvedValueOnce(jsonResponse(callookOk));
+    const res1 = await request(app)
+      .get('/api/repeaters/suggestions?callsign=W1AW')
+      .set('Cookie', officerCookie);
+    expect(res1.status).toBe(200);
+    expect(res1.body.source).toBe('ard');
+    const res2 = await request(app)
+      .get('/api/repeaters/suggestions?callsign=W1AW')
+      .set('Cookie', officerCookie);
+    expect(res2.status).toBe(200);
+    expect(res2.body.source).toBe('ard');
+    // Total fetch count: callook x2 + ARD x1 = 3, NOT 4.
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
   it('returns empty list with reason=no-location when callook has no coords', async () => {
@@ -222,10 +251,8 @@ describe('GET /api/repeaters/suggestions', () => {
   it('returns empty list with reason=upstream-error when every source fails', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(callookOk))
-      .mockRejectedValueOnce(new Error('hearham blew up'))
-      .mockRejectedValueOnce(new Error('rb prox blew up'))
-      .mockRejectedValueOnce(new Error('rb row blew up'))
-      .mockRejectedValueOnce(new Error('rb state blew up'));
+      .mockRejectedValueOnce(new Error('ard blew up'))
+      .mockRejectedValueOnce(new Error('hearham blew up'));
     const res = await request(app)
       .get('/api/repeaters/suggestions?callsign=W1AW')
       .set('Cookie', officerCookie);
@@ -233,114 +260,48 @@ describe('GET /api/repeaters/suggestions', () => {
     expect(res.body.suggestions).toEqual([]);
     expect(res.body.reason).toBe('upstream-error');
     expect(res.body.source).toBe('none');
-    expect(res.body.attempted).toEqual([
-      'hearham',
-      'repeaterbook-prox',
-      'repeaterbook-row',
-      'repeaterbook-state',
-    ]);
+    expect(res.body.attempted).toEqual(['ard', 'hearham']);
   });
 
-  it('falls back to repeaterbook prox when hearham fails (e.g. 403)', async () => {
+  it('falls back to hearham when ARD fails', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(callookOk))
-      // hearham 403 — unreachable
-      .mockResolvedValueOnce(
-        new Response('forbidden', { status: 403 }),
-      )
-      // rb prox ok
-      .mockResolvedValueOnce(jsonResponse(repeaterbookOk));
+      // ARD 500
+      .mockResolvedValueOnce(new Response('boom', { status: 500 }))
+      // hearham ok
+      .mockResolvedValueOnce(jsonResponse(hearhamOk));
     const res = await request(app)
       .get('/api/repeaters/suggestions?callsign=W1AW')
       .set('Cookie', officerCookie);
     expect(res.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(res.body.source).toBe('repeaterbook-prox');
+    expect(res.body.source).toBe('hearham');
     expect(res.body.suggestions).toHaveLength(2);
-    expect(res.body.attempted).toEqual(['hearham', 'repeaterbook-prox']);
-  });
-
-  it('falls back to repeaterbook state query when hearham + prox + row all fail', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse(callookOk))
-      .mockRejectedValueOnce(new Error('hearham down'))
-      .mockRejectedValueOnce(new Error('prox down'))
-      .mockRejectedValueOnce(new Error('row down'))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          count: 3,
-          results: [
-            {
-              Frequency: '146.940',
-              'Input Freq': '146.340',
-              PL: '88.5',
-              'Nearest City': 'Manhattan',
-              County: 'Riley',
-              State: 'Kansas',
-              Callsign: 'W0BPC',
-              Lat: '39.183',
-              Long: '-96.574',
-            },
-            {
-              Frequency: '147.000',
-              'Input Freq': '147.600',
-              PL: '100.0',
-              'Nearest City': 'Wichita',
-              County: 'Sedgwick',
-              State: 'Kansas',
-              Callsign: 'W0KAN',
-              Lat: '37.6872',
-              Long: '-97.3301',
-            },
-            {
-              Frequency: '443.100',
-              'Input Freq': '448.100',
-              PL: '',
-              'Nearest City': 'Wamego',
-              County: 'Pottawatomie',
-              State: 'Kansas',
-              Callsign: 'K0WAM',
-              Lat: '39.2',
-              Long: '-96.3',
-            },
-          ],
-        }),
-      );
-    const res = await request(app)
-      .get('/api/repeaters/suggestions?callsign=W1AW')
-      .set('Cookie', officerCookie);
-    expect(res.status).toBe(200);
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
-    const stateUrl = String(fetchSpy.mock.calls[4]?.[0] ?? '');
-    expect(stateUrl).toContain('qtype=state');
-    expect(stateUrl).toContain('state=Kansas');
-    expect(res.body.source).toBe('repeaterbook-state');
-    expect(res.body.suggestions).toHaveLength(3);
-    // Should be sorted by haversine distance from callook coords (39.1836,-96.5717)
-    expect(res.body.suggestions[0].name).toBe('W0BPC 146.94');
+    expect(res.body.attempted).toEqual(['ard', 'hearham']);
+    const hearhamUrl = String(fetchSpy.mock.calls[2]?.[0] ?? '');
+    expect(hearhamUrl).toContain('hearham.com/api/repeaters/v1');
   });
 
   it('accepts lat/lon/dist variant and skips callook', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse(hearhamOk));
+      .mockResolvedValueOnce(jsonResponse(ardOk));
     const res = await request(app)
       .get('/api/repeaters/suggestions?lat=39.18&lon=-96.57&dist=30')
       .set('Cookie', officerCookie);
     expect(res.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const calledUrl = String(fetchSpy.mock.calls[0]?.[0] ?? '');
-    expect(calledUrl).toContain('hearham.com');
-    expect(res.body.source).toBe('hearham');
+    expect(calledUrl).toContain('Amateur-Repeater-Directory');
+    expect(res.body.source).toBe('ard');
     expect(res.body.suggestions).toHaveLength(2);
   });
 
   it('sends an explicit User-Agent on upstream requests', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse(hearhamOk));
+      .mockResolvedValueOnce(jsonResponse(ardOk));
     await request(app)
       .get('/api/repeaters/suggestions?lat=39.18&lon=-96.57&dist=30')
       .set('Cookie', officerCookie);
