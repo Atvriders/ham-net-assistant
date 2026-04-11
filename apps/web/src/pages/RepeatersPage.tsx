@@ -6,6 +6,11 @@ import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { decodeGrid } from '../lib/grid.js';
+
+interface CallsignLookupResponse {
+  gridSquare: string | null;
+}
 
 const EMPTY_FORM: RepeaterInput = {
   name: '',
@@ -54,10 +59,13 @@ export function RepeatersPage() {
   const [addingAll, setAddingAll] = useState(false);
 
   const [coordsOpen, setCoordsOpen] = useState(false);
+  const [coordGrid, setCoordGrid] = useState('');
   const [coordLat, setCoordLat] = useState('');
   const [coordLon, setCoordLon] = useState('');
   const [coordDist, setCoordDist] = useState('30');
   const [coordErr, setCoordErr] = useState<string | null>(null);
+  const [gridBusy, setGridBusy] = useState(false);
+  const [suggestionSource, setSuggestionSource] = useState<string | null>(null);
 
   async function reload(signal?: AbortSignal) {
     const rows = await apiFetch<Repeater[]>('/repeaters', { signal });
@@ -130,11 +138,15 @@ export function RepeatersPage() {
     setSuggestionError(null);
     setTopAlert(null);
     setSuggestions([]);
+    setSuggestionSource(null);
     if (openModal) setSuggestionsOpen(true);
     try {
-      const result = await apiFetch<{ suggestions: RepeaterInput[]; reason?: string }>(
-        `/repeaters/suggestions?${query}`,
-      );
+      const result = await apiFetch<{
+        suggestions: RepeaterInput[];
+        reason?: string;
+        source?: string;
+      }>(`/repeaters/suggestions?${query}`);
+      if (result.source) setSuggestionSource(result.source);
       if (result.reason === 'upstream-error') {
         setSuggestionsOpen(false);
         setTopAlert(
@@ -175,10 +187,42 @@ export function RepeatersPage() {
 
   function openCoords() {
     setCoordErr(null);
+    setCoordGrid('');
     setCoordLat('');
     setCoordLon('');
     setCoordDist('30');
     setCoordsOpen(true);
+  }
+
+  function handleGridChange(value: string) {
+    setCoordGrid(value);
+    const decoded = decodeGrid(value);
+    if (decoded) {
+      setCoordLat(String(decoded.lat));
+      setCoordLon(String(decoded.lon));
+    }
+  }
+
+  async function autofillGridFromCallsign() {
+    if (!user?.callsign) return;
+    setGridBusy(true);
+    setCoordErr(null);
+    try {
+      const result = await apiFetch<CallsignLookupResponse>(
+        `/callsign-lookup/${encodeURIComponent(user.callsign)}`,
+      );
+      if (result.gridSquare) {
+        handleGridChange(result.gridSquare);
+      } else {
+        setCoordErr('No grid square on file for your callsign.');
+      }
+    } catch (ex) {
+      setCoordErr(
+        ex instanceof ApiErrorException ? ex.payload.message : 'Lookup failed',
+      );
+    } finally {
+      setGridBusy(false);
+    }
   }
 
   async function submitCoords(e: React.FormEvent) {
@@ -404,6 +448,24 @@ export function RepeatersPage() {
         <h2>Discover by coordinates</h2>
         <form onSubmit={submitCoords}>
           <label style={{ display: 'block' }}>
+            Grid square (Maidenhead)
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Input
+                value={coordGrid}
+                onChange={(e) => handleGridChange(e.target.value)}
+                placeholder="EM19jd"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={autofillGridFromCallsign}
+                disabled={gridBusy || !user?.callsign}
+              >
+                {gridBusy ? 'Looking up…' : 'Auto-fill from callsign'}
+              </Button>
+            </div>
+          </label>
+          <label style={{ display: 'block', marginTop: 8 }}>
             Latitude
             <Input
               type="number"
@@ -469,6 +531,17 @@ export function RepeatersPage() {
                 {addingAll ? 'Adding…' : `Add all (${suggestions.length})`}
               </Button>
             </div>
+            {suggestionSource === 'repeaterbook-state' && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'var(--color-border)',
+                  marginBottom: 8,
+                }}
+              >
+                (from Repeaterbook state-wide fallback)
+              </div>
+            )}
             <div style={{ display: 'grid', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
               {suggestions.map((s, i) => (
                 <Card key={`${s.name}-${i}`}>

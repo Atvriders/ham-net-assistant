@@ -166,16 +166,77 @@ describe('GET /api/repeaters/suggestions', () => {
     expect(res.body.reason).toBe('no-location');
   });
 
-  it('returns empty list with reason=upstream-error when repeaterbook throws', async () => {
+  it('returns empty list with reason=upstream-error when both repeaterbook queries fail', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(callookOk))
-      .mockRejectedValueOnce(new Error('network blew up'));
+      .mockRejectedValueOnce(new Error('network blew up'))
+      .mockRejectedValueOnce(new Error('state query also blew up'));
     const res = await request(app)
       .get('/api/repeaters/suggestions?callsign=W1AW')
       .set('Cookie', officerCookie);
     expect(res.status).toBe(200);
     expect(res.body.suggestions).toEqual([]);
     expect(res.body.reason).toBe('upstream-error');
+    expect(res.body.source).toBe('none');
+  });
+
+  it('falls back to repeaterbook state query when prox fails', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(callookOk))
+      .mockRejectedValueOnce(new Error('prox down'))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          count: 3,
+          results: [
+            {
+              Frequency: '146.940',
+              'Input Freq': '146.340',
+              PL: '88.5',
+              'Nearest City': 'Manhattan',
+              County: 'Riley',
+              State: 'Kansas',
+              Callsign: 'W0BPC',
+              Lat: '39.183',
+              Long: '-96.574',
+            },
+            {
+              Frequency: '147.000',
+              'Input Freq': '147.600',
+              PL: '100.0',
+              'Nearest City': 'Wichita',
+              County: 'Sedgwick',
+              State: 'Kansas',
+              Callsign: 'W0KAN',
+              Lat: '37.6872',
+              Long: '-97.3301',
+            },
+            {
+              Frequency: '443.100',
+              'Input Freq': '448.100',
+              PL: '',
+              'Nearest City': 'Wamego',
+              County: 'Pottawatomie',
+              State: 'Kansas',
+              Callsign: 'K0WAM',
+              Lat: '39.2',
+              Long: '-96.3',
+            },
+          ],
+        }),
+      );
+    const res = await request(app)
+      .get('/api/repeaters/suggestions?callsign=W1AW')
+      .set('Cookie', officerCookie);
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const stateUrl = String(fetchSpy.mock.calls[2]?.[0] ?? '');
+    expect(stateUrl).toContain('qtype=state');
+    expect(stateUrl).toContain('state=Kansas');
+    expect(res.body.source).toBe('repeaterbook-state');
+    expect(res.body.suggestions).toHaveLength(3);
+    // Should be sorted by haversine distance from callook coords (39.1836,-96.5717)
+    expect(res.body.suggestions[0].name).toBe('W0BPC 146.94');
   });
 
   it('accepts lat/lon/dist variant and skips callook', async () => {
