@@ -120,6 +120,15 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.json(s);
   }));
 
+  flat.delete('/:id', requireRole('ADMIN'), asyncHandler(async (req, res) => {
+    try {
+      await prisma.netSession.delete({ where: { id: req.params.id } });
+      res.status(204).end();
+    } catch {
+      throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    }
+  }));
+
   flat.patch('/:id', requireRole('OFFICER'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
     const body = req.body as typeof NetSessionUpdate._type;
     try {

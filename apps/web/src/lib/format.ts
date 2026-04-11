@@ -18,3 +18,13 @@ export function formatOffset(khz: number): string {
 export function formatTone(hz: number | null | undefined): string {
   return hz == null ? 'none' : `${hz.toFixed(1)} Hz`;
 }
+
+/**
+ * Capitalize only the first character of a string, leaving the rest
+ * unchanged. Empty strings pass through. Leading whitespace is preserved —
+ * callers should trim first if they want the first non-space char capitalized.
+ */
+export function capitalizeFirst(s: string): string {
+  if (!s) return '';
+  return s[0]!.toUpperCase() + s.slice(1);
+}

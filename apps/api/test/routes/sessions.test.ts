@@ -104,6 +104,30 @@ describe('sessions', () => {
     expect(g.status).toBe(200);
     expect(g.body.topicTitle).toBe('Snapshot topic');
   });
+  it('ADMIN can delete a session and cascade its check-ins', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    const del = await request(app).delete(`/api/sessions/${s.body.id}`).set('Cookie', officer);
+    expect(del.status).toBe(204);
+    const get = await request(app).get(`/api/sessions/${s.body.id}`);
+    expect(get.status).toBe(404);
+    const remainingCheckIns = await prisma.checkIn.findMany({ where: { sessionId: s.body.id } });
+    expect(remainingCheckIns).toHaveLength(0);
+  });
+  it('MEMBER cannot delete a session (403)', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const m = await request(app).post('/api/auth/register').send({
+      email: 'mem-del@x.co', password: 'hunter2hunter2', name: 'M', callsign: 'KB0DEL',
+    });
+    const res = await request(app).delete(`/api/sessions/${s.body.id}`)
+      .set('Cookie', m.headers['set-cookie'][0]);
+    expect(res.status).toBe(403);
+  });
+  it('DELETE unknown session id returns 404', async () => {
+    const res = await request(app).delete('/api/sessions/does-not-exist').set('Cookie', officer);
+    expect(res.status).toBe(404);
+  });
   it('GET /api/sessions/:id/summary returns aggregated data', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)

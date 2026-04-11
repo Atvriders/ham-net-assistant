@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import {
+  capitalizeFirst,
   formatFrequency,
   formatOffset,
   formatTone,
@@ -81,11 +82,12 @@ export function JoinNetPage() {
     if (!session || !user) return;
     setSubmitting(true);
     try {
+      const capitalizedName = user.name ? capitalizeFirst(user.name) : '';
       await apiFetch(`/sessions/${session.id}/checkins`, {
         method: 'POST',
         body: JSON.stringify({
           callsign: user.callsign,
-          nameAtCheckIn: user.name,
+          nameAtCheckIn: capitalizedName,
         }),
       });
       setCheckedInAt(new Date().toISOString());
@@ -109,7 +111,7 @@ export function JoinNetPage() {
   }
   if (status === 'none' || !session) {
     return (
-      <div style={{ padding: 24, maxWidth: 700, margin: '0 auto' }}>
+      <div className="hna-container" style={{ maxWidth: 700, margin: '0 auto' }}>
         <Card>
           <h2 style={{ marginTop: 0 }}>No net currently running</h2>
           <p>There is no active net on this repeater right now.</p>
@@ -123,8 +125,8 @@ export function JoinNetPage() {
 
   return (
     <div
+      className="hna-container"
       style={{
-        padding: 24,
         maxWidth: 700,
         margin: '0 auto',
         display: 'grid',
@@ -167,6 +169,21 @@ export function JoinNetPage() {
           <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{errMsg}</div>
         )}
       </Card>
+      {session.net?.scriptMd && (
+        <Card>
+          <h3 style={{ marginTop: 0 }}>Script</h3>
+          <pre
+            style={{
+              whiteSpace: 'pre-wrap',
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            {session.net.scriptMd}
+          </pre>
+        </Card>
+      )}
       <Card>
         <h3 style={{ marginTop: 0 }}>Check-ins ({session.checkIns.length})</h3>
         {session.checkIns.length === 0 && <p>No check-ins yet.</p>}

@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { CheckIn, NetSession, Net, NetInput, Repeater } from '@hna/shared';
+import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
-import { ScriptEditor } from '../components/ScriptEditor.js';
-import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
+import {
+  capitalizeFirst,
+  formatFrequency,
+  formatOffset,
+  formatTone,
+  displayCallsign,
+} from '../lib/format.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -30,21 +35,6 @@ interface DirectoryEntry {
   name: string;
 }
 
-function toNetInput(n: NetFull | Net): NetInput {
-  const links = (n as NetFull).links;
-  return {
-    name: n.name,
-    repeaterId: n.repeaterId,
-    dayOfWeek: n.dayOfWeek,
-    startLocal: n.startLocal,
-    timezone: n.timezone,
-    theme: n.theme ?? null,
-    scriptMd: n.scriptMd ?? null,
-    active: n.active,
-    linkedRepeaterIds: links ? links.map((l) => l.repeaterId) : undefined,
-  };
-}
-
 export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const nav = useNavigate();
@@ -52,11 +42,8 @@ export function RunNetPage() {
   const [net, setNet] = useState<NetFull | null>(null);
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
-  const [script, setScript] = useState('');
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
-  const [savedFlash, setSavedFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const scriptInitializedRef = useRef<boolean>(false);
 
   async function loadSession(signal?: AbortSignal) {
     if (!sessionId) return;
@@ -68,10 +55,6 @@ export function RunNetPage() {
       n = nets.find((x) => x.id === s.netId) ?? null;
     }
     setNet(n);
-    if (!scriptInitializedRef.current) {
-      if (n?.scriptMd) setScript(n.scriptMd);
-      scriptInitializedRef.current = true;
-    }
   }
 
   useEffect(() => {
@@ -114,34 +97,21 @@ export function RunNetPage() {
     if (e) e.preventDefault();
     if (!sessionId) return;
     if (!/^[A-Z0-9]{3,7}$/.test(callsign)) return;
-    if (!name.trim()) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const capitalized = capitalizeFirst(trimmed);
     const isMember = directory.some((d) => d.callsign === callsign);
     if (!isMember) {
       if (!confirm(`Log ${callsign} as visitor?`)) return;
     }
     await apiFetch(`/sessions/${sessionId}/checkins`, {
       method: 'POST',
-      body: JSON.stringify({ callsign, nameAtCheckIn: name }),
+      body: JSON.stringify({ callsign, nameAtCheckIn: capitalized }),
     });
     setCallsign('');
     setName('');
     inputRef.current?.focus();
     await loadSession();
-  }
-
-  async function saveScript() {
-    if (!net) return;
-    // fetch fresh net body
-    const nets = await apiFetch<NetFull[]>('/nets');
-    const fresh = nets.find((x) => x.id === net.id);
-    if (!fresh) return;
-    const body: NetInput = { ...toNetInput(fresh), scriptMd: script };
-    await apiFetch(`/nets/${net.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    });
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
   }
 
   // Escape key ends net
@@ -173,7 +143,7 @@ export function RunNetPage() {
       : directory.slice(0, 8);
 
   return (
-    <div style={{ display: 'grid', gap: 16, padding: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
+    <div className="hna-runnet-grid" style={{ display: 'grid', gap: 16, padding: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
       <Card>
         <h2>{net.repeater.name}</h2>
         <div>{formatFrequency(net.repeater.frequency)}</div>
@@ -218,14 +188,22 @@ export function RunNetPage() {
           <Button variant="danger" onClick={endNet}>
             End net
           </Button>
-          <Button variant="secondary" onClick={saveScript}>
-            {savedFlash ? 'Saved' : 'Save script'}
-          </Button>
         </div>
       </Card>
       <Card>
         <h3>Script</h3>
-        <ScriptEditor value={script} onChange={setScript} />
+        <textarea
+          className="hna-input"
+          readOnly
+          value={net?.scriptMd ?? ''}
+          style={{
+            minHeight: 400,
+            width: '100%',
+            fontFamily: 'ui-monospace, Menlo, monospace',
+            background: 'var(--color-bg-muted)',
+            cursor: 'default',
+          }}
+        />
       </Card>
       <Card>
         <h3>Check-ins ({session.checkIns.length})</h3>

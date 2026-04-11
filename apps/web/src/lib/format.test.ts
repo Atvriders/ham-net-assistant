@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { displayCallsign, formatFrequency, formatOffset, formatTone } from './format.js';
+import {
+  capitalizeFirst,
+  displayCallsign,
+  formatFrequency,
+  formatOffset,
+  formatTone,
+} from './format.js';
 
 describe('displayCallsign', () => {
   it('replaces all zeros with U+00D8', () => {
@@ -41,5 +47,20 @@ describe('formatTone', () => {
   });
   it('formats hz to 1 decimal', () => {
     expect(formatTone(100)).toBe('100.0 Hz');
+  });
+});
+
+describe('capitalizeFirst', () => {
+  it('capitalizes the first character', () => {
+    expect(capitalizeFirst('john')).toBe('John');
+  });
+  it('leaves an already-uppercase first char alone and preserves the rest', () => {
+    expect(capitalizeFirst('JOHN')).toBe('JOHN');
+  });
+  it('handles empty string', () => {
+    expect(capitalizeFirst('')).toBe('');
+  });
+  it('preserves leading whitespace (caller should trim first)', () => {
+    expect(capitalizeFirst(' john')).toBe(' john');
   });
 });

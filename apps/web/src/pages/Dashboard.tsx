@@ -4,6 +4,7 @@ import type { Net, Repeater, NetSession } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
 
 interface NetWithRepeater extends Net {
@@ -18,9 +19,31 @@ interface ActiveSessionRow extends NetSession {
 }
 
 export function Dashboard() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [nets, setNets] = useState<NetWithRepeater[]>([]);
   const [sessions, setSessions] = useState<NetSession[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
+
+  async function reloadSessions() {
+    try {
+      const s = await apiFetch<NetSession[]>('/sessions');
+      setSessions(s);
+    } catch (e) {
+      if (!isAbortError(e)) console.warn('reload sessions failed', e);
+    }
+  }
+
+  async function deleteSession(id: string) {
+    if (!confirm('Delete this session and all its check-ins?')) return;
+    try {
+      await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+      await reloadSessions();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   useEffect(() => {
     const ctrl = new AbortController();
     apiFetch<NetWithRepeater[]>('/nets', { signal: ctrl.signal })
@@ -46,14 +69,15 @@ export function Dashboard() {
     .slice(0, 3);
 
   return (
-    <div style={{ padding: 24, display: 'grid', gap: 16, maxWidth: 900, margin: '0 auto' }}>
+    <div className="hna-container" style={{ display: 'grid', gap: 16, maxWidth: 900, margin: '0 auto' }}>
       <Card>
         <h2>Next nets</h2>
         {upcoming.length === 0 && <p>No nets scheduled yet.</p>}
         {upcoming.map(({ n, when }) => (
           <div
             key={n.id}
-            style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}
+            className="hna-flex-wrap"
+            style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', gap: 8 }}
           >
             <span>
               {n.name} — {n.repeater.name}
@@ -79,11 +103,13 @@ export function Dashboard() {
           {activeSessions.map((s) => (
             <div
               key={s.id}
+              className="hna-flex-wrap"
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '6px 0',
+                gap: 8,
               }}
             >
               <span>
@@ -105,8 +131,29 @@ export function Dashboard() {
       <Card>
         <h2>Recent sessions</h2>
         {sessions.slice(0, 5).map((s) => (
-          <div key={s.id}>
-            {new Date(s.startedAt).toLocaleString(undefined, { hour12: true })} — {s.endedAt ? 'ended' : 'in progress'}
+          <div
+            key={s.id}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 0',
+            }}
+          >
+            <span>
+              {new Date(s.startedAt).toLocaleString(undefined, { hour12: true })} —{' '}
+              {s.endedAt ? 'ended' : 'in progress'}
+            </span>
+            {isAdmin && (
+              <Button
+                variant="danger"
+                onClick={() => deleteSession(s.id)}
+                aria-label="Delete session"
+              >
+                Delete
+              </Button>
+            )}
           </div>
         ))}
       </Card>

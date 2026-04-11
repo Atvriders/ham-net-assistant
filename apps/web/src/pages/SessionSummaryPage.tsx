@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { useAuth } from '../auth/AuthProvider.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 
 interface NetLinkWithRepeater {
@@ -32,9 +33,23 @@ function formatDuration(startIso: string, endIso: string | null): string {
 
 export function SessionSummaryPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const nav = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  async function deleteSession() {
+    if (!sessionId) return;
+    if (!confirm('Delete this session and all its check-ins? This cannot be undone.')) return;
+    try {
+      await apiFetch(`/sessions/${sessionId}`, { method: 'DELETE' });
+      nav('/');
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
 
   useEffect(() => {
     if (!sessionId) return;
@@ -74,8 +89,13 @@ export function SessionSummaryPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: '0 auto', display: 'grid', gap: 16 }}>
-      <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <Link to="/">&larr; Back to Dashboard</Link>
+        {isAdmin && (
+          <Button variant="danger" onClick={deleteSession}>
+            Delete session
+          </Button>
+        )}
       </div>
       <Card>
         <h2 style={{ marginTop: 0 }}>{repeater.name}</h2>
