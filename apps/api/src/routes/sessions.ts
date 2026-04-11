@@ -6,6 +6,7 @@ import { validateBody } from '../middleware/validate.js';
 import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
+import { redactScriptsForRole } from '../lib/scriptGate.js';
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -93,13 +94,15 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     const { net, checkIns, ...rest } = session;
     const { repeater, links, ...netRest } = net;
-    res.json({
+    const payload = {
       session: rest,
       net: { ...netRest, links },
       repeater,
       checkIns,
       stats: { count: checkIns.length },
-    });
+    };
+    redactScriptsForRole(payload, req.user?.role);
+    res.json(payload);
   }));
 
   flat.get('/:id', asyncHandler(async (req, res) => {
@@ -117,6 +120,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       },
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    redactScriptsForRole(s, req.user?.role);
     res.json(s);
   }));
 

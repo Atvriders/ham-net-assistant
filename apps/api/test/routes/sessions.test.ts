@@ -128,6 +128,35 @@ describe('sessions', () => {
     const res = await request(app).delete('/api/sessions/does-not-exist').set('Cookie', officer);
     expect(res.status).toBe(404);
   });
+  it('MEMBER GET /api/sessions/:id has net.scriptMd redacted to null', async () => {
+    const r = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'Rmem', frequency: 146.52, offsetKhz: 0, mode: 'FM' });
+    const n = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Script Net', repeaterId: r.body.id, dayOfWeek: 2,
+      startLocal: '19:00', timezone: 'America/Chicago', scriptMd: '# Top secret',
+    });
+    const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer);
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-s-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'M', callsign: 'KB0SES',
+    });
+    const memberCookie = m.headers['set-cookie'][0];
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', memberCookie);
+    expect(g.status).toBe(200);
+    expect(g.body.net.scriptMd).toBeNull();
+  });
+  it('OFFICER GET /api/sessions/:id preserves net.scriptMd', async () => {
+    const r = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'Rof', frequency: 147.00, offsetKhz: 600, mode: 'FM' });
+    const n = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Script Net 2', repeaterId: r.body.id, dayOfWeek: 4,
+      startLocal: '21:00', timezone: 'America/Chicago', scriptMd: '# Officer eyes only',
+    });
+    const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', officer);
+    expect(g.status).toBe(200);
+    expect(g.body.net.scriptMd).toBe('# Officer eyes only');
+  });
   it('GET /api/sessions/:id/summary returns aggregated data', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)

@@ -114,6 +114,25 @@ describe('nets CRUD', () => {
     expect(got.body.net.repeater).toBeDefined();
     expect(Array.isArray(got.body.checkIns)).toBe(true);
   });
+  it('MEMBER hitting /active-session gets scriptMd redacted', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    await request(app).post(`/api/nets/${c.body.id}/sessions`).set('Cookie', officer);
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-net-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'M', callsign: 'KB0MEM',
+    });
+    const memberCookie = m.headers['set-cookie'][0];
+    const got = await request(app).get(`/api/nets/${c.body.id}/active-session`).set('Cookie', memberCookie);
+    expect(got.status).toBe(200);
+    expect(got.body.net.scriptMd).toBeNull();
+  });
+  it('OFFICER hitting /active-session sees the real scriptMd', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    await request(app).post(`/api/nets/${c.body.id}/sessions`).set('Cookie', officer);
+    const got = await request(app).get(`/api/nets/${c.body.id}/active-session`).set('Cookie', officer);
+    expect(got.status).toBe(200);
+    expect(got.body.net.scriptMd).toBe('# Hello');
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });

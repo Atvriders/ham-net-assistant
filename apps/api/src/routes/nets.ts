@@ -5,6 +5,7 @@ import { validateBody } from '../middleware/validate.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
+import { redactScriptsForRole } from '../lib/scriptGate.js';
 
 const netInclude = {
   repeater: true,
@@ -34,16 +35,17 @@ async function assertRepeatersExist(prisma: PrismaClient, ids: string[]): Promis
 export function netsRouter(prisma: PrismaClient): Router {
   const router = Router();
 
-  router.get('/', asyncHandler(async (_req, res) => {
+  router.get('/', asyncHandler(async (req, res) => {
     const list = await prisma.net.findMany({
       orderBy: [{ dayOfWeek: 'asc' }, { startLocal: 'asc' }],
       include: netInclude,
     });
+    redactScriptsForRole(list, req.user?.role);
     res.json(list);
   }));
 
   // Must be registered before `/:id`-style routes.
-  router.get('/active', requireAuth, asyncHandler(async (_req, res) => {
+  router.get('/active', requireAuth, asyncHandler(async (req, res) => {
     const sessions = await prisma.netSession.findMany({
       where: { endedAt: null },
       include: {
@@ -52,6 +54,7 @@ export function netsRouter(prisma: PrismaClient): Router {
       },
       orderBy: { startedAt: 'desc' },
     });
+    redactScriptsForRole(sessions, req.user?.role);
     res.json(sessions);
   }));
 
@@ -66,6 +69,7 @@ export function netsRouter(prisma: PrismaClient): Router {
       orderBy: { startedAt: 'desc' },
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'No active session for this net');
+    redactScriptsForRole(s, req.user?.role);
     res.json(s);
   }));
 
