@@ -12,6 +12,10 @@ import { asyncHandler } from '../middleware/async.js';
 export function authRouter(prisma: PrismaClient): Router {
   const router = Router();
 
+  router.get('/config', (_req, res) => {
+    res.json({ inviteCodeRequired: Boolean(env.REGISTRATION_CODE) });
+  });
+
   router.post(
     '/register',
     validateBody(RegisterInput),

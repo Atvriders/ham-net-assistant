@@ -38,6 +38,23 @@ describe('GET /api/callsign-lookup/:callsign', () => {
     expect(res.body.licenseClass).toBe('Extra');
   });
 
+  it('drops middle names, outputs only First Last', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'VALID',
+          name: 'SMITH JOHN MICHAEL',
+          current: { operClass: 'General' },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const res = await request(app).get('/api/callsign-lookup/K1ABC');
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(true);
+    expect(res.body.name).toBe('John Smith');
+  });
+
   it('rejects malformed callsign with 400', async () => {
     const res = await request(app).get('/api/callsign-lookup/X');
     expect(res.status).toBe(400);

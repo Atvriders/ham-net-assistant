@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -15,20 +15,43 @@ interface LookupResult {
   found: boolean;
 }
 
+interface AuthConfig {
+  inviteCodeRequired: boolean;
+}
+
 export function RegisterPage() {
   const { register } = useAuth();
   const nav = useNavigate();
   const [step, setStep] = useState<1 | 2>(1);
+  const [mode, setMode] = useState<'licensed' | 'unlicensed'>('licensed');
   const [lookupNotice, setLookupNotice] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [inviteCodeRequired, setInviteCodeRequired] = useState<boolean | null>(
+    null,
+  );
   const [form, setForm] = useState({
     email: '',
     password: '',
     name: '',
     callsign: '',
+    handle: '',
     inviteCode: '',
   });
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<AuthConfig>('/auth/config')
+      .then((cfg) => {
+        if (!cancelled) setInviteCodeRequired(cfg.inviteCodeRequired);
+      })
+      .catch(() => {
+        if (!cancelled) setInviteCodeRequired(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function doLookup(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -61,17 +84,39 @@ export function RegisterPage() {
     }
   }
 
+  function continueUnlicensed(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setErr(null);
+    const handle = form.handle.trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,7}$/.test(handle)) {
+      setErr('Handle must be 3–7 letters or digits.');
+      return;
+    }
+    setForm((f) => ({ ...f, callsign: handle, name: '' }));
+    setLookupNotice(null);
+    setStep(2);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     try {
-      await register({
+      const payload: {
+        email: string;
+        password: string;
+        name: string;
+        callsign: string;
+        inviteCode?: string;
+      } = {
         email: form.email,
         password: form.password,
         name: form.name,
         callsign: form.callsign,
-        inviteCode: form.inviteCode || undefined,
-      });
+      };
+      if (inviteCodeRequired === true && form.inviteCode) {
+        payload.inviteCode = form.inviteCode;
+      }
+      await register(payload);
       nav('/');
     } catch (ex) {
       if (ex instanceof ApiErrorException) setErr(ex.payload.message);
@@ -83,6 +128,57 @@ export function RegisterPage() {
     setForm((f) => ({ ...f, [k]: v }));
 
   if (step === 1) {
+    if (mode === 'unlicensed') {
+      return (
+        <div style={{ maxWidth: 420, margin: '60px auto' }}>
+          <Card>
+            <h1>Create account</h1>
+            <p>Pick a unique handle to use in place of a callsign.</p>
+            <form onSubmit={continueUnlicensed}>
+              <label>
+                Handle
+                <Input
+                  value={form.handle}
+                  onChange={(e) =>
+                    update('handle')(e.target.value.toUpperCase())
+                  }
+                  placeholder="e.g. HAM42"
+                  required
+                />
+              </label>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                3–7 characters, letters and digits only.
+              </div>
+              {err && (
+                <div
+                  role="alert"
+                  style={{ color: 'var(--color-danger)', marginTop: 12 }}
+                >
+                  {err}
+                </div>
+              )}
+              <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+                <Button type="submit">Continue</Button>
+                <Link to="/login">Sign in</Link>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setMode('licensed');
+                    setErr(null);
+                  }}
+                >
+                  I do have a callsign
+                </a>
+              </div>
+            </form>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div style={{ maxWidth: 420, margin: '60px auto' }}>
         <Card>
@@ -104,6 +200,19 @@ export function RegisterPage() {
               </Button>
               <Link to="/login">Sign in</Link>
             </div>
+            <div style={{ marginTop: 12 }}>
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMode('unlicensed');
+                  setErr(null);
+                  setForm((f) => ({ ...f, callsign: '' }));
+                }}
+              >
+                I don't have a callsign yet
+              </a>
+            </div>
           </form>
         </Card>
       </div>
@@ -114,12 +223,18 @@ export function RegisterPage() {
     <div style={{ maxWidth: 420, margin: '60px auto' }}>
       <Card>
         <h1>Create account</h1>
+        {mode === 'unlicensed' && (
+          <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>
+            You're registering without a callsign — you can add one later from
+            Settings.
+          </div>
+        )}
         {lookupNotice && (
           <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>{lookupNotice}</div>
         )}
         <form onSubmit={submit}>
           <label>
-            Callsign
+            {mode === 'unlicensed' ? 'Handle' : 'Callsign'}
             <Input value={form.callsign} disabled />
           </label>
           <div style={{ marginTop: 4 }}>
@@ -131,7 +246,7 @@ export function RegisterPage() {
                 setLookupNotice(null);
               }}
             >
-              Change callsign
+              {mode === 'unlicensed' ? 'Change handle' : 'Change callsign'}
             </a>
           </div>
           <label style={{ display: 'block', marginTop: 12 }}>
@@ -161,13 +276,16 @@ export function RegisterPage() {
               required
             />
           </label>
-          <label style={{ display: 'block', marginTop: 12 }}>
-            Invite code (if required)
-            <Input
-              value={form.inviteCode}
-              onChange={(e) => update('inviteCode')(e.target.value)}
-            />
-          </label>
+          {inviteCodeRequired === true && (
+            <label style={{ display: 'block', marginTop: 12 }}>
+              Invite code
+              <Input
+                value={form.inviteCode}
+                onChange={(e) => update('inviteCode')(e.target.value)}
+                required
+              />
+            </label>
+          )}
           {err && (
             <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 12 }}>
               {err}

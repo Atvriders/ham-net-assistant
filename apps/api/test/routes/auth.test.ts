@@ -16,6 +16,14 @@ afterAll(async () => {
   await cleanupTestDb(prisma, dbFile);
 });
 
+describe('GET /api/auth/config', () => {
+  it('returns inviteCodeRequired=false when REGISTRATION_CODE unset', async () => {
+    const res = await request(app).get('/api/auth/config');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ inviteCodeRequired: false });
+  });
+});
+
 describe('POST /api/auth/register', () => {
   it('creates first user as ADMIN and sets cookie', async () => {
     const res = await request(app).post('/api/auth/register').send({
