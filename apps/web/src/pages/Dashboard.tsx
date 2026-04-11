@@ -44,7 +44,15 @@ export function Dashboard() {
               {n.name} — {n.repeater.name}
             </span>
             <span>
-              {dayName(when.getDay())} {when.toLocaleString()}
+              {dayName(when.getDay())}{' '}
+              {when.toLocaleString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              })}
             </span>
           </div>
         ))}
@@ -53,7 +61,7 @@ export function Dashboard() {
         <h2>Recent sessions</h2>
         {sessions.slice(0, 5).map((s) => (
           <div key={s.id}>
-            {new Date(s.startedAt).toLocaleString()} — {s.endedAt ? 'ended' : 'in progress'}
+            {new Date(s.startedAt).toLocaleString(undefined, { hour12: true })} — {s.endedAt ? 'ended' : 'in progress'}
           </div>
         ))}
       </Card>

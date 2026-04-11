@@ -52,7 +52,7 @@ export function LoginPage() {
           )}
           <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
             <Button type="submit">Sign in</Button>
-            <Link to="/register">Register</Link>
+            <Link className="hna-nav-link" to="/register">Register</Link>
           </div>
         </form>
       </Card>

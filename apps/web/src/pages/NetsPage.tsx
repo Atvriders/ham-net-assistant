@@ -7,7 +7,7 @@ import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
 import { Card } from '../components/ui/Card.js';
 import { useAuth } from '../auth/AuthProvider.js';
-import { dayName } from '../lib/time.js';
+import { dayName, to12h, to24h, formatStartLocal12h } from '../lib/time.js';
 
 interface NetWithRepeater extends Net {
   repeater: Repeater;
@@ -98,7 +98,7 @@ export function NetsPage() {
               <div>
                 <h3 style={{ margin: 0 }}>{n.name}</h3>
                 <div>
-                  {dayName(n.dayOfWeek)} at {n.startLocal} ({n.timezone})
+                  {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
                 </div>
                 <div>Repeater: {n.repeater.name}</div>
                 {n.theme && <div>Theme: {n.theme}</div>}
@@ -168,16 +168,51 @@ export function NetsPage() {
               </select>
             </label>
             <label>
-              Start time (HH:mm)
-              <Input
-                value={editing.data.startLocal}
-                onChange={(e) =>
+              Start time
+              {(() => {
+                const t = to12h(editing.data.startLocal);
+                const updateTime = (patch: Partial<typeof t>) => {
+                  const next = { ...t, ...patch };
                   setEditing({
                     ...editing,
-                    data: { ...editing.data, startLocal: e.target.value },
-                  })
-                }
-              />
+                    data: { ...editing.data, startLocal: to24h(next) },
+                  });
+                };
+                const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+                return (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select
+                      value={t.hour}
+                      onChange={(e) => updateTime({ hour: Number(e.target.value) })}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={minutes.includes(t.minute) ? t.minute : 0}
+                      onChange={(e) => updateTime({ minute: Number(e.target.value) })}
+                    >
+                      {minutes.map((m) => (
+                        <option key={m} value={m}>
+                          {String(m).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={t.meridiem}
+                      onChange={(e) =>
+                        updateTime({ meridiem: e.target.value as 'AM' | 'PM' })
+                      }
+                    >
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                );
+              })()}
             </label>
             <label>
               Theme

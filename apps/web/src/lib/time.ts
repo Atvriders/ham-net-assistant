@@ -36,6 +36,27 @@ function wallClockInTimeZone(now: Date, timeZone: string): Date {
   }
 }
 
+export function to12h(startLocal: string): { hour: number; minute: number; meridiem: 'AM' | 'PM' } {
+  const [hStr, mStr] = startLocal.split(':');
+  const h24 = Math.max(0, Math.min(23, Number(hStr) || 0));
+  const minute = Math.max(0, Math.min(59, Number(mStr) || 0));
+  const meridiem: 'AM' | 'PM' = h24 >= 12 ? 'PM' : 'AM';
+  const hour = ((h24 + 11) % 12) + 1;
+  return { hour, minute, meridiem };
+}
+
+export function to24h(t: { hour: number; minute: number; meridiem: 'AM' | 'PM' }): string {
+  const h12 = ((t.hour - 1) % 12) + 1;
+  let h24 = h12 % 12;
+  if (t.meridiem === 'PM') h24 += 12;
+  return `${String(h24).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
+}
+
+export function formatStartLocal12h(startLocal: string): string {
+  const { hour, minute, meridiem } = to12h(startLocal);
+  return `${hour}:${String(minute).padStart(2, '0')} ${meridiem}`;
+}
+
 export function nextOccurrence(
   dayOfWeek: number,
   startLocal: string,

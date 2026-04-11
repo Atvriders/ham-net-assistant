@@ -159,7 +159,7 @@ export function RegisterPage() {
               )}
               <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
                 <Button type="submit">Continue</Button>
-                <Link to="/login">Sign in</Link>
+                <Link className="hna-nav-link" to="/login">Sign in</Link>
               </div>
               <div style={{ marginTop: 12 }}>
                 <a
@@ -198,7 +198,7 @@ export function RegisterPage() {
               <Button type="submit" disabled={lookingUp}>
                 {lookingUp ? 'Looking up…' : 'Look up'}
               </Button>
-              <Link to="/login">Sign in</Link>
+              <Link className="hna-nav-link" to="/login">Sign in</Link>
             </div>
             <div style={{ marginTop: 12 }}>
               <a
@@ -293,7 +293,7 @@ export function RegisterPage() {
           )}
           <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
             <Button type="submit">Create account</Button>
-            <Link to="/login">Sign in</Link>
+            <Link className="hna-nav-link" to="/login">Sign in</Link>
           </div>
         </form>
       </Card>

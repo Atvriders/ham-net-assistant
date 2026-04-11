@@ -32,16 +32,16 @@ function NavBar() {
       }}
     >
       <img src={effectiveLogoUrl(current)} alt={current.logo.alt} style={{ height: 36 }} />
-      <strong>Ham-Net-Assistant</strong>
+      <strong style={{ color: 'var(--color-fg)' }}>Ham-Net-Assistant</strong>
       {user && (
         <>
-          <Link to="/">Dashboard</Link>
-          <Link to="/repeaters">Repeaters</Link>
-          <Link to="/nets">Nets</Link>
-          <Link to="/topics">Topics</Link>
-          <Link to="/stats">Stats</Link>
-          <Link to="/settings">Settings</Link>
-          {user.role === 'ADMIN' && <Link to="/admin">Admin</Link>}
+          <Link className="hna-nav-link" to="/">Dashboard</Link>
+          <Link className="hna-nav-link" to="/repeaters">Repeaters</Link>
+          <Link className="hna-nav-link" to="/nets">Nets</Link>
+          <Link className="hna-nav-link" to="/topics">Topics</Link>
+          <Link className="hna-nav-link" to="/stats">Stats</Link>
+          <Link className="hna-nav-link" to="/settings">Settings</Link>
+          {user.role === 'ADMIN' && <Link className="hna-nav-link" to="/admin">Admin</Link>}
           <span style={{ marginLeft: 'auto' }}>{user.callsign}</span>
           <Button variant="secondary" onClick={() => logout()}>Sign out</Button>
         </>

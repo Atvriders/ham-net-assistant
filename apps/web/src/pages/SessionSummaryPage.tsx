@@ -80,9 +80,9 @@ export function SessionSummaryPage() {
       </Card>
       <Card>
         <h2 style={{ marginTop: 0 }}>{net.name}</h2>
-        <div>Started: {new Date(session.startedAt).toLocaleString()}</div>
+        <div>Started: {new Date(session.startedAt).toLocaleString(undefined, { hour12: true })}</div>
         <div>
-          Ended: {session.endedAt ? new Date(session.endedAt).toLocaleString() : 'in progress'}
+          Ended: {session.endedAt ? new Date(session.endedAt).toLocaleString(undefined, { hour12: true }) : 'in progress'}
         </div>
         <div>Duration: {formatDuration(session.startedAt, session.endedAt)}</div>
         <div>Total check-ins: {checkIns.length}</div>
@@ -104,7 +104,7 @@ export function SessionSummaryPage() {
             >
               <strong>{ci.callsign}</strong> — {ci.nameAtCheckIn}
               <span style={{ float: 'right', color: 'var(--color-muted)' }}>
-                {new Date(ci.checkedInAt).toLocaleTimeString()}
+                {new Date(ci.checkedInAt).toLocaleTimeString(undefined, { hour12: true })}
               </span>
             </li>
           ))}
