@@ -19,6 +19,17 @@ const SuggestQuery = z.union([
 
 type RepeaterSuggestion = typeof RepeaterInput._type;
 
+// Many upstream databases (repeaterbook in particular) 403 requests that
+// arrive without a recognizable User-Agent. Node 20's native fetch sends no
+// UA header at all by default, which is what was tripping discovery in
+// production. Set an explicit, browser-shaped UA on every upstream call.
+const UPSTREAM_UA =
+  'Mozilla/5.0 (compatible; HamNetAssistant/1.0; +https://github.com/Atvriders/ham-net-assistant)';
+const UPSTREAM_HEADERS: Record<string, string> = {
+  'User-Agent': UPSTREAM_UA,
+  Accept: 'application/json, text/plain;q=0.9, */*;q=0.5',
+};
+
 interface RepeaterbookRow {
   Callsign?: string;
   Frequency?: string | number;
@@ -34,6 +45,26 @@ interface RepeaterbookRow {
 interface RepeaterbookResponse {
   count?: number;
   results?: RepeaterbookRow[];
+}
+
+// HearHam schema (from https://hearham.com/api/repeaters/v1 — an open JSON
+// dump maintained by the Repeater-START community). frequency/offset are
+// integer Hz, encode/decode are PL tones as strings.
+interface HearHamRow {
+  id?: number;
+  callsign?: string;
+  latitude?: number | string;
+  longitude?: number | string;
+  city?: string;
+  group?: string;
+  mode?: string;
+  encode?: string | number;
+  decode?: string | number;
+  frequency?: number | string;
+  offset?: number | string;
+  description?: string;
+  operational?: number;
+  restriction?: string;
 }
 
 const US_STATES: Record<string, string> = {
@@ -101,6 +132,103 @@ function mapRow(row: RepeaterbookRow): RepeaterSuggestion | null {
   };
 }
 
+function normalizeHearHamMode(raw: unknown): RepeaterSuggestion['mode'] {
+  const s = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+  if (s.includes('DMR')) return 'DMR';
+  if (s.includes('D-STAR') || s === 'DSTAR' || s === 'D STAR') return 'D-STAR';
+  if (s.includes('FUSION') || s === 'YSF' || s === 'C4FM') return 'Fusion';
+  return 'FM';
+}
+
+function mapHearHamRow(row: HearHamRow): RepeaterSuggestion | null {
+  const freqHz = num(row.frequency);
+  if (!Number.isFinite(freqHz) || freqHz <= 0) return null;
+  const frequency = Math.round((freqHz / 1e6) * 1000) / 1000; // MHz, 3dp
+  const offsetHz = num(row.offset);
+  const offsetKhz = Number.isFinite(offsetHz) ? Math.round(offsetHz / 1000) : 0;
+  const encode = num(row.encode);
+  const lat2 = num(row.latitude);
+  const lon2 = num(row.longitude);
+  const cs = (row.callsign ?? '').toString().trim() || 'UNKNOWN';
+  const coverage = (row.city ?? '').toString().trim() || null;
+  return {
+    name: `${cs} ${frequency}`,
+    frequency,
+    offsetKhz,
+    toneHz: Number.isFinite(encode) && encode > 0 ? encode : null,
+    mode: normalizeHearHamMode(row.mode),
+    coverage,
+    latitude: Number.isFinite(lat2) ? lat2 : null,
+    longitude: Number.isFinite(lon2) ? lon2 : null,
+  };
+}
+
+// ---- HearHam fetch + cache --------------------------------------------------
+// The dataset is ~20k rows (~10-15 MB JSON). Pull it once per process and
+// refresh every 6 hours. Exposed for test reset.
+const HEARHAM_URL = 'https://hearham.com/api/repeaters/v1';
+const HEARHAM_TTL_MS = 6 * 60 * 60 * 1000;
+interface HearHamCache {
+  rows: HearHamRow[];
+  fetchedAt: number;
+}
+let hearhamCache: HearHamCache | null = null;
+let hearhamInFlight: Promise<HearHamRow[] | null> | null = null;
+
+export function __resetHearhamCacheForTests(): void {
+  hearhamCache = null;
+  hearhamInFlight = null;
+}
+
+async function loadHearham(): Promise<HearHamRow[] | null> {
+  const now = Date.now();
+  if (hearhamCache && now - hearhamCache.fetchedAt < HEARHAM_TTL_MS) {
+    return hearhamCache.rows;
+  }
+  if (hearhamInFlight) return hearhamInFlight;
+  hearhamInFlight = (async () => {
+    try {
+      const res = await fetch(HEARHAM_URL, {
+        signal: AbortSignal.timeout(15000),
+        headers: UPSTREAM_HEADERS,
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as unknown;
+      if (!Array.isArray(data)) return null;
+      hearhamCache = { rows: data as HearHamRow[], fetchedAt: Date.now() };
+      return hearhamCache.rows;
+    } catch {
+      return null;
+    } finally {
+      hearhamInFlight = null;
+    }
+  })();
+  return hearhamInFlight;
+}
+
+async function fetchHearhamNearby(
+  lat: number,
+  lon: number,
+  distKm: number,
+): Promise<RepeaterSuggestion[] | null> {
+  const rows = await loadHearham();
+  if (!rows) return null;
+  const nearby: Array<{ suggestion: RepeaterSuggestion; km: number }> = [];
+  for (const row of rows) {
+    if (row.operational === 0) continue;
+    const rLat = num(row.latitude);
+    const rLon = num(row.longitude);
+    if (!Number.isFinite(rLat) || !Number.isFinite(rLon)) continue;
+    const km = haversineKm(lat, lon, rLat, rLon);
+    if (km > distKm) continue;
+    const mapped = mapHearHamRow(row);
+    if (!mapped) continue;
+    nearby.push({ suggestion: mapped, km });
+  }
+  nearby.sort((a, b) => a.km - b.km);
+  return nearby.slice(0, 20).map((x) => x.suggestion);
+}
+
 async function fetchRepeaterbookProx(
   lat: number,
   lon: number,
@@ -110,7 +238,34 @@ async function fetchRepeaterbookProx(
     const url = `https://www.repeaterbook.com/api/export.php?qtype=prox&lat=${lat}&long=${lon}&dist=${dist}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'HamNetAssistant/1.0' },
+      headers: UPSTREAM_HEADERS,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as RepeaterbookResponse;
+    const rows = Array.isArray(data.results) ? data.results : [];
+    const mapped: RepeaterSuggestion[] = [];
+    for (const row of rows) {
+      const m = mapRow(row);
+      if (!m) continue;
+      mapped.push(m);
+      if (mapped.length >= 20) break;
+    }
+    return mapped;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRepeaterbookRowProx(
+  lat: number,
+  lon: number,
+  dist: number,
+): Promise<RepeaterSuggestion[] | null> {
+  try {
+    const url = `https://www.repeaterbook.com/api/exportROW.php?qtype=prox&lat=${lat}&long=${lon}&dist=${dist}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: UPSTREAM_HEADERS,
     });
     if (!res.ok) return null;
     const data = (await res.json()) as RepeaterbookResponse;
@@ -137,7 +292,7 @@ async function fetchRepeaterbookState(
     const url = `https://www.repeaterbook.com/api/export.php?qtype=state&state=${encodeURIComponent(stateName)}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'HamNetAssistant/1.0' },
+      headers: UPSTREAM_HEADERS,
     });
     if (!res.ok) return null;
     const data = (await res.json()) as RepeaterbookResponse;
@@ -163,6 +318,13 @@ async function fetchRepeaterbookState(
     return null;
   }
 }
+
+export type RepeaterSuggestionSource =
+  | 'hearham'
+  | 'repeaterbook-prox'
+  | 'repeaterbook-row'
+  | 'repeaterbook-state'
+  | 'none';
 
 export function repeatersRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -207,20 +369,75 @@ export function repeatersRouter(prisma: PrismaClient): Router {
         lon = parsed.data.lon;
         dist = parsed.data.dist;
       }
-      const proxResult = await fetchRepeaterbookProx(lat, lon, dist);
-      if (proxResult != null) {
-        res.json({ suggestions: proxResult, source: 'repeaterbook-prox' });
+
+      const attempted: string[] = [];
+
+      // Primary: HearHam (open-data, reliable, single cached blob).
+      // Roughly convert miles to km for the in-memory haversine filter.
+      const distKm = dist * 1.60934;
+      attempted.push('hearham');
+      const hearham = await fetchHearhamNearby(lat, lon, distKm);
+      if (hearham != null && hearham.length > 0) {
+        res.json({
+          suggestions: hearham,
+          source: 'hearham' satisfies RepeaterSuggestionSource,
+          attempted,
+        });
         return;
       }
-      // Prox failed — try state fallback if we have a state (callsign variant)
+
+      // Fallback 1: RepeaterBook US prox.
+      attempted.push('repeaterbook-prox');
+      const proxResult = await fetchRepeaterbookProx(lat, lon, dist);
+      if (proxResult != null && proxResult.length > 0) {
+        res.json({
+          suggestions: proxResult,
+          source: 'repeaterbook-prox' satisfies RepeaterSuggestionSource,
+          attempted,
+        });
+        return;
+      }
+
+      // Fallback 2: RepeaterBook "rest of world" prox endpoint.
+      attempted.push('repeaterbook-row');
+      const rowResult = await fetchRepeaterbookRowProx(lat, lon, dist);
+      if (rowResult != null && rowResult.length > 0) {
+        res.json({
+          suggestions: rowResult,
+          source: 'repeaterbook-row' satisfies RepeaterSuggestionSource,
+          attempted,
+        });
+        return;
+      }
+
+      // Fallback 3: RepeaterBook US state-wide, sorted by distance
+      // (callsign variant only — we need a state code from callook).
       if (stateName) {
+        attempted.push('repeaterbook-state');
         const stateResult = await fetchRepeaterbookState(stateName, lat, lon);
-        if (stateResult != null) {
-          res.json({ suggestions: stateResult, source: 'repeaterbook-state' });
+        if (stateResult != null && stateResult.length > 0) {
+          res.json({
+            suggestions: stateResult,
+            source: 'repeaterbook-state' satisfies RepeaterSuggestionSource,
+            attempted,
+          });
           return;
         }
       }
-      res.json({ suggestions: [], source: 'none', reason: 'upstream-error' });
+
+      // If hearham returned an empty (but non-null) list AND every
+      // other source also returned nothing, treat that as "no nearby"
+      // rather than "upstream error" so the user sees a useful message.
+      const hearhamReturnedEmpty = hearham != null && hearham.length === 0;
+      const proxReturnedEmpty = proxResult != null && proxResult.length === 0;
+      const rowReturnedEmpty = rowResult != null && rowResult.length === 0;
+      const anySucceeded = hearhamReturnedEmpty || proxReturnedEmpty || rowReturnedEmpty;
+      res.json({
+        suggestions: [],
+        source: 'none' satisfies RepeaterSuggestionSource,
+        reason: anySucceeded ? 'no-nearby' : 'upstream-error',
+        attempted,
+      });
     }),
   );
 

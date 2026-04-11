@@ -23,6 +23,23 @@ const EMPTY_FORM: RepeaterInput = {
   longitude: null,
 };
 
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'hearham':
+      return 'HearHam community database';
+    case 'repeaterbook-prox':
+      return 'RepeaterBook (proximity)';
+    case 'repeaterbook-row':
+      return 'RepeaterBook (worldwide)';
+    case 'repeaterbook-state':
+      return 'RepeaterBook (state-wide, sorted by distance)';
+    case 'none':
+      return 'none';
+    default:
+      return source;
+  }
+}
+
 function RepeaterDetails({ r }: { r: RepeaterInput }) {
   return (
     <div>
@@ -66,6 +83,7 @@ export function RepeatersPage() {
   const [coordErr, setCoordErr] = useState<string | null>(null);
   const [gridBusy, setGridBusy] = useState(false);
   const [suggestionSource, setSuggestionSource] = useState<string | null>(null);
+  const [attemptedSources, setAttemptedSources] = useState<string[]>([]);
 
   async function reload(signal?: AbortSignal) {
     const rows = await apiFetch<Repeater[]>('/repeaters', { signal });
@@ -139,18 +157,22 @@ export function RepeatersPage() {
     setTopAlert(null);
     setSuggestions([]);
     setSuggestionSource(null);
+    setAttemptedSources([]);
     if (openModal) setSuggestionsOpen(true);
     try {
       const result = await apiFetch<{
         suggestions: RepeaterInput[];
         reason?: string;
         source?: string;
+        attempted?: string[];
       }>(`/repeaters/suggestions?${query}`);
       if (result.source) setSuggestionSource(result.source);
+      if (Array.isArray(result.attempted)) setAttemptedSources(result.attempted);
       if (result.reason === 'upstream-error') {
         setSuggestionsOpen(false);
+        const tried = (result.attempted ?? []).join(', ') || 'all known sources';
         setTopAlert(
-          'Repeater databases are unreachable right now — try again later, or enter repeaters manually.',
+          `Repeater databases are unreachable right now (tried: ${tried}). Try again later, or enter repeaters manually.`,
         );
         return;
       }
@@ -531,7 +553,7 @@ export function RepeatersPage() {
                 {addingAll ? 'Adding…' : `Add all (${suggestions.length})`}
               </Button>
             </div>
-            {suggestionSource === 'repeaterbook-state' && (
+            {suggestionSource && (
               <div
                 style={{
                   fontSize: 12,
@@ -539,7 +561,9 @@ export function RepeatersPage() {
                   marginBottom: 8,
                 }}
               >
-                (from Repeaterbook state-wide fallback)
+                Source: {sourceLabel(suggestionSource)}
+                {attemptedSources.length > 1 &&
+                  ` (tried: ${attemptedSources.join(' → ')})`}
               </div>
             )}
             <div style={{ display: 'grid', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
