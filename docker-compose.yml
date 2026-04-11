@@ -11,6 +11,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me}
       REGISTRATION_CODE: ${REGISTRATION_CODE:-}
       NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/themes"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
 volumes:
   hna-data:

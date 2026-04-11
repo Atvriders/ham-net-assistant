@@ -50,4 +50,13 @@ COPY --from=build /app/themes themes
 ENV STATIC_DIR=/app/apps/web/dist
 ENV DATABASE_URL=file:/data/ham.db
 EXPOSE 3000
-CMD ["sh", "-c", "npx -w @hna/api prisma migrate deploy && node apps/api/dist/index.js"]
+
+RUN addgroup -S hna && adduser -S hna -G hna \
+    && mkdir -p /data \
+    && chown -R hna:hna /app /data
+USER hna
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/themes >/dev/null || exit 1
+
+CMD ["sh", "-c", "npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]

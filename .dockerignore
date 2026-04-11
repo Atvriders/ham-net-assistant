@@ -6,3 +6,11 @@ node_modules
 *.log
 apps/api/prisma/dev.db*
 data
+.env
+.env.*
+.github
+docs
+coverage
+.vscode
+.DS_Store
+*.md

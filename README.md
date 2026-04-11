@@ -28,7 +28,8 @@ Uses the prebuilt image from GHCR — no local build required:
 To build from source instead (requires the repo checkout):
 
     docker build -f docker/Dockerfile -t hna:local .
-    docker run -p 3045:3000 -v hna-data:/data \
+    docker run -d --name hna --restart unless-stopped \
+      -p 3045:3000 -v hna-data:/data \
       -e JWT_SECRET=change-me-change-me-change-me hna:local
 
 Then open http://localhost:3045. First registered user becomes ADMIN.
