@@ -38,6 +38,34 @@ describe('GET /api/callsign-lookup/:callsign', () => {
     expect(res.body.licenseClass).toBe('Extra');
   });
 
+  it('returns grid square, lat/lon, and address when present', async () => {
+    mockCallook({
+      status: 'VALID',
+      name: 'JANE DOE',
+      current: { operClass: 'Extra' },
+      address: { line1: '123 Main St', line2: 'MANHATTAN, KS 66502' },
+      location: { latitude: '39.1836', longitude: '-96.5717', gridsquare: 'EM19jd' },
+    });
+    const res = await request(app).get('/api/callsign-lookup/K0JAM');
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(true);
+    expect(res.body.gridSquare).toBe('EM19jd');
+    expect(res.body.latitude).toBeCloseTo(39.1836, 3);
+    expect(res.body.longitude).toBeCloseTo(-96.5717, 3);
+    expect(res.body.address).toBe('MANHATTAN, KS 66502');
+  });
+
+  it('location fields are null when callook has no location block', async () => {
+    mockCallook({ status: 'UPDATING' });
+    const res = await request(app).get('/api/callsign-lookup/W1AW');
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(false);
+    expect(res.body.gridSquare).toBeNull();
+    expect(res.body.latitude).toBeNull();
+    expect(res.body.longitude).toBeNull();
+    expect(res.body.address).toBeNull();
+  });
+
   it('drops middle name from "FIRST MIDDLE LAST"', async () => {
     mockCallook({
       status: 'VALID',
