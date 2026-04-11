@@ -60,12 +60,13 @@ async function uploadMultipart(slug: string, blob: Blob, filename: string) {
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
 }
 
-async function uploadUrl(slug: string, url: string) {
+async function uploadUrl(slug: string, url: string, signal?: AbortSignal) {
   const res = await fetch(`/api/themes/${slug}/logo`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
+    signal,
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -91,6 +92,7 @@ export function LogoUploadModal({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   function reset() {
     setImageSrc(null);
@@ -98,6 +100,8 @@ export function LogoUploadModal({
     setCrop(undefined);
     setErr(null);
     setBusy(false);
+    abortRef.current?.abort();
+    abortRef.current = null;
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -131,27 +135,25 @@ export function LogoUploadModal({
   }
 
   async function saveUrlOriginal() {
-    setBusy(true);
-    setErr(null);
-    try {
-      await uploadUrl(slug, url);
-      onUploaded();
-      reset();
-      onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function fetchUrlIntoCropper() {
     if (!/^https?:\/\//i.test(url)) {
       setErr('Enter a http(s) url');
       return;
     }
+    setBusy(true);
     setErr(null);
-    setImageSrc(url);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      await uploadUrl(slug, url, ctrl.signal);
+      onUploaded();
+      reset();
+      onClose();
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -176,37 +178,42 @@ export function LogoUploadModal({
         {tab === 'file' && (
           <div>
             <input type="file" accept="image/*" onChange={onFile} />
+            {imageSrc && (
+              <div style={{ marginTop: 12 }}>
+                <ReactCrop
+                  crop={crop}
+                  onChange={(c) => setCrop(c)}
+                  aspect={1}
+                  keepSelection
+                >
+                  <img
+                    ref={imgRef}
+                    src={imageSrc}
+                    alt="to crop"
+                    style={{ maxWidth: '100%', maxHeight: 320 }}
+                    onLoad={onImageLoad}
+                  />
+                </ReactCrop>
+              </div>
+            )}
           </div>
         )}
 
         {tab === 'url' && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input
-              placeholder="https://example.com/logo.png"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            <Button onClick={fetchUrlIntoCropper}>Preview</Button>
-          </div>
-        )}
-
-        {imageSrc && (
-          <div style={{ marginTop: 12 }}>
-            <ReactCrop
-              crop={crop}
-              onChange={(c) => setCrop(c)}
-              aspect={1}
-              keepSelection
-            >
-              <img
-                ref={imgRef}
-                src={imageSrc}
-                alt="to crop"
-                style={{ maxWidth: '100%', maxHeight: 320 }}
-                onLoad={onImageLoad}
-                crossOrigin="anonymous"
+          <div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input
+                placeholder="https://example.com/logo.png"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
               />
-            </ReactCrop>
+              <Button onClick={saveUrlOriginal} disabled={busy || !url}>
+                Upload
+              </Button>
+            </div>
+            <div style={{ fontSize: 12, marginTop: 6, color: 'var(--color-muted)' }}>
+              The server fetches and stores the image as-is. To crop, use the file tab.
+            </div>
           </div>
         )}
 
@@ -217,14 +224,9 @@ export function LogoUploadModal({
         )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-          {imageSrc && (
+          {tab === 'file' && imageSrc && (
             <Button onClick={saveCropped} disabled={busy}>
               Save cropped
-            </Button>
-          )}
-          {tab === 'url' && url && (
-            <Button variant="secondary" onClick={saveUrlOriginal} disabled={busy}>
-              Save original (no crop)
             </Button>
           )}
           <Button variant="secondary" onClick={() => { reset(); onClose(); }}>Cancel</Button>

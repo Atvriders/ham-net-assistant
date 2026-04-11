@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import type { CheckIn, NetSession, Net, NetInput, Repeater } from '@hna/shared';
+import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { CallsignInput } from '../components/CallsignInput.js';
@@ -15,6 +15,23 @@ interface SessionResponse extends NetSession {
 interface NetFull extends Net {
   repeater: Repeater;
 }
+interface DirectoryEntry {
+  callsign: string;
+  name: string;
+}
+
+function toNetInput(n: NetFull | Net): NetInput {
+  return {
+    name: n.name,
+    repeaterId: n.repeaterId,
+    dayOfWeek: n.dayOfWeek,
+    startLocal: n.startLocal,
+    timezone: n.timezone,
+    theme: n.theme ?? null,
+    scriptMd: n.scriptMd ?? null,
+    active: n.active,
+  };
+}
 
 export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -24,35 +41,42 @@ export function RunNetPage() {
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
   const [script, setScript] = useState('');
+  const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
+  const [savedFlash, setSavedFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scriptInitializedRef = useRef<boolean>(false);
 
-  async function loadSession() {
+  async function loadSession(signal?: AbortSignal) {
     if (!sessionId) return;
-    const s = await apiFetch<SessionResponse>(`/sessions/${sessionId}`);
+    const s = await apiFetch<SessionResponse>(`/sessions/${sessionId}`, { signal });
     setSession(s);
-    const nets = await apiFetch<NetFull[]>('/nets');
+    const nets = await apiFetch<NetFull[]>('/nets', { signal });
     const n = nets.find((x) => x.id === s.netId) ?? null;
     setNet(n);
-    if (n?.scriptMd && !script) setScript(n.scriptMd);
+    if (!scriptInitializedRef.current) {
+      if (n?.scriptMd) setScript(n.scriptMd);
+      scriptInitializedRef.current = true;
+    }
   }
-  useEffect(() => {
-    void loadSession();
-  }, [sessionId]); // eslint-disable-line
 
-  async function addCheckIn(e: React.FormEvent) {
-    e.preventDefault();
-    if (!sessionId) return;
-    if (!/^[A-Z0-9]{3,7}$/.test(callsign)) return;
-    if (!name.trim()) return;
-    await apiFetch(`/sessions/${sessionId}/checkins`, {
-      method: 'POST',
-      body: JSON.stringify({ callsign, nameAtCheckIn: name }),
+  useEffect(() => {
+    const ctrl = new AbortController();
+    loadSession(ctrl.signal).catch((e) => {
+      if (!isAbortError(e)) throw e;
     });
-    setCallsign('');
-    setName('');
-    inputRef.current?.focus();
-    await loadSession();
-  }
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    apiFetch<DirectoryEntry[]>('/users/directory', { signal: ctrl.signal })
+      .then(setDirectory)
+      .catch((e) => {
+        if (!isAbortError(e)) console.warn('directory load failed', e);
+      });
+    return () => ctrl.abort();
+  }, []);
 
   async function undoLast() {
     const last = session?.checkIns[0];
@@ -68,10 +92,70 @@ export function RunNetPage() {
       method: 'PATCH',
       body: JSON.stringify({ endedAt: new Date().toISOString() }),
     });
-    nav('/stats');
+    nav(`/sessions/${sessionId}/summary`);
+  }
+
+  async function addCheckIn(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!sessionId) return;
+    if (!/^[A-Z0-9]{3,7}$/.test(callsign)) return;
+    if (!name.trim()) return;
+    const isMember = directory.some((d) => d.callsign === callsign);
+    if (!isMember) {
+      if (!confirm(`Log ${callsign} as visitor?`)) return;
+    }
+    await apiFetch(`/sessions/${sessionId}/checkins`, {
+      method: 'POST',
+      body: JSON.stringify({ callsign, nameAtCheckIn: name }),
+    });
+    setCallsign('');
+    setName('');
+    inputRef.current?.focus();
+    await loadSession();
+  }
+
+  async function saveScript() {
+    if (!net) return;
+    // fetch fresh net body
+    const nets = await apiFetch<NetFull[]>('/nets');
+    const fresh = nets.find((x) => x.id === net.id);
+    if (!fresh) return;
+    const body: NetInput = { ...toNetInput(fresh), scriptMd: script };
+    await apiFetch(`/nets/${net.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1500);
+  }
+
+  // Escape key ends net
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        void endNet();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  function onCallsignKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Backspace' && callsign === '') {
+      e.preventDefault();
+      void undoLast();
+    }
   }
 
   if (!session || !net) return <div style={{ padding: 24 }}>Loading session…</div>;
+
+  const suggestions =
+    callsign.length > 0
+      ? directory
+          .filter((d) => d.callsign.includes(callsign.toUpperCase()))
+          .slice(0, 8)
+      : directory.slice(0, 8);
 
   return (
     <div style={{ display: 'grid', gap: 16, padding: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
@@ -86,9 +170,12 @@ export function RunNetPage() {
           Net: <strong>{net.name}</strong>
         </div>
         {net.theme && <div>Theme: {net.theme}</div>}
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button variant="danger" onClick={endNet}>
             End net
+          </Button>
+          <Button variant="secondary" onClick={saveScript}>
+            {savedFlash ? 'Saved' : 'Save script'}
           </Button>
         </div>
       </Card>
@@ -101,7 +188,22 @@ export function RunNetPage() {
         <form onSubmit={addCheckIn}>
           <label>
             Callsign
-            <CallsignInput ref={inputRef} value={callsign} onChange={setCallsign} autoFocus />
+            <div onKeyDown={onCallsignKeyDown}>
+              <CallsignInput
+                ref={inputRef}
+                value={callsign}
+                onChange={setCallsign}
+                autoFocus
+                list="callsign-directory"
+              />
+            </div>
+            <datalist id="callsign-directory">
+              {suggestions.map((d) => (
+                <option key={d.callsign} value={d.callsign}>
+                  {d.name}
+                </option>
+              ))}
+            </datalist>
           </label>
           <label>
             Name

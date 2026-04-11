@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { Net, Repeater, NetSession } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
 
@@ -12,11 +12,21 @@ export function Dashboard() {
   const [nets, setNets] = useState<NetWithRepeater[]>([]);
   const [sessions, setSessions] = useState<NetSession[]>([]);
   useEffect(() => {
-    void apiFetch<NetWithRepeater[]>('/nets').then(setNets);
-    void apiFetch<NetSession[]>('/sessions').then(setSessions);
+    const ctrl = new AbortController();
+    apiFetch<NetWithRepeater[]>('/nets', { signal: ctrl.signal })
+      .then(setNets)
+      .catch((e) => {
+        if (!isAbortError(e)) throw e;
+      });
+    apiFetch<NetSession[]>('/sessions', { signal: ctrl.signal })
+      .then(setSessions)
+      .catch((e) => {
+        if (!isAbortError(e)) throw e;
+      });
+    return () => ctrl.abort();
   }, []);
   const upcoming = [...nets]
-    .map((n) => ({ n, when: nextOccurrence(n.dayOfWeek, n.startLocal) }))
+    .map((n) => ({ n, when: nextOccurrence(n.dayOfWeek, n.startLocal, n.timezone) }))
     .sort((a, b) => a.when.getTime() - b.when.getTime())
     .slice(0, 3);
 

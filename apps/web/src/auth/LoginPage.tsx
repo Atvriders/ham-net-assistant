@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Card } from '../components/ui/Card.js';
@@ -9,6 +9,7 @@ import { ApiErrorException } from '../api/client.js';
 export function LoginPage() {
   const { login } = useAuth();
   const nav = useNavigate();
+  const loc = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -18,7 +19,8 @@ export function LoginPage() {
     setErr(null);
     try {
       await login({ email, password });
-      nav('/');
+      const from = (loc.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+      nav(from && from !== '/login' ? from : '/', { replace: true });
     } catch (ex) {
       if (ex instanceof ApiErrorException) setErr(ex.payload.message);
       else setErr('Login failed');

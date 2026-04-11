@@ -37,8 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   };
   const logout: AuthCtx['logout'] = async () => {
-    await apiFetch<void>('/auth/logout', { method: 'POST' });
     setUser(null);
+    // fire-and-forget network logout
+    apiFetch<void>('/auth/logout', { method: 'POST' }).catch(() => {
+      /* ignore */
+    });
   };
   const updateMe: AuthCtx['updateMe'] = async (patch) => {
     setUser(

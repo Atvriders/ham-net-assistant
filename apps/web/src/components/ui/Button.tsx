@@ -10,7 +10,7 @@ export function Button({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return (
     <button
-      className={`hna-btn ${variant === 'primary' ? '' : variant} ${className}`}
+      className={`hna-btn${variant !== 'primary' ? ' ' + variant : ''}${className ? ' ' + className : ''}`}
       {...rest}
     />
   );

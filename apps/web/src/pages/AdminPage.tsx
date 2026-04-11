@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import type { PublicUser, Role } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 
 export function AdminPage() {
   const [users, setUsers] = useState<PublicUser[]>([]);
 
-  async function reload() {
-    setUsers(await apiFetch<PublicUser[]>('/users'));
+  async function reload(signal?: AbortSignal) {
+    setUsers(await apiFetch<PublicUser[]>('/users', { signal }));
   }
   useEffect(() => {
-    void reload();
+    const ctrl = new AbortController();
+    reload(ctrl.signal).catch((e) => {
+      if (!isAbortError(e)) throw e;
+    });
+    return () => ctrl.abort();
   }, []);
 
   async function setRole(id: string, role: Role) {

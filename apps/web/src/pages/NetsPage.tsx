@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Net, NetInput, Repeater } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isAbortError } from '../api/client.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
@@ -11,6 +11,19 @@ import { dayName } from '../lib/time.js';
 
 interface NetWithRepeater extends Net {
   repeater: Repeater;
+}
+
+function toNetInput(n: NetWithRepeater): NetInput {
+  return {
+    name: n.name,
+    repeaterId: n.repeaterId,
+    dayOfWeek: n.dayOfWeek,
+    startLocal: n.startLocal,
+    timezone: n.timezone,
+    theme: n.theme ?? null,
+    scriptMd: n.scriptMd ?? null,
+    active: n.active,
+  };
 }
 
 const empty: NetInput = {
@@ -32,16 +45,20 @@ export function NetsPage() {
   const [repeaters, setRepeaters] = useState<Repeater[]>([]);
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
 
-  async function reload() {
+  async function reload(signal?: AbortSignal) {
     const [n, r] = await Promise.all([
-      apiFetch<NetWithRepeater[]>('/nets'),
-      apiFetch<Repeater[]>('/repeaters'),
+      apiFetch<NetWithRepeater[]>('/nets', { signal }),
+      apiFetch<Repeater[]>('/repeaters', { signal }),
     ]);
     setNets(n);
     setRepeaters(r);
   }
   useEffect(() => {
-    void reload();
+    const ctrl = new AbortController();
+    reload(ctrl.signal).catch((e) => {
+      if (!isAbortError(e)) throw e;
+    });
+    return () => ctrl.abort();
   }, []);
 
   async function save() {
@@ -89,7 +106,10 @@ export function NetsPage() {
               <div style={{ display: 'flex', gap: 8 }}>
                 {canEdit && <Button onClick={() => startNet(n.id)}>Start net</Button>}
                 {canEdit && (
-                  <Button variant="secondary" onClick={() => setEditing({ id: n.id, data: n })}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setEditing({ id: n.id, data: toNetInput(n) })}
+                  >
                     Edit
                   </Button>
                 )}
