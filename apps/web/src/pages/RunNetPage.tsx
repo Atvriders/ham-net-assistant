@@ -9,11 +9,19 @@ import { Input } from '../components/ui/Input.js';
 import { ScriptEditor } from '../components/ScriptEditor.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 
-interface SessionResponse extends NetSession {
-  checkIns: CheckIn[];
+interface NetLinkWithRepeater {
+  id: string;
+  repeaterId: string;
+  repeater: Repeater;
+  note?: string | null;
 }
 interface NetFull extends Net {
   repeater: Repeater;
+  links?: NetLinkWithRepeater[];
+}
+interface SessionResponse extends NetSession {
+  checkIns: CheckIn[];
+  net?: NetFull;
 }
 interface DirectoryEntry {
   callsign: string;
@@ -21,6 +29,7 @@ interface DirectoryEntry {
 }
 
 function toNetInput(n: NetFull | Net): NetInput {
+  const links = (n as NetFull).links;
   return {
     name: n.name,
     repeaterId: n.repeaterId,
@@ -30,6 +39,7 @@ function toNetInput(n: NetFull | Net): NetInput {
     theme: n.theme ?? null,
     scriptMd: n.scriptMd ?? null,
     active: n.active,
+    linkedRepeaterIds: links ? links.map((l) => l.repeaterId) : undefined,
   };
 }
 
@@ -50,8 +60,11 @@ export function RunNetPage() {
     if (!sessionId) return;
     const s = await apiFetch<SessionResponse>(`/sessions/${sessionId}`, { signal });
     setSession(s);
-    const nets = await apiFetch<NetFull[]>('/nets', { signal });
-    const n = nets.find((x) => x.id === s.netId) ?? null;
+    let n: NetFull | null = s.net ?? null;
+    if (!n) {
+      const nets = await apiFetch<NetFull[]>('/nets', { signal });
+      n = nets.find((x) => x.id === s.netId) ?? null;
+    }
     setNet(n);
     if (!scriptInitializedRef.current) {
       if (n?.scriptMd) setScript(n.scriptMd);
@@ -170,6 +183,23 @@ export function RunNetPage() {
           Net: <strong>{net.name}</strong>
         </div>
         {net.theme && <div>Theme: {net.theme}</div>}
+        {net.links && net.links.length > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            <strong>Linked:</strong>
+            {net.links.map((l) => (
+              <div key={l.id}>
+                {l.repeater.name} — {formatFrequency(l.repeater.frequency)}{' '}
+                {formatOffset(l.repeater.offsetKhz)}
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button variant="danger" onClick={endNet}>
             End net

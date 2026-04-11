@@ -6,6 +6,7 @@ import { dayName, nextOccurrence } from '../lib/time.js';
 
 interface NetWithRepeater extends Net {
   repeater: Repeater;
+  links?: Array<{ id: string; repeaterId: string; repeater: Repeater }>;
 }
 
 export function Dashboard() {
@@ -42,6 +43,7 @@ export function Dashboard() {
           >
             <span>
               {n.name} — {n.repeater.name}
+              {n.links && n.links.length > 0 ? ` (+${n.links.length} linked)` : ''}
             </span>
             <span>
               {dayName(when.getDay())}{' '}

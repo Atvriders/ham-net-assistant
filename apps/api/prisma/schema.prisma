@@ -53,6 +53,7 @@ model Repeater {
   longitude  Float?
   createdAt  DateTime @default(now())
   nets       Net[]
+  netLinks   NetLink[] @relation("LinkedNet")
 }
 
 model Net {
@@ -67,6 +68,20 @@ model Net {
   scriptMd   String?
   active     Boolean      @default(true)
   sessions   NetSession[]
+  links      NetLink[]
+}
+
+model NetLink {
+  id         String   @id @default(cuid())
+  netId      String
+  net        Net      @relation(fields: [netId], references: [id], onDelete: Cascade)
+  repeaterId String
+  repeater   Repeater @relation("LinkedNet", fields: [repeaterId], references: [id], onDelete: Cascade)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@unique([netId, repeaterId])
+  @@index([netId])
 }
 
 model NetSession {

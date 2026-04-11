@@ -9,6 +9,7 @@ export const NetInput = z.object({
   theme: z.string().max(200).nullable().optional(),
   scriptMd: z.string().max(20000).nullable().optional(),
   active: z.boolean().optional(),
+  linkedRepeaterIds: z.array(z.string()).max(30).optional(),
 });
 export type NetInput = z.infer<typeof NetInput>;
 

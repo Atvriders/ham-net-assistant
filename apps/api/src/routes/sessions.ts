@@ -45,16 +45,21 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const session = await prisma.netSession.findUnique({
       where: { id: req.params.id },
       include: {
-        net: { include: { repeater: true } },
+        net: {
+          include: {
+            repeater: true,
+            links: { include: { repeater: true } },
+          },
+        },
         checkIns: { orderBy: { checkedInAt: 'asc' } },
       },
     });
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     const { net, checkIns, ...rest } = session;
-    const { repeater, ...netRest } = net;
+    const { repeater, links, ...netRest } = net;
     res.json({
       session: rest,
-      net: netRest,
+      net: { ...netRest, links },
       repeater,
       checkIns,
       stats: { count: checkIns.length },
@@ -64,7 +69,15 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   flat.get('/:id', asyncHandler(async (req, res) => {
     const s = await prisma.netSession.findUnique({
       where: { id: req.params.id },
-      include: { checkIns: { orderBy: { checkedInAt: 'desc' } } },
+      include: {
+        checkIns: { orderBy: { checkedInAt: 'desc' } },
+        net: {
+          include: {
+            repeater: true,
+            links: { include: { repeater: true } },
+          },
+        },
+      },
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     res.json(s);

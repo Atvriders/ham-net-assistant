@@ -9,8 +9,15 @@ import { Card } from '../components/ui/Card.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, to12h, to24h, formatStartLocal12h } from '../lib/time.js';
 
+interface NetLinkWithRepeater {
+  id: string;
+  repeaterId: string;
+  repeater: Repeater;
+  note?: string | null;
+}
 interface NetWithRepeater extends Net {
   repeater: Repeater;
+  links: NetLinkWithRepeater[];
 }
 
 function toNetInput(n: NetWithRepeater): NetInput {
@@ -23,6 +30,7 @@ function toNetInput(n: NetWithRepeater): NetInput {
     theme: n.theme ?? null,
     scriptMd: n.scriptMd ?? null,
     active: n.active,
+    linkedRepeaterIds: (n.links ?? []).map((l) => l.repeaterId),
   };
 }
 
@@ -35,6 +43,7 @@ const empty: NetInput = {
   theme: '',
   scriptMd: '',
   active: true,
+  linkedRepeaterIds: [],
 };
 
 export function NetsPage() {
@@ -101,6 +110,14 @@ export function NetsPage() {
                   {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
                 </div>
                 <div>Repeater: {n.repeater.name}</div>
+                {n.links && n.links.length > 0 && (
+                  <div>
+                    Links:{' '}
+                    {n.links
+                      .map((l) => `${l.repeater.name} ${l.repeater.frequency.toFixed(2)}`)
+                      .join(', ')}
+                  </div>
+                )}
                 {n.theme && <div>Theme: {n.theme}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -149,6 +166,43 @@ export function NetsPage() {
                 ))}
               </select>
             </label>
+            <label>Linked repeaters (optional)</label>
+            <div
+              style={{
+                maxHeight: 180,
+                overflowY: 'auto',
+                border: '1px solid var(--color-border)',
+                borderRadius: 6,
+                padding: 8,
+              }}
+            >
+              {repeaters
+                .filter((r) => r.id !== editing.data.repeaterId)
+                .map((r) => (
+                  <label
+                    key={r.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 4 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={(editing.data.linkedRepeaterIds ?? []).includes(r.id)}
+                      onChange={(e) => {
+                        const current = editing.data.linkedRepeaterIds ?? [];
+                        const next = e.target.checked
+                          ? [...current, r.id]
+                          : current.filter((id) => id !== r.id);
+                        setEditing({
+                          ...editing,
+                          data: { ...editing.data, linkedRepeaterIds: next },
+                        });
+                      }}
+                    />
+                    <span>
+                      {r.name} — {r.frequency.toFixed(3)} MHz
+                    </span>
+                  </label>
+                ))}
+            </div>
             <label>
               Day of week
               <select

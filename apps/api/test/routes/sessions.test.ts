@@ -55,6 +55,9 @@ describe('sessions', () => {
     const g = await request(app).get(`/api/sessions/${s.body.id}`);
     expect(g.status).toBe(200);
     expect(g.body.checkIns).toEqual([]);
+    expect(g.body.net).toBeDefined();
+    expect(g.body.net.repeater).toBeDefined();
+    expect(Array.isArray(g.body.net.links)).toBe(true);
   });
   it('GET list filters by netId', async () => {
     await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

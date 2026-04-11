@@ -6,9 +6,15 @@ import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 
+interface NetLinkWithRepeater {
+  id: string;
+  repeaterId: string;
+  repeater: Repeater;
+  note?: string | null;
+}
 interface SummaryResponse {
   session: NetSession;
-  net: Net;
+  net: Net & { links?: NetLinkWithRepeater[] };
   repeater: Repeater;
   checkIns: CheckIn[];
   stats: { count: number };
@@ -77,6 +83,23 @@ export function SessionSummaryPage() {
         <div>Offset: {formatOffset(repeater.offsetKhz)}</div>
         <div>Tone: {formatTone(repeater.toneHz)}</div>
         <div>Mode: {repeater.mode}</div>
+        {net.links && net.links.length > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            <strong>Linked:</strong>
+            {net.links.map((l) => (
+              <div key={l.id}>
+                {l.repeater.name} — {formatFrequency(l.repeater.frequency)}{' '}
+                {formatOffset(l.repeater.offsetKhz)}
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
       <Card>
         <h2 style={{ marginTop: 0 }}>{net.name}</h2>
