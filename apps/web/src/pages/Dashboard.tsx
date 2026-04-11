@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Net, Repeater, NetSession } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
+import { Button } from '../components/ui/Button.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
 
 interface NetWithRepeater extends Net {
@@ -9,9 +11,16 @@ interface NetWithRepeater extends Net {
   links?: Array<{ id: string; repeaterId: string; repeater: Repeater }>;
 }
 
+interface ActiveSessionRow extends NetSession {
+  net: { id: string; name: string; repeater: Repeater };
+  topicTitle?: string | null;
+  topic?: { id: string; title: string } | null;
+}
+
 export function Dashboard() {
   const [nets, setNets] = useState<NetWithRepeater[]>([]);
   const [sessions, setSessions] = useState<NetSession[]>([]);
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
   useEffect(() => {
     const ctrl = new AbortController();
     apiFetch<NetWithRepeater[]>('/nets', { signal: ctrl.signal })
@@ -21,6 +30,11 @@ export function Dashboard() {
       });
     apiFetch<NetSession[]>('/sessions', { signal: ctrl.signal })
       .then(setSessions)
+      .catch((e) => {
+        if (!isAbortError(e)) throw e;
+      });
+    apiFetch<ActiveSessionRow[]>('/nets/active', { signal: ctrl.signal })
+      .then(setActiveSessions)
       .catch((e) => {
         if (!isAbortError(e)) throw e;
       });
@@ -59,6 +73,35 @@ export function Dashboard() {
           </div>
         ))}
       </Card>
+      {activeSessions.length > 0 && (
+        <Card>
+          <h2>Currently running</h2>
+          {activeSessions.map((s) => (
+            <div
+              key={s.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '6px 0',
+              }}
+            >
+              <span>
+                {s.net.name} — {s.net.repeater.name}
+                {(s.topicTitle || s.topic) && (
+                  <span style={{ color: 'var(--color-muted)' }}>
+                    {' '}
+                    · {s.topicTitle ?? s.topic?.title}
+                  </span>
+                )}
+              </span>
+              <Link to={`/nets/${s.net.id}/join`}>
+                <Button>Join {s.net.name}</Button>
+              </Link>
+            </div>
+          ))}
+        </Card>
+      )}
       <Card>
         <h2>Recent sessions</h2>
         {sessions.slice(0, 5).map((s) => (

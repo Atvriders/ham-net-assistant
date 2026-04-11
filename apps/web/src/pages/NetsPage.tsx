@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
 import { Card } from '../components/ui/Card.js';
+import { StartNetModal } from '../components/StartNetModal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, to12h, to24h, formatStartLocal12h } from '../lib/time.js';
 
@@ -53,6 +54,7 @@ export function NetsPage() {
   const [nets, setNets] = useState<NetWithRepeater[]>([]);
   const [repeaters, setRepeaters] = useState<Repeater[]>([]);
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
+  const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
 
   async function reload(signal?: AbortSignal) {
     const [n, r] = await Promise.all([
@@ -79,9 +81,8 @@ export function NetsPage() {
     await reload();
   }
 
-  async function startNet(id: string) {
-    const s = await apiFetch<{ id: string }>(`/nets/${id}/sessions`, { method: 'POST' });
-    nav(`/run/${s.id}`);
+  function openStart(id: string, name: string) {
+    setStarting({ id, name });
   }
 
   return (
@@ -121,7 +122,7 @@ export function NetsPage() {
                 {n.theme && <div>Theme: {n.theme}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                {canEdit && <Button onClick={() => startNet(n.id)}>Start net</Button>}
+                {canEdit && <Button onClick={() => openStart(n.id, n.name)}>Start net</Button>}
                 {canEdit && (
                   <Button
                     variant="secondary"
@@ -135,6 +136,18 @@ export function NetsPage() {
           </Card>
         ))}
       </div>
+      {starting && (
+        <StartNetModal
+          open={starting !== null}
+          netId={starting.id}
+          netName={starting.name}
+          onClose={() => setStarting(null)}
+          onStarted={(sessionId) => {
+            setStarting(null);
+            nav(`/run/${sessionId}`);
+          }}
+        />
+      )}
       <Modal open={editing !== null} onClose={() => setEditing(null)}>
         {editing && (
           <div>

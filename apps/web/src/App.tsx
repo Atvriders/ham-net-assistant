@@ -11,6 +11,7 @@ import { Dashboard } from './pages/Dashboard.js';
 import { RepeatersPage } from './pages/RepeatersPage.js';
 import { NetsPage } from './pages/NetsPage.js';
 import { RunNetPage } from './pages/RunNetPage.js';
+import { JoinNetPage } from './pages/JoinNetPage.js';
 import { SessionSummaryPage } from './pages/SessionSummaryPage.js';
 import { StatsPage } from './pages/StatsPage.js';
 import { TopicsPage } from './pages/TopicsPage.js';
@@ -64,6 +65,7 @@ export function App() {
               <Route path="/" element={<RequireRole><Dashboard /></RequireRole>} />
               <Route path="/repeaters" element={<RequireRole><RepeatersPage /></RequireRole>} />
               <Route path="/nets" element={<RequireRole><NetsPage /></RequireRole>} />
+              <Route path="/nets/:netId/join" element={<RequireRole><JoinNetPage /></RequireRole>} />
               <Route path="/run/:sessionId" element={<RequireRole min="OFFICER"><RunNetPage /></RequireRole>} />
               <Route path="/sessions/:sessionId/summary" element={<RequireRole min="OFFICER"><SessionSummaryPage /></RequireRole>} />
               <Route path="/stats" element={<RequireRole min="OFFICER"><StatsPage /></RequireRole>} />

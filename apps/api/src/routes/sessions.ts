@@ -13,16 +13,51 @@ const RangeQuery = z.object({
   netId: z.string().optional(),
 });
 
+const StartSessionInput = z.object({
+  topicId: z.string().optional(),
+  topicTitle: z.string().max(200).optional(),
+});
+
 export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Router } {
   const nested = Router({ mergeParams: true });
   const flat = Router();
 
   nested.post('/', requireRole('OFFICER'), asyncHandler(async (req, res) => {
     const { netId } = req.params as { netId: string };
+    const body = req.body && Object.keys(req.body).length > 0
+      ? StartSessionInput.parse(req.body)
+      : { topicId: undefined as string | undefined, topicTitle: undefined as string | undefined };
     const net = await prisma.net.findUnique({ where: { id: netId } });
     if (!net) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
-    const created = await prisma.netSession.create({
-      data: { netId, startedAt: new Date(), controlOpId: req.user!.id },
+
+    let topicId: string | null = null;
+    let topicTitle: string | null = null;
+    if (body.topicId) {
+      const topic = await prisma.topicSuggestion.findUnique({ where: { id: body.topicId } });
+      if (!topic) throw new HttpError(404, 'NOT_FOUND', 'Topic not found');
+      topicId = topic.id;
+      topicTitle = topic.title;
+    } else if (body.topicTitle && body.topicTitle.trim().length > 0) {
+      topicTitle = body.topicTitle.trim();
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const session = await tx.netSession.create({
+        data: {
+          netId,
+          startedAt: new Date(),
+          controlOpId: req.user!.id,
+          topicId,
+          topicTitle,
+        },
+      });
+      if (topicId) {
+        await tx.topicSuggestion.update({
+          where: { id: topicId },
+          data: { status: 'USED' },
+        });
+      }
+      return session;
     });
     res.status(201).json(created);
   }));
@@ -45,6 +80,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const session = await prisma.netSession.findUnique({
       where: { id: req.params.id },
       include: {
+        topic: true,
         net: {
           include: {
             repeater: true,
@@ -70,6 +106,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const s = await prisma.netSession.findUnique({
       where: { id: req.params.id },
       include: {
+        topic: true,
         checkIns: { orderBy: { checkedInAt: 'desc' } },
         net: {
           include: {

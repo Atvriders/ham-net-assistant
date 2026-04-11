@@ -13,7 +13,7 @@ interface NetLinkWithRepeater {
   note?: string | null;
 }
 interface SummaryResponse {
-  session: NetSession;
+  session: NetSession & { topicTitle?: string | null; topic?: { id: string; title: string } | null };
   net: Net & { links?: NetLinkWithRepeater[] };
   repeater: Repeater;
   checkIns: CheckIn[];
@@ -103,6 +103,9 @@ export function SessionSummaryPage() {
       </Card>
       <Card>
         <h2 style={{ marginTop: 0 }}>{net.name}</h2>
+        {(session.topicTitle || session.topic) && (
+          <div>Topic: {session.topicTitle ?? session.topic?.title}</div>
+        )}
         <div>Started: {new Date(session.startedAt).toLocaleString(undefined, { hour12: true })}</div>
         <div>
           Ended: {session.endedAt ? new Date(session.endedAt).toLocaleString(undefined, { hour12: true }) : 'in progress'}

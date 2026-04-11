@@ -22,6 +22,8 @@ interface NetFull extends Net {
 interface SessionResponse extends NetSession {
   checkIns: CheckIn[];
   net?: NetFull;
+  topicTitle?: string | null;
+  topic?: { id: string; title: string } | null;
 }
 interface DirectoryEntry {
   callsign: string;
@@ -183,6 +185,18 @@ export function RunNetPage() {
           Net: <strong>{net.name}</strong>
         </div>
         {net.theme && <div>Theme: {net.theme}</div>}
+        {(session.topicTitle || session.topic) && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            <strong>Topic</strong>
+            <div style={{ marginTop: 4 }}>{session.topicTitle ?? session.topic?.title}</div>
+          </div>
+        )}
         {net.links && net.links.length > 0 && (
           <div
             style={{

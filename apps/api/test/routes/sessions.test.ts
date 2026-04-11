@@ -25,6 +25,7 @@ afterAll(async () => { await cleanupTestDb(prisma, dbFile); });
 beforeEach(async () => {
   await prisma.checkIn.deleteMany();
   await prisma.netSession.deleteMany();
+  await prisma.topicSuggestion.deleteMany();
 });
 
 describe('sessions', () => {
@@ -69,6 +70,39 @@ describe('sessions', () => {
     const res = await request(app).get('/api/sessions?from=garbage');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
+  });
+  it('starts session with topicId and marks topic USED', async () => {
+    const t = await request(app).post('/api/topics').set('Cookie', officer)
+      .send({ title: 'Winter Field Day' });
+    expect(t.status).toBe(201);
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicId: t.body.id });
+    expect(res.status).toBe(201);
+    expect(res.body.topicId).toBe(t.body.id);
+    expect(res.body.topicTitle).toBe('Winter Field Day');
+    const topicAfter = await request(app).get('/api/topics').set('Cookie', officer);
+    const row = topicAfter.body.find((r: { id: string; status: string }) => r.id === t.body.id);
+    expect(row.status).toBe('USED');
+  });
+  it('starts session with free-text topicTitle (no topicId)', async () => {
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicTitle: 'Custom topic' });
+    expect(res.status).toBe(201);
+    expect(res.body.topicId).toBeNull();
+    expect(res.body.topicTitle).toBe('Custom topic');
+  });
+  it('starts session with empty body => both null', async () => {
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer).send({});
+    expect(res.status).toBe(201);
+    expect(res.body.topicId).toBeNull();
+    expect(res.body.topicTitle).toBeNull();
+  });
+  it('GET /api/sessions/:id returns topicTitle', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicTitle: 'Snapshot topic' });
+    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    expect(g.status).toBe(200);
+    expect(g.body.topicTitle).toBe('Snapshot topic');
   });
   it('GET /api/sessions/:id/summary returns aggregated data', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

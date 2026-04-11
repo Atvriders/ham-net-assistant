@@ -92,6 +92,28 @@ describe('nets CRUD', () => {
     expect(u.body.links).toHaveLength(1);
     expect(u.body.links[0].repeaterId).toBe(r3.body.id);
   });
+  it('GET /api/nets/active returns 0 then 1 after start', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    const empty = await request(app).get('/api/nets/active').set('Cookie', officer);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual([]);
+    await request(app).post(`/api/nets/${c.body.id}/sessions`).set('Cookie', officer);
+    const one = await request(app).get('/api/nets/active').set('Cookie', officer);
+    expect(one.status).toBe(200);
+    expect(one.body).toHaveLength(1);
+    expect(one.body[0].net.id).toBe(c.body.id);
+  });
+  it('GET /api/nets/:netId/active-session returns 404 then session', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    const none = await request(app).get(`/api/nets/${c.body.id}/active-session`).set('Cookie', officer);
+    expect(none.status).toBe(404);
+    const s = await request(app).post(`/api/nets/${c.body.id}/sessions`).set('Cookie', officer);
+    const got = await request(app).get(`/api/nets/${c.body.id}/active-session`).set('Cookie', officer);
+    expect(got.status).toBe(200);
+    expect(got.body.id).toBe(s.body.id);
+    expect(got.body.net.repeater).toBeDefined();
+    expect(Array.isArray(got.body.checkIns)).toBe(true);
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });
