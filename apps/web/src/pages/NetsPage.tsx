@@ -86,8 +86,8 @@ export function NetsPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+    <div className="hna-container" style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         <h1>Nets</h1>
         {canEdit && (
           <Button
@@ -104,7 +104,7 @@ export function NetsPage() {
       <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
         {nets.map((n) => (
           <Card key={n.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div>
                 <h3 style={{ margin: 0 }}>{n.name}</h3>
                 <div>
@@ -121,7 +121,7 @@ export function NetsPage() {
                 )}
                 {n.theme && <div>Theme: {n.theme}</div>}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
                 {canEdit && <Button onClick={() => openStart(n.id, n.name)}>Start net</Button>}
                 {canEdit && (
                   <Button
@@ -247,7 +247,7 @@ export function NetsPage() {
                 };
                 const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
                 return (
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
                     <select
                       value={t.hour}
                       onChange={(e) => updateTime({ hour: Number(e.target.value) })}
@@ -307,7 +307,7 @@ export function NetsPage() {
                 }
               />
             </label>
-            <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+            <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12 }}>
               <Button onClick={save}>Save</Button>
               <Button variant="secondary" onClick={() => setEditing(null)}>
                 Cancel

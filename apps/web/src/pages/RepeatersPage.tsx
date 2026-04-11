@@ -307,8 +307,8 @@ export function RepeatersPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div className="hna-container" style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div className="hna-flex-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h1 style={{ flex: 1 }}>Repeaters</h1>
         {isOfficer && (
           <>
@@ -364,14 +364,14 @@ export function RepeatersPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+      <div className="hna-repeater-grid" style={{ display: 'grid', gap: 12, marginTop: 16 }}>
         {list.length === 0 && <p>No repeaters yet.</p>}
         {list.map((r) => (
           <Card key={r.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <RepeaterDetails r={r} />
               {isOfficer && (
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
                   <Button variant="secondary" onClick={() => openEdit(r)}>
                     Edit
                   </Button>
@@ -466,7 +466,7 @@ export function RepeatersPage() {
               {formErr}
             </div>
           )}
-          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
             <Button type="submit" disabled={formBusy}>
               {formBusy ? 'Saving…' : 'Save'}
             </Button>
@@ -486,7 +486,7 @@ export function RepeatersPage() {
         <form onSubmit={submitCoords}>
           <label style={{ display: 'block' }}>
             Grid square (Maidenhead)
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Input
                 value={coordGrid}
                 onChange={(e) => handleGridChange(e.target.value)}
@@ -540,7 +540,7 @@ export function RepeatersPage() {
               {coordErr}
             </div>
           )}
-          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
             <Button type="submit">Search</Button>
             <Button
               type="button"
@@ -585,6 +585,7 @@ export function RepeatersPage() {
               {suggestions.map((s, i) => (
                 <Card key={`${s.name}-${i}`}>
                   <div
+                    className="hna-flex-wrap"
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',

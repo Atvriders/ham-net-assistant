@@ -158,9 +158,9 @@ export function LogoUploadModal({
 
   return (
     <Modal open={open} onClose={() => { reset(); onClose(); }}>
-      <div style={{ minWidth: 420 }}>
+      <div style={{ minWidth: 0, maxWidth: 560 }}>
         <h2 style={{ marginTop: 0 }}>Upload logo for {slug}</h2>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <Button
             variant={tab === 'file' ? 'primary' : 'secondary'}
             onClick={() => { setTab('file'); setImageSrc(null); }}

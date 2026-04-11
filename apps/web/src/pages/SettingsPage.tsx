@@ -13,7 +13,7 @@ export function SettingsPage() {
   const [name, setName] = useState(user?.name ?? '');
   if (!user) return null;
   return (
-    <div style={{ display: 'grid', gap: 16, maxWidth: 800, margin: '24px auto' }}>
+    <div className="hna-container" style={{ display: 'grid', gap: 16, maxWidth: 800, margin: '0 auto' }}>
       <Card>
         <h2>Profile</h2>
         <label>
@@ -30,7 +30,7 @@ export function SettingsPage() {
       </Card>
       <Card>
         <h3>Color mode</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
           <Button
             variant={mode === 'dark' ? 'primary' : 'secondary'}
             onClick={() => setMode('dark')}

@@ -219,6 +219,7 @@ export function CsvImportModal({
             </Button>
           </div>
           <div
+            className="hna-table-scroll"
             style={{
               marginTop: 8,
               maxHeight: 360,

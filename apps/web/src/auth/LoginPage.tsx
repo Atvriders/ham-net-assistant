@@ -28,7 +28,7 @@ export function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '60px auto' }}>
+    <div className="hna-container" style={{ maxWidth: 420, width: '100%', margin: '24px auto' }}>
       <Card>
         <h1>Sign in</h1>
         <form onSubmit={submit}>
@@ -50,7 +50,7 @@ export function LoginPage() {
               {err}
             </div>
           )}
-          <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+          <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
             <Button type="submit">Sign in</Button>
             <Link className="hna-nav-link" to="/register">Register</Link>
           </div>

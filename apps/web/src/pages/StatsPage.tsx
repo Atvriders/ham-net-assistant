@@ -28,7 +28,7 @@ export function StatsPage() {
   if (!stats) return <div style={{ padding: 24 }}>Loading…</div>;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 16 }}>
+    <div className="hna-container" style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 16 }}>
       <Card>
         <h2>Participation</h2>
         <div>
@@ -37,7 +37,7 @@ export function StatsPage() {
         <div>
           Total sessions: {stats.totalSessions} · Total check-ins: {stats.totalCheckIns}
         </div>
-        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+        <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
           <Button onClick={() => download('/api/stats/export.csv', 'checkins.csv')}>
             Download CSV
           </Button>

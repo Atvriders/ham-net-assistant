@@ -1,0 +1,71 @@
+/* Mobile-first base */
+.hna-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+/* Hide on small screens */
+@media (max-width: 639px) {
+  .hna-hide-mobile { display: none !important; }
+}
+
+/* Hide on large screens */
+@media (min-width: 640px) {
+  .hna-hide-desktop { display: none !important; }
+}
+
+/* Stack columns into rows at narrow widths */
+@media (max-width: 768px) {
+  .hna-grid-3col { grid-template-columns: 1fr !important; }
+  .hna-grid-2col { grid-template-columns: 1fr !important; }
+  .hna-flex-wrap { flex-wrap: wrap !important; }
+  .hna-full-width-mobile { width: 100% !important; }
+}
+
+/* Tap-friendly buttons & inputs on touch devices */
+.hna-btn, .hna-input, select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="password"] {
+  min-height: 44px;
+}
+
+/* Nav bar mobile: horizontal scroll if needed */
+@media (max-width: 768px) {
+  nav {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+  nav strong { flex: 1 1 auto; }
+}
+
+/* Modal: full-width on small screens */
+@media (max-width: 639px) {
+  .hna-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    padding: 16px !important;
+    overflow-y: auto;
+  }
+  .hna-modal-backdrop {
+    align-items: stretch !important;
+  }
+}
+
+/* Tables that don't fit — allow horizontal scroll container */
+.hna-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Runs net page: 3-col → stacked on mobile */
+@media (max-width: 900px) {
+  .hna-runnet-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Repeaters grid: already responsive via auto-fill but explicit */
+@media (max-width: 480px) {
+  .hna-repeater-grid { grid-template-columns: 1fr !important; }
+}

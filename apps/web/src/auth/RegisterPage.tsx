@@ -124,7 +124,7 @@ export function RegisterPage() {
 
   if (step === 1) {
     return (
-      <div style={{ maxWidth: 420, margin: '60px auto' }}>
+      <div className="hna-container" style={{ maxWidth: 420, width: '100%', margin: '24px auto' }}>
         <Card>
           <h1>Create account</h1>
           <p>Start with your amateur radio callsign. We will look it up in the FCC database to prefill your info.</p>
@@ -138,7 +138,7 @@ export function RegisterPage() {
                 {err}
               </div>
             )}
-            <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+            <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
               <Button type="submit" disabled={lookingUp}>
                 {lookingUp ? 'Looking up…' : 'Look up'}
               </Button>
@@ -238,7 +238,7 @@ export function RegisterPage() {
               {err}
             </div>
           )}
-          <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+          <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
             <Button type="submit">Create account</Button>
             <Link className="hna-nav-link" to="/login">Sign in</Link>
           </div>

@@ -88,8 +88,8 @@ export function SessionSummaryPage() {
   const { session, net, repeater, checkIns } = data;
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto', display: 'grid', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+    <div className="hna-container" style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gap: 16 }}>
+      <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <Link to="/">&larr; Back to Dashboard</Link>
         {isAdmin && (
           <Button variant="danger" onClick={deleteSession}>

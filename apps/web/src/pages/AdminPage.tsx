@@ -62,14 +62,14 @@ export function AdminPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
+    <div className="hna-container" style={{ maxWidth: 900, margin: '0 auto' }}>
       <h1>Admin</h1>
       <Card>
         <h3>Default theme for new users</h3>
         <p style={{ fontSize: 13, opacity: 0.8 }}>
           New accounts will start on this theme. Existing users keep their current choice.
         </p>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div className="hna-flex-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <select
             value={defaultSlug}
             onChange={(e) => setDefaultSlug(e.target.value)}
@@ -87,6 +87,7 @@ export function AdminPage() {
       <div style={{ height: 16 }} />
       <Card>
         <h3>Members</h3>
+        <div className="hna-table-scroll">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
@@ -134,6 +135,7 @@ export function AdminPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );

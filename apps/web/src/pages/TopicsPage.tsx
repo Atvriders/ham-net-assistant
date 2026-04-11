@@ -97,7 +97,7 @@ export function TopicsPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>
+    <div className="hna-container" style={{ maxWidth: 800, margin: '0 auto' }}>
       <h1>Net topic suggestions</h1>
       <Card>
         <h3>Suggest a topic</h3>
@@ -141,7 +141,7 @@ export function TopicsPage() {
           const canDelete = isOfficer || (mine && t.status === 'OPEN');
           return (
             <Card key={t.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <h3 style={{ margin: 0 }}>
                     {t.title}
