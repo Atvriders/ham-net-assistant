@@ -54,8 +54,9 @@ export function callsignLookupRouter(): Router {
         }
         const rawName = (data.name ?? '').trim();
         const parts = rawName.split(/\s+/).filter(Boolean);
-        // callook returns names as "LAST FIRST [MIDDLE...]". We emit only
-        // "First Last"; middle names are dropped. Compound last names like
+        // callook returns individual names as "FIRST [MIDDLE...] LAST"
+        // (e.g. "JOHN MICHAEL SMITH"). We emit only "First Last"; any
+        // middle names/initials are dropped. Compound last names like
         // "van der Berg" are mis-parsed because callook doesn't distinguish
         // them from middle names — we accept this limitation.
         let prettyName: string;
@@ -64,7 +65,7 @@ export function callsignLookupRouter(): Router {
         } else if (parts.length === 1) {
           prettyName = titleCase(parts[0]!);
         } else {
-          prettyName = `${titleCase(parts[1]!)} ${titleCase(parts[0]!)}`;
+          prettyName = `${titleCase(parts[0]!)} ${titleCase(parts[parts.length - 1]!)}`;
         }
         res.json({
           callsign: raw,
