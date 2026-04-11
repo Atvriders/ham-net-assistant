@@ -156,21 +156,6 @@ export function JoinNetPage() {
           <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{errMsg}</div>
         )}
       </Card>
-      {session.net?.scriptMd && (
-        <Card>
-          <h3 style={{ marginTop: 0 }}>Script</h3>
-          <pre
-            style={{
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'ui-monospace, Menlo, monospace',
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            {session.net.scriptMd}
-          </pre>
-        </Card>
-      )}
       <Card>
         <h3 style={{ marginTop: 0 }}>Check-ins ({session.checkIns.length})</h3>
         {session.checkIns.length === 0 && <p>No check-ins yet.</p>}
