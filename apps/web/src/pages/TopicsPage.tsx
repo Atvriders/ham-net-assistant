@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { TopicSuggestion, TopicStatus } from '@hna/shared';
-import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
+import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { displayCallsign } from '../lib/format.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 
 function StatusBadge({ status }: { status: TopicStatus }) {
   const color =
@@ -34,26 +35,17 @@ function StatusBadge({ status }: { status: TopicStatus }) {
 
 export function TopicsPage() {
   const { user } = useAuth();
-  const [topics, setTopics] = useState<TopicSuggestion[]>([]);
+  const { data: topicsData, refresh } = useAutoFetch<TopicSuggestion[]>(
+    '/topics',
+    { intervalMs: 10000 },
+  );
+  const topics = topicsData ?? [];
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const isOfficer = user?.role === 'OFFICER' || user?.role === 'ADMIN';
-
-  async function reload(signal?: AbortSignal) {
-    const list = await apiFetch<TopicSuggestion[]>('/topics', { signal });
-    setTopics(list);
-  }
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    reload(ctrl.signal).catch((e) => {
-      if (!isAbortError(e)) console.warn('topics load failed', e);
-    });
-    return () => ctrl.abort();
-  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +65,7 @@ export function TopicsPage() {
       });
       setTitle('');
       setDetails('');
-      await reload();
+      await refresh();
     } catch (ex) {
       if (ex instanceof ApiErrorException) setErr(ex.payload.message);
       else setErr('Failed to submit topic');
@@ -87,13 +79,13 @@ export function TopicsPage() {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
-    await reload();
+    await refresh();
   }
 
   async function del(id: string) {
     if (!confirm('Delete this topic?')) return;
     await apiFetch(`/topics/${id}`, { method: 'DELETE' });
-    await reload();
+    await refresh();
   }
 
   return (

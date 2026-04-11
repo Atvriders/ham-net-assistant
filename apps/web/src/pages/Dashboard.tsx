@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import type { Net, Repeater, NetSession } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 
 interface NetWithRepeater extends Net {
   repeater: Repeater;
@@ -21,48 +22,30 @@ interface ActiveSessionRow extends NetSession {
 export function Dashboard() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-  const [nets, setNets] = useState<NetWithRepeater[]>([]);
-  const [sessions, setSessions] = useState<NetSession[]>([]);
-  const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
-
-  async function reloadSessions() {
-    try {
-      const s = await apiFetch<NetSession[]>('/sessions');
-      setSessions(s);
-    } catch (e) {
-      if (!isAbortError(e)) console.warn('reload sessions failed', e);
-    }
-  }
+  const { data: netsData } = useAutoFetch<NetWithRepeater[]>('/nets', {
+    intervalMs: 10000,
+  });
+  const { data: sessionsData, refresh: refreshSessions } = useAutoFetch<
+    NetSession[]
+  >('/sessions', { intervalMs: 10000 });
+  const { data: activeSessionsData } = useAutoFetch<ActiveSessionRow[]>(
+    '/nets/active',
+    { intervalMs: 5000 },
+  );
+  const nets = netsData ?? [];
+  const sessions = sessionsData ?? [];
+  const activeSessions = activeSessionsData ?? [];
 
   async function deleteSession(id: string) {
     if (!confirm('Delete this session and all its check-ins?')) return;
     try {
       await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
-      await reloadSessions();
+      await refreshSessions();
     } catch (e) {
       alert((e as Error).message);
     }
   }
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    apiFetch<NetWithRepeater[]>('/nets', { signal: ctrl.signal })
-      .then(setNets)
-      .catch((e) => {
-        if (!isAbortError(e)) throw e;
-      });
-    apiFetch<NetSession[]>('/sessions', { signal: ctrl.signal })
-      .then(setSessions)
-      .catch((e) => {
-        if (!isAbortError(e)) throw e;
-      });
-    apiFetch<ActiveSessionRow[]>('/nets/active', { signal: ctrl.signal })
-      .then(setActiveSessions)
-      .catch((e) => {
-        if (!isAbortError(e)) throw e;
-      });
-    return () => ctrl.abort();
-  }, []);
   const upcoming = [...nets]
     .map((n) => ({ n, when: nextOccurrence(n.dayOfWeek, n.startLocal, n.timezone) }))
     .sort((a, b) => a.when.getTime() - b.when.getTime())

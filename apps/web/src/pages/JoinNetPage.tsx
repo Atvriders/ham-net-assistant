@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
-import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
+import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 import {
   capitalizeFirst,
   formatFrequency,
@@ -27,56 +28,26 @@ interface ActiveSessionResponse extends NetSession {
 export function JoinNetPage() {
   const { netId } = useParams<{ netId: string }>();
   const { user } = useAuth();
-  const [session, setSession] = useState<ActiveSessionResponse | null>(null);
-  const [status, setStatus] = useState<'loading' | 'none' | 'ok' | 'error'>(
-    'loading',
+  const {
+    data: session,
+    loading,
+    error,
+    refresh,
+  } = useAutoFetch<ActiveSessionResponse>(
+    netId ? `/nets/${netId}/active-session` : null,
+    { intervalMs: 5000 },
   );
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [checkedInAt, setCheckedInAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const mountedRef = useRef(true);
 
-  async function loadActive(signal?: AbortSignal) {
-    if (!netId) return;
-    try {
-      const s = await apiFetch<ActiveSessionResponse>(
-        `/nets/${netId}/active-session`,
-        { signal },
-      );
-      if (!mountedRef.current) return;
-      setSession(s);
-      setStatus('ok');
-      // If we already appear in the list, lock the button.
-      if (user) {
-        const mine = s.checkIns.find((c) => c.callsign === user.callsign);
-        if (mine) setCheckedInAt(mine.checkedInAt);
-      }
-    } catch (e) {
-      if (isAbortError(e)) return;
-      if (e instanceof ApiErrorException && e.status === 404) {
-        setSession(null);
-        setStatus('none');
-      } else {
-        setErrMsg((e as Error).message);
-        setStatus('error');
-      }
-    }
-  }
-
+  // When the polled session first arrives, lock the button if we're
+  // already on the list.
   useEffect(() => {
-    mountedRef.current = true;
-    const ctrl = new AbortController();
-    void loadActive(ctrl.signal);
-    const interval = setInterval(() => {
-      void loadActive();
-    }, 10000);
-    return () => {
-      mountedRef.current = false;
-      ctrl.abort();
-      clearInterval(interval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [netId]);
+    if (!session || !user) return;
+    const mine = session.checkIns.find((c) => c.callsign === user.callsign);
+    if (mine) setCheckedInAt((prev) => prev ?? mine.checkedInAt);
+  }, [session, user]);
 
   async function checkMeIn() {
     if (!session || !user) return;
@@ -91,7 +62,7 @@ export function JoinNetPage() {
         }),
       });
       setCheckedInAt(new Date().toISOString());
-      await loadActive();
+      await refresh();
     } catch (e) {
       setErrMsg((e as Error).message);
     } finally {
@@ -99,17 +70,22 @@ export function JoinNetPage() {
     }
   }
 
-  if (status === 'loading') {
+  if (loading && !session) {
     return <div style={{ padding: 24 }}>Loading…</div>;
   }
-  if (status === 'error') {
+  // Distinguish "no active net" (404 -> treated as null by fetch error path)
+  // from real errors. The hook surfaces 404 as an error; we show the "no
+  // running net" card for that specific case.
+  const is404 =
+    error !== null && /\b(not found|no active)/i.test(error);
+  if (error && !is404) {
     return (
       <div style={{ padding: 24, color: 'var(--color-danger)' }}>
-        {errMsg ?? 'Error loading net.'}
+        {error}
       </div>
     );
   }
-  if (status === 'none' || !session) {
+  if (!session || is404) {
     return (
       <div className="hna-container" style={{ maxWidth: 700, margin: '0 auto' }}>
         <Card>
@@ -134,7 +110,18 @@ export function JoinNetPage() {
       }}
     >
       <Card>
-        <h2 style={{ marginTop: 0 }}>{net?.name ?? 'Net in progress'}</h2>
+        <h2 style={{ marginTop: 0 }}>
+          {net?.name ?? 'Net in progress'}
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--color-success)',
+              marginLeft: 8,
+            }}
+          >
+            ● live
+          </span>
+        </h2>
         {net?.repeater && (
           <div>
             <div>{net.repeater.name}</div>

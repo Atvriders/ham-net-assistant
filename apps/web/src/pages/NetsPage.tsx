@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Net, NetInput, Repeater } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch } from '../api/client.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
@@ -51,26 +52,16 @@ export function NetsPage() {
   const { user } = useAuth();
   const nav = useNavigate();
   const canEdit = user?.role === 'OFFICER' || user?.role === 'ADMIN';
-  const [nets, setNets] = useState<NetWithRepeater[]>([]);
-  const [repeaters, setRepeaters] = useState<Repeater[]>([]);
+  const { data: netsData, refresh: refreshNets } = useAutoFetch<
+    NetWithRepeater[]
+  >('/nets', { intervalMs: 15000 });
+  const { data: repeatersData } = useAutoFetch<Repeater[]>('/repeaters', {
+    intervalMs: 15000,
+  });
+  const nets = netsData ?? [];
+  const repeaters = repeatersData ?? [];
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
   const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
-
-  async function reload(signal?: AbortSignal) {
-    const [n, r] = await Promise.all([
-      apiFetch<NetWithRepeater[]>('/nets', { signal }),
-      apiFetch<Repeater[]>('/repeaters', { signal }),
-    ]);
-    setNets(n);
-    setRepeaters(r);
-  }
-  useEffect(() => {
-    const ctrl = new AbortController();
-    reload(ctrl.signal).catch((e) => {
-      if (!isAbortError(e)) throw e;
-    });
-    return () => ctrl.abort();
-  }, []);
 
   async function save() {
     if (!editing) return;
@@ -78,7 +69,7 @@ export function NetsPage() {
     if (id) await apiFetch(`/nets/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
     else await apiFetch('/nets', { method: 'POST', body: JSON.stringify(data) });
     setEditing(null);
-    await reload();
+    await refreshNets();
   }
 
   function openStart(id: string, name: string) {

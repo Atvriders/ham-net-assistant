@@ -1,22 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { ParticipationStats } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { displayCallsign } from '../lib/format.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 
 export function StatsPage() {
-  const [stats, setStats] = useState<ParticipationStats | null>(null);
-  useEffect(() => {
-    const ctrl = new AbortController();
-    apiFetch<ParticipationStats>('/stats/participation', { signal: ctrl.signal })
-      .then(setStats)
-      .catch((e) => {
-        if (!isAbortError(e)) throw e;
-      });
-    return () => ctrl.abort();
-  }, []);
+  const { data: stats } = useAutoFetch<ParticipationStats>(
+    '/stats/participation',
+    { intervalMs: 15000 },
+  );
 
   function download(url: string, filename: string) {
     const a = document.createElement('a');

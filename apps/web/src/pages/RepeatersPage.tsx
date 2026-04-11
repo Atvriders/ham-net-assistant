@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { Repeater, RepeaterInput } from '@hna/shared';
-import { apiFetch, ApiErrorException, isAbortError } from '../api/client.js';
+import { apiFetch, ApiErrorException } from '../api/client.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -56,8 +57,13 @@ export function RepeatersPage() {
   const { user } = useAuth();
   const isOfficer = user?.role === 'OFFICER' || user?.role === 'ADMIN';
 
-  const [list, setList] = useState<Repeater[]>([]);
-  const [err, setErr] = useState<string | null>(null);
+  const {
+    data: listData,
+    error: listError,
+    refresh: reload,
+  } = useAutoFetch<Repeater[]>('/repeaters', { intervalMs: 15000 });
+  const list = listData ?? [];
+  const err = listError;
 
   const [editing, setEditing] = useState<Repeater | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -83,19 +89,6 @@ export function RepeatersPage() {
   const [attemptedSources, setAttemptedSources] = useState<string[]>([]);
 
   const [csvOpen, setCsvOpen] = useState(false);
-
-  async function reload(signal?: AbortSignal) {
-    const rows = await apiFetch<Repeater[]>('/repeaters', { signal });
-    setList(rows);
-  }
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    reload(ctrl.signal).catch((e) => {
-      if (!isAbortError(e)) setErr('Failed to load repeaters');
-    });
-    return () => ctrl.abort();
-  }, []);
 
   function openCreate() {
     setEditing(null);

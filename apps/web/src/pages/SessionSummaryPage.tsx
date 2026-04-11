@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -36,8 +37,10 @@ export function SessionSummaryPage() {
   const nav = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-  const [data, setData] = useState<SummaryResponse | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const { data, error: err } = useAutoFetch<SummaryResponse>(
+    sessionId ? `/sessions/${sessionId}/summary` : null,
+    { intervalMs: 30000 },
+  );
   const [copied, setCopied] = useState(false);
 
   async function deleteSession() {
@@ -50,18 +53,6 @@ export function SessionSummaryPage() {
       alert((e as Error).message);
     }
   }
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const ctrl = new AbortController();
-    apiFetch<SummaryResponse>(`/sessions/${sessionId}/summary`, { signal: ctrl.signal })
-      .then(setData)
-      .catch((e) => {
-        if (isAbortError(e)) return;
-        setErr((e as Error).message);
-      });
-    return () => ctrl.abort();
-  }, [sessionId]);
 
   function downloadCsv() {
     if (!data) return;

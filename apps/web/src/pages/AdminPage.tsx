@@ -6,22 +6,19 @@ import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
   const { all: allThemes } = useTheme();
-  const [users, setUsers] = useState<PublicUser[]>([]);
+  const { data: users, refresh } = useAutoFetch<PublicUser[]>('/users', {
+    intervalMs: 5000,
+  });
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
 
-  async function reload(signal?: AbortSignal) {
-    setUsers(await apiFetch<PublicUser[]>('/users', { signal }));
-  }
   useEffect(() => {
     const ctrl = new AbortController();
-    reload(ctrl.signal).catch((e) => {
-      if (!isAbortError(e)) throw e;
-    });
     apiFetch<{ slug: string }>('/themes/default', { signal: ctrl.signal })
       .then((r) => setDefaultSlug(r.slug))
       .catch((e) => {
@@ -32,7 +29,7 @@ export function AdminPage() {
 
   async function setRole(id: string, role: Role) {
     await apiFetch(`/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
-    await reload();
+    await refresh();
   }
 
   async function deleteUser(u: PublicUser) {
@@ -40,7 +37,7 @@ export function AdminPage() {
       return;
     }
     await apiFetch(`/users/${u.id}`, { method: 'DELETE' });
-    await reload();
+    await refresh();
   }
 
   async function setUserTheme(id: string, slug: string) {
@@ -48,7 +45,7 @@ export function AdminPage() {
       method: 'PATCH',
       body: JSON.stringify({ collegeSlug: slug === '' ? null : slug }),
     });
-    await reload();
+    await refresh();
   }
 
   async function saveDefaultTheme() {
@@ -87,6 +84,7 @@ export function AdminPage() {
       <div style={{ height: 16 }} />
       <Card>
         <h3>Members</h3>
+        {users === null && <p>Loading…</p>}
         <div className="hna-table-scroll">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -100,7 +98,7 @@ export function AdminPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {(users ?? []).map((u) => (
               <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                 <td>{displayCallsign(u.callsign)}</td>
                 <td>{u.name}</td>

@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
+import { useAutoFetch } from '../lib/useAutoFetch.js';
 import {
   capitalizeFirst,
   formatFrequency,
@@ -38,33 +39,34 @@ interface DirectoryEntry {
 export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const nav = useNavigate();
-  const [session, setSession] = useState<SessionResponse | null>(null);
+  const { data: session, refresh } = useAutoFetch<SessionResponse>(
+    sessionId ? `/sessions/${sessionId}` : null,
+    { intervalMs: 3000 },
+  );
   const [net, setNet] = useState<NetFull | null>(null);
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function loadSession(signal?: AbortSignal) {
-    if (!sessionId) return;
-    const s = await apiFetch<SessionResponse>(`/sessions/${sessionId}`, { signal });
-    setSession(s);
-    let n: NetFull | null = s.net ?? null;
-    if (!n) {
-      const nets = await apiFetch<NetFull[]>('/nets', { signal });
-      n = nets.find((x) => x.id === s.netId) ?? null;
-    }
-    setNet(n);
-  }
-
+  // Derive net from session payload; fall back to /nets if the backend
+  // didn't inline it (older responses).
   useEffect(() => {
+    if (!session) return;
+    if (session.net) {
+      setNet(session.net);
+      return;
+    }
     const ctrl = new AbortController();
-    loadSession(ctrl.signal).catch((e) => {
-      if (!isAbortError(e)) throw e;
-    });
+    apiFetch<NetFull[]>('/nets', { signal: ctrl.signal })
+      .then((nets) => {
+        setNet(nets.find((x) => x.id === session.netId) ?? null);
+      })
+      .catch((e) => {
+        if (!isAbortError(e)) console.warn('net load failed', e);
+      });
     return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [session]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -80,7 +82,7 @@ export function RunNetPage() {
     const last = session?.checkIns[0];
     if (!last) return;
     await apiFetch(`/checkins/${last.id}`, { method: 'DELETE' });
-    await loadSession();
+    await refresh();
   }
 
   async function endNet() {
@@ -111,7 +113,7 @@ export function RunNetPage() {
     setCallsign('');
     setName('');
     inputRef.current?.focus();
-    await loadSession();
+    await refresh();
   }
 
   // Escape key ends net
@@ -153,6 +155,15 @@ export function RunNetPage() {
         <hr />
         <div>
           Net: <strong>{net.name}</strong>
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--color-success)',
+              marginLeft: 8,
+            }}
+          >
+            ● live
+          </span>
         </div>
         {net.theme && <div>Theme: {net.theme}</div>}
         {(session.topicTitle || session.topic) && (
