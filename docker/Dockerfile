@@ -1,8 +1,14 @@
 # syntax=docker/dockerfile:1.7
-FROM node:20-alpine AS base
-WORKDIR /app
-RUN apk add --no-cache python3 make g++
 
+# --- base: debian slim instead of alpine ---
+FROM node:20-slim AS base
+WORKDIR /app
+# build tools for native deps (argon2) — debian package names
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- deps: workspace manifests only for cache efficiency ---
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -10,6 +16,7 @@ COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN npm install
 
+# --- build: full sources + builds ---
 FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
@@ -21,42 +28,45 @@ RUN npx -w @hna/api prisma generate
 RUN npm -w @hna/api run build
 RUN npm -w @hna/web run build
 
-FROM node:20-alpine AS runtime
+# --- runtime: slim image with only what api needs ---
+FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Root + workspace manifests — NOTE we DO NOT copy apps/web/package.json
-# so the web workspace is absent at install time and its deps are skipped.
+# libssl3 is in node:20-slim already; ensure openssl + ca-certs are present for
+# prisma schema-engine and outbound HTTPS (logo URL fetcher).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Manifests — only api + shared, NOT web (dist is static)
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/packages/shared/package.json packages/shared/
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/package.json apps/api/
-
-# Prisma schema is needed before generate; copy it before the install layer
-# so that install + generate can be fused into a single layer (avoids layer
-# duplication of @prisma/client engine binaries).
 COPY --from=build /app/apps/api/prisma apps/api/prisma
 
-# Install only the API's production deps (workspace resolution picks up @hna/shared)
-# and generate the prisma client in the same layer.
+# Install api prod deps + generate prisma client in a single layer
 RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false \
     && npx -w @hna/api prisma generate \
     && npm cache clean --force
 
-# Copy built artifacts
+# Built artifacts
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/themes themes
-ENV STATIC_DIR=/app/apps/web/dist
-ENV DATABASE_URL=file:/data/ham.db
-EXPOSE 3000
 
-RUN addgroup -S hna && adduser -S hna -G hna \
+# Non-root user
+RUN groupadd -r hna && useradd -r -g hna hna \
     && mkdir -p /data \
     && chown -R hna:hna /app /data
 USER hna
 
+ENV STATIC_DIR=/app/apps/web/dist
+ENV DATABASE_URL=file:/data/ham.db
+EXPOSE 3000
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/themes >/dev/null || exit 1
 
-CMD ["sh", "-c", "npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]
+CMD ["sh","-c","npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]
