@@ -33,10 +33,9 @@ FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# libssl3 is in node:20-slim already; ensure openssl + ca-certs are present for
-# prisma schema-engine and outbound HTTPS (logo URL fetcher).
+# libssl3 is in node:20-slim already; add ca-certs, wget for healthcheck, gosu for step-down
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl ca-certificates wget \
+    && apt-get install -y --no-install-recommends openssl ca-certificates wget gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Manifests — only api + shared, NOT web (dist is static)
@@ -56,11 +55,14 @@ COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/themes themes
 
-# Non-root user
+# Non-root user created, but we START as root and let the entrypoint drop to hna.
 RUN groupadd -r hna && useradd -r -g hna hna \
-    && mkdir -p /data \
+    && mkdir -p /data /data/logos \
     && chown -R hna:hna /app /data
-USER hna
+
+# Entrypoint: fix /data ownership (for pre-existing volumes) then step down
+COPY docker/entrypoint.sh /usr/local/bin/hna-entrypoint.sh
+RUN chmod +x /usr/local/bin/hna-entrypoint.sh
 
 ENV STATIC_DIR=/app/apps/web/dist
 ENV DATABASE_URL=file:/data/ham.db
@@ -69,4 +71,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/themes >/dev/null || exit 1
 
+ENTRYPOINT ["/usr/local/bin/hna-entrypoint.sh"]
 CMD ["sh","-c","npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]
