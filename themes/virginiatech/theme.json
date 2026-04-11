@@ -13,6 +13,17 @@
     "success": "#2E7D32",
     "danger": "#7E1220"
   },
+  "darkColors": {
+    "primary": "#A73F61",
+    "primaryFg": "#0A1220",
+    "accent": "#E07A44",
+    "bg": "#0E1116",
+    "bgMuted": "#161B22",
+    "fg": "#E6EDF3",
+    "border": "#30363D",
+    "success": "#3FB950",
+    "danger": "#F85149"
+  },
   "font": {
     "display": "'Inter', system-ui, sans-serif",
     "body": "'Inter', system-ui, sans-serif"

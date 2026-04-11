@@ -13,6 +13,7 @@ import { NetsPage } from './pages/NetsPage.js';
 import { RunNetPage } from './pages/RunNetPage.js';
 import { SessionSummaryPage } from './pages/SessionSummaryPage.js';
 import { StatsPage } from './pages/StatsPage.js';
+import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { Button } from './components/ui/Button.js';
 
@@ -37,6 +38,7 @@ function NavBar() {
           <Link to="/">Dashboard</Link>
           <Link to="/repeaters">Repeaters</Link>
           <Link to="/nets">Nets</Link>
+          <Link to="/topics">Topics</Link>
           <Link to="/stats">Stats</Link>
           <Link to="/settings">Settings</Link>
           {user.role === 'ADMIN' && <Link to="/admin">Admin</Link>}
@@ -64,6 +66,7 @@ export function App() {
               <Route path="/run/:sessionId" element={<RequireRole min="OFFICER"><RunNetPage /></RequireRole>} />
               <Route path="/sessions/:sessionId/summary" element={<RequireRole min="OFFICER"><SessionSummaryPage /></RequireRole>} />
               <Route path="/stats" element={<RequireRole min="OFFICER"><StatsPage /></RequireRole>} />
+              <Route path="/topics" element={<RequireRole><TopicsPage /></RequireRole>} />
               <Route path="/settings" element={<RequireRole><SettingsPage /></RequireRole>} />
               <Route path="/admin" element={<RequireRole min="ADMIN"><AdminPage /></RequireRole>} />
               <Route path="*" element={<Navigate to="/" replace />} />

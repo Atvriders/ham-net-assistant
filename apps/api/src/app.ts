@@ -12,6 +12,8 @@ import { statsRouter } from './routes/stats.js';
 import { themesRouter } from './routes/themes.js';
 import { logosRouter } from './routes/logos.js';
 import { usersRouter } from './routes/users.js';
+import { callsignLookupRouter } from './routes/callsignLookup.js';
+import { topicsRouter } from './routes/topics.js';
 import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
@@ -21,6 +23,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use(loadUser);
 
   app.use('/api/auth', authRouter(prisma));
+  app.use('/api/callsign-lookup', callsignLookupRouter());
   app.use('/api/repeaters', repeatersRouter(prisma));
   app.use('/api/nets', netsRouter(prisma));
   const sessions = sessionsRouter(prisma);
@@ -33,6 +36,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/themes', themesRouter());
   app.use('/api/themes', logosRouter());
   app.use('/api/users', usersRouter(prisma));
+  app.use('/api/topics', topicsRouter(prisma));
 
   mountStatic(app);
   app.use(errorHandler);

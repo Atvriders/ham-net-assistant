@@ -1,13 +1,13 @@
 :root {
-  --color-primary: #2B5B8C;
-  --color-primary-fg: #FFFFFF;
+  --color-primary: #6BA3D9;
+  --color-primary-fg: #0A1220;
   --color-accent: #F2A900;
-  --color-bg: #FFFFFF;
-  --color-bg-muted: #F4F6F9;
-  --color-fg: #101828;
-  --color-border: #D0D5DD;
-  --color-success: #2E7D32;
-  --color-danger: #C62828;
+  --color-bg: #0E1116;
+  --color-bg-muted: #161B22;
+  --color-fg: #E6EDF3;
+  --color-border: #30363D;
+  --color-success: #3FB950;
+  --color-danger: #F85149;
   --font-display: 'Inter', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
 }

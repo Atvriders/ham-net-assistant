@@ -20,6 +20,17 @@ model User {
   checkIns           CheckIn[]    @relation("CheckInSubject")
   createdCheckIns    CheckIn[]    @relation("CheckInCreator")
   controlledSessions NetSession[] @relation("ControlOp")
+  suggestions        TopicSuggestion[] @relation("TopicCreator")
+}
+
+model TopicSuggestion {
+  id          String   @id @default(cuid())
+  title       String
+  details     String?
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  createdById String
+  createdBy   User     @relation("TopicCreator", fields: [createdById], references: [id], onDelete: Cascade)
 }
 
 model Repeater {

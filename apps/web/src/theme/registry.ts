@@ -3,6 +3,7 @@ export interface Theme {
   name: string;
   shortName: string;
   colors: Record<string, string>;
+  darkColors?: Record<string, string>;
   font: { display: string; body: string };
   logo: { file: string; alt: string; maxHeightPx: number };
   logoUrl: string;
