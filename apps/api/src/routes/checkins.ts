@@ -16,7 +16,10 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     if (session.endedAt) throw new HttpError(409, 'CONFLICT', 'Session already ended');
     const body = req.body as typeof CheckInInput._type;
-    const matched = await prisma.user.findUnique({ where: { callsign: body.callsign } });
+    const matched = await prisma.user.findFirst({
+      where: { callsign: body.callsign },
+      orderBy: { createdAt: 'asc' },
+    });
     const created = await prisma.checkIn.create({
       data: {
         sessionId, callsign: body.callsign, nameAtCheckIn: body.nameAtCheckIn,

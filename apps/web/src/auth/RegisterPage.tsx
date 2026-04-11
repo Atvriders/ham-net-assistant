@@ -166,7 +166,7 @@ export function RegisterPage() {
         <h1>Create account</h1>
         {mode === 'unlicensed' && (
           <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>
-            You'll be assigned a temporary placeholder callsign (e.g. N0CALL42).
+            You'll use the shared placeholder callsign N0CALL for unlicensed operators.
             You can update it later from Settings.
           </div>
         )}
@@ -177,7 +177,7 @@ export function RegisterPage() {
           <label>
             Callsign
             <Input
-              value={mode === 'unlicensed' ? 'N0CALL (will be auto-assigned)' : form.callsign}
+              value={mode === 'unlicensed' ? 'N0CALL (unlicensed operator placeholder)' : form.callsign}
               disabled
             />
           </label>

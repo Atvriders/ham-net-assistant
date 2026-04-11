@@ -34,9 +34,9 @@ describe('Callsign', () => {
   it('accepts N0CALL placeholder', () => {
     expect(Callsign.parse('n0call')).toBe('N0CALL');
   });
-  it('accepts N0CALL with digits', () => {
-    expect(Callsign.parse('N0CALL42')).toBe('N0CALL42');
-    expect(Callsign.parse('N0CALL9999')).toBe('N0CALL9999');
+  it('rejects N0CALL with digits (only literal N0CALL allowed)', () => {
+    expect(() => Callsign.parse('N0CALL42')).toThrow();
+    expect(() => Callsign.parse('N0CALL9999')).toThrow();
   });
 });
 

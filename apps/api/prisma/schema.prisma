@@ -10,7 +10,7 @@ datasource db {
 
 model User {
   id                 String       @id @default(cuid())
-  callsign           String       @unique
+  callsign           String
   name               String
   email              String       @unique
   passwordHash       String
@@ -21,6 +21,8 @@ model User {
   createdCheckIns    CheckIn[]    @relation("CheckInCreator")
   controlledSessions NetSession[] @relation("ControlOp")
   suggestions        TopicSuggestion[] @relation("TopicCreator")
+
+  @@index([callsign])
 }
 
 model Setting {

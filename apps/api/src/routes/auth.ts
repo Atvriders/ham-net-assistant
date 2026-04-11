@@ -11,20 +11,6 @@ import { asyncHandler } from '../middleware/async.js';
 import { getSetting } from '../lib/settings.js';
 import { DEFAULT_THEME_SETTING_KEY } from './themes.js';
 
-async function findNextN0Call(prisma: PrismaClient): Promise<string> {
-  const existing = await prisma.user.findMany({
-    where: { callsign: { startsWith: 'N0CALL' } },
-    select: { callsign: true },
-  });
-  const used = new Set(existing.map((u) => u.callsign));
-  if (!used.has('N0CALL')) return 'N0CALL';
-  for (let i = 1; i <= 9999; i++) {
-    const c = `N0CALL${i}`;
-    if (!used.has(c)) return c;
-  }
-  throw new HttpError(500, 'INTERNAL', 'N0CALL space exhausted');
-}
-
 export function authRouter(prisma: PrismaClient): Router {
   const router = Router();
 
@@ -44,8 +30,8 @@ export function authRouter(prisma: PrismaClient): Router {
       const role = count === 0 ? 'ADMIN' : 'MEMBER';
       const passwordHash = await hashPassword(input.password);
       let finalCallsign = input.callsign;
-      if (finalCallsign === 'N0CALL' || /^N0CALL\d{1,4}$/.test(finalCallsign)) {
-        finalCallsign = await findNextN0Call(prisma);
+      if (finalCallsign === 'N0CALL' || /^N0CALL\d+$/.test(finalCallsign)) {
+        finalCallsign = 'N0CALL';
       }
       let initialCollegeSlug: string | null = null;
       if (role === 'MEMBER') {
