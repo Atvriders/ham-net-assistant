@@ -64,4 +64,13 @@ describe('check-ins', () => {
     const d = await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', member);
     expect(d.status).toBe(204);
   });
+
+  it('member can delete visitor check-in they created within 5 min', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', member).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    expect(c.status).toBe(201);
+    expect(c.body.userId).toBeNull();
+    const d = await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', member);
+    expect(d.status).toBe(204);
+  });
 });

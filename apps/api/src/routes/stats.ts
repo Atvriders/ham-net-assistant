@@ -1,13 +1,23 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
 import type { ParticipationStats } from '@hna/shared';
 import { toCsvRow } from '../lib/csv.js';
 import { renderParticipationPdf } from '../lib/pdf.js';
 import { asyncHandler } from '../middleware/async.js';
+import { requireRole } from '../middleware/auth.js';
 
-function parseRange(q: Record<string, string | undefined>): { from: Date; to: Date } {
-  const to = q.to ? new Date(q.to) : new Date();
-  const from = q.from ? new Date(q.from) : new Date(to.getTime() - 180 * 24 * 60 * 60 * 1000);
+const RangeQuery = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
+function parseRange(q: unknown): { from: Date; to: Date } {
+  const parsed = RangeQuery.parse(q);
+  const to = parsed.to ? new Date(parsed.to) : new Date();
+  const from = parsed.from
+    ? new Date(parsed.from)
+    : new Date(to.getTime() - 180 * 24 * 60 * 60 * 1000);
   return { from, to };
 }
 
@@ -59,13 +69,13 @@ async function computeStats(
 export function statsRouter(prisma: PrismaClient): Router {
   const router = Router();
 
-  router.get('/participation', asyncHandler(async (req, res) => {
-    const { from, to } = parseRange(req.query as Record<string, string | undefined>);
+  router.get('/participation', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+    const { from, to } = parseRange(req.query);
     res.json(await computeStats(prisma, from, to));
   }));
 
-  router.get('/export.csv', asyncHandler(async (req, res) => {
-    const { from, to } = parseRange(req.query as Record<string, string | undefined>);
+  router.get('/export.csv', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+    const { from, to } = parseRange(req.query);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="checkins.csv"');
     res.write(toCsvRow(['checkedInAt', 'netName', 'callsign', 'name', 'comment']));
@@ -88,8 +98,8 @@ export function statsRouter(prisma: PrismaClient): Router {
     res.end();
   }));
 
-  router.get('/export.pdf', asyncHandler(async (req, res) => {
-    const { from, to } = parseRange(req.query as Record<string, string | undefined>);
+  router.get('/export.pdf', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+    const { from, to } = parseRange(req.query);
     const stats = await computeStats(prisma, from, to);
     const stream = await renderParticipationPdf(stats, 'Ham-Net-Assistant Club');
     res.setHeader('Content-Type', 'application/pdf');

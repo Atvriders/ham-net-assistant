@@ -31,6 +31,14 @@ export function usersRouter(prisma: PrismaClient): Router {
     res.json(PublicUser.parse(updated));
   }));
 
+  router.get('/directory', requireAuth, asyncHandler(async (_req, res) => {
+    const list = await prisma.user.findMany({
+      select: { callsign: true, name: true },
+      orderBy: { callsign: 'asc' },
+    });
+    res.json(list);
+  }));
+
   router.get('/', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
     const users = await prisma.user.findMany({
       select: publicSelect,

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../env.js';
-import type { Role } from '@hna/shared';
+import { Role } from '@hna/shared';
 
 export interface JwtClaims {
   sub: string;
@@ -16,7 +16,9 @@ export function signToken(claims: JwtClaims): string {
 export function verifyToken(token: string): JwtClaims {
   const decoded = jwt.verify(token, env.JWT_SECRET);
   if (typeof decoded === 'string') throw new Error('Invalid token');
-  return { sub: String(decoded.sub), role: decoded.role as Role };
+  const parsed = Role.safeParse((decoded as { role?: unknown }).role);
+  if (!parsed.success) throw new Error('Invalid role claim');
+  return { sub: String(decoded.sub), role: parsed.data };
 }
 
 export const COOKIE_NAME = 'hna_session';

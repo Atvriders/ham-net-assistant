@@ -36,6 +36,17 @@ describe('users', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.length).toBe(2);
   });
+  it('GET /api/users/directory returns callsign+name list for any member', async () => {
+    const unauth = await request(app).get('/api/users/directory');
+    expect(unauth.status).toBe(401);
+    const res = await request(app).get('/api/users/directory').set('Cookie', member);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(2);
+    expect(res.body[0]).toHaveProperty('callsign');
+    expect(res.body[0]).toHaveProperty('name');
+  });
+
   it('PATCH /api/users/:id/role [ADMIN]', async () => {
     const res = await request(app).patch(`/api/users/${memberId}/role`).set('Cookie', admin)
       .send({ role: 'OFFICER' });

@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
 
 let app: Express;
@@ -78,6 +79,10 @@ describe('logo upload', () => {
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
       0, 0, 0, 0, 0, 0, 0, 0,
     ]);
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(tinyPng, { status: 200, headers: { 'Content-Type': 'image/png' } }),
     );
@@ -89,6 +94,7 @@ describe('logo upload', () => {
     expect(res.status).toBe(201);
     expect(res.body.uploadedLogoUrl).toMatch(/\/api\/themes\/default\/logo\?v=/);
     spy.mockRestore();
+    dnsSpy.mockRestore();
   });
 
   it('rejects non-http url', async () => {
@@ -98,5 +104,35 @@ describe('logo upload', () => {
       .set('Content-Type', 'application/json')
       .send({ url: 'file:///etc/passwd' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects loopback URL (SSRF)', async () => {
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'http://127.0.0.1/x' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    dnsSpy.mockRestore();
+  });
+
+  it('rejects link-local metadata URL (SSRF)', async () => {
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'http://169.254.169.254/' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    dnsSpy.mockRestore();
   });
 });

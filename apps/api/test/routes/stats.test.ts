@@ -28,16 +28,29 @@ beforeAll(async () => {
 afterAll(async () => { await cleanupTestDb(prisma, dbFile); });
 
 describe('stats', () => {
-  it('GET /api/stats/participation returns totals', async () => {
+  it('GET /api/stats/participation requires auth', async () => {
     const res = await request(app).get('/api/stats/participation');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/stats/participation returns totals', async () => {
+    const res = await request(app).get('/api/stats/participation').set('Cookie', officer);
     expect(res.status).toBe(200);
     expect(res.body.totalCheckIns).toBe(2);
     expect(res.body.totalSessions).toBe(1);
     expect(res.body.perNet).toHaveLength(1);
   });
 
+  it('GET /api/stats/participation 400 on malformed from', async () => {
+    const res = await request(app)
+      .get('/api/stats/participation?from=garbage')
+      .set('Cookie', officer);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
   it('GET /api/stats/export.csv streams CSV', async () => {
-    const res = await request(app).get('/api/stats/export.csv');
+    const res = await request(app).get('/api/stats/export.csv').set('Cookie', officer);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/csv/);
     expect(res.text).toMatch(/callsign/i);
@@ -46,11 +59,15 @@ describe('stats', () => {
   });
 
   it('GET /api/stats/export.pdf returns PDF bytes', async () => {
-    const res = await request(app).get('/api/stats/export.pdf').buffer(true).parse((r, cb) => {
-      const chunks: Buffer[] = [];
-      r.on('data', (c: Buffer) => chunks.push(c));
-      r.on('end', () => cb(null, Buffer.concat(chunks)));
-    });
+    const res = await request(app)
+      .get('/api/stats/export.pdf')
+      .set('Cookie', officer)
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
     expect((res.body as Buffer).slice(0, 5).toString()).toBe('%PDF-');

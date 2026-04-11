@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
@@ -79,6 +80,18 @@ describe('POST /api/auth/login + /me + /logout', () => {
     const res = await request(app).post('/api/auth/login').send({
       email: 'alice@example.com', password: 'wrongwrongwrong',
     });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects token with bogus role claim', async () => {
+    const forged = jwt.sign(
+      { sub: 'someid', role: 'SUPERUSER' },
+      process.env.JWT_SECRET!,
+      { expiresIn: '1h' },
+    );
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `hna_session=${forged}`);
     expect(res.status).toBe(401);
   });
 });

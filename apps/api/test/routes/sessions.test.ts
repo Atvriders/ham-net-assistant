@@ -62,4 +62,21 @@ describe('sessions', () => {
     expect(list.status).toBe(200);
     expect(list.body.length).toBeGreaterThanOrEqual(1);
   });
+  it('GET list rejects malformed date query', async () => {
+    const res = await request(app).get('/api/sessions?from=garbage');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+  it('GET /api/sessions/:id/summary returns aggregated data', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    const res = await request(app).get(`/api/sessions/${s.body.id}/summary`);
+    expect(res.status).toBe(200);
+    expect(res.body.session.id).toBe(s.body.id);
+    expect(res.body.net.id).toBe(netId);
+    expect(res.body.repeater).toBeDefined();
+    expect(res.body.checkIns).toHaveLength(1);
+    expect(res.body.stats.count).toBe(1);
+  });
 });

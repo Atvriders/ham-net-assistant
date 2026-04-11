@@ -16,7 +16,8 @@ model User {
   role               String       @default("MEMBER")
   collegeSlug        String?
   createdAt          DateTime     @default(now())
-  checkIns           CheckIn[]
+  checkIns           CheckIn[]    @relation("CheckInSubject")
+  createdCheckIns    CheckIn[]    @relation("CheckInCreator")
   controlledSessions NetSession[] @relation("ControlOp")
 }
 
@@ -38,7 +39,7 @@ model Net {
   id         String       @id @default(cuid())
   name       String
   repeaterId String
-  repeater   Repeater     @relation(fields: [repeaterId], references: [id])
+  repeater   Repeater     @relation(fields: [repeaterId], references: [id], onDelete: Cascade)
   dayOfWeek  Int
   startLocal String
   timezone   String
@@ -51,21 +52,25 @@ model Net {
 model NetSession {
   id          String    @id @default(cuid())
   netId       String
-  net         Net       @relation(fields: [netId], references: [id])
+  net         Net       @relation(fields: [netId], references: [id], onDelete: Cascade)
   startedAt   DateTime
   endedAt     DateTime?
   controlOpId String?
-  controlOp   User?     @relation("ControlOp", fields: [controlOpId], references: [id])
+  controlOp   User?     @relation("ControlOp", fields: [controlOpId], references: [id], onDelete: SetNull)
   notes       String?
   checkIns    CheckIn[]
+
+  @@index([startedAt])
 }
 
 model CheckIn {
   id            String     @id @default(cuid())
   sessionId     String
-  session       NetSession @relation(fields: [sessionId], references: [id])
+  session       NetSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   userId        String?
-  user          User?      @relation(fields: [userId], references: [id])
+  user          User?      @relation("CheckInSubject", fields: [userId], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     User?      @relation("CheckInCreator", fields: [createdById], references: [id], onDelete: SetNull)
   callsign      String
   nameAtCheckIn String
   checkedInAt   DateTime   @default(now())
@@ -73,4 +78,5 @@ model CheckIn {
 
   @@index([sessionId])
   @@index([callsign])
+  @@index([checkedInAt])
 }

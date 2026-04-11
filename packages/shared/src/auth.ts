@@ -4,7 +4,10 @@ export const Callsign = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z0-9]{3,7}$/, 'Callsign must be 3–7 letters/digits');
+  .regex(
+    /^([A-Z0-9]{1,4}\/)?[A-Z0-9]{3,7}(\/(M|P|MM|AM|[A-Z0-9]{1,3}))?$/,
+    'Invalid callsign format',
+  );
 
 export const Role = z.enum(['MEMBER', 'OFFICER', 'ADMIN']);
 export type Role = z.infer<typeof Role>;

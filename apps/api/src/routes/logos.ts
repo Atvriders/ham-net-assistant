@@ -1,12 +1,74 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
 import { requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
 
 const ALLOWED_EXT = new Set(['.svg', '.png', '.jpg', '.jpeg']);
 const MAX_BYTES = 512 * 1024;
+
+export function isPrivateIp(addr: string, family: number): boolean {
+  if (family === 4) {
+    const parts = addr.split('.').map((n) => parseInt(n, 10));
+    if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) {
+      return true;
+    }
+    const [a, b] = parts as [number, number, number, number];
+    if (a === 0) return true;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+  }
+  if (family === 6) {
+    const lower = addr.toLowerCase();
+    // Strip zone id
+    const a = lower.split('%')[0] ?? lower;
+    if (a === '::1') return true;
+    if (a === '::') return true;
+    // fe80::/10
+    if (/^fe[89ab][0-9a-f]?:/.test(a)) return true;
+    // fc00::/7 (fc.. or fd..)
+    if (/^f[cd][0-9a-f]{2}:/.test(a)) return true;
+    // IPv4-mapped ::ffff:a.b.c.d
+    const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+    if (m && m[1]) return isPrivateIp(m[1], 4);
+    return false;
+  }
+  return true;
+}
+
+async function assertPublicUrl(urlStr: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    throw new HttpError(400, 'VALIDATION', 'Invalid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new HttpError(400, 'VALIDATION', 'url must use http:// or https://');
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+  let addrs: { address: string; family: number }[];
+  try {
+    addrs = await dns.promises.lookup(hostname, { all: true });
+  } catch (e) {
+    throw new HttpError(400, 'VALIDATION', `DNS lookup failed: ${(e as Error).message}`);
+  }
+  if (addrs.length === 0) {
+    throw new HttpError(400, 'VALIDATION', 'DNS lookup returned no addresses');
+  }
+  for (const a of addrs) {
+    if (isPrivateIp(a.address, a.family)) {
+      throw new HttpError(400, 'VALIDATION', 'URL resolves to a private/blocked address');
+    }
+  }
+  return parsed;
+}
 
 const MIME_BY_EXT: Record<string, string> = {
   '.svg': 'image/svg+xml',
@@ -70,13 +132,14 @@ export function logosRouter(): Router {
 
       if (req.is('application/json')) {
         const body = req.body as { url?: unknown };
-        const url = typeof body.url === 'string' ? body.url : '';
-        if (!/^https?:\/\//i.test(url)) {
-          throw new HttpError(400, 'VALIDATION', 'url must start with http:// or https://');
-        }
+        const urlRaw = typeof body.url === 'string' ? body.url : '';
+        const validated = await assertPublicUrl(urlRaw);
         let remote: Response;
         try {
-          remote = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          remote = await fetch(validated.toString(), {
+            signal: AbortSignal.timeout(5000),
+            redirect: 'error',
+          });
         } catch (e) {
           throw new HttpError(400, 'VALIDATION', `Failed to fetch url: ${(e as Error).message}`);
         }
@@ -89,8 +152,32 @@ export function logosRouter(): Router {
         else if (ct.startsWith('image/png')) jext = '.png';
         else if (ct.startsWith('image/jpeg') || ct.startsWith('image/jpg')) jext = '.jpg';
         else throw new HttpError(400, 'VALIDATION', `Unsupported remote content-type: ${ct || 'unknown'}`);
-        const arrayBuf = await remote.arrayBuffer();
-        const fileBytes = Buffer.from(arrayBuf);
+        const clHeader = remote.headers.get('content-length');
+        if (clHeader) {
+          const cl = parseInt(clHeader, 10);
+          if (!Number.isNaN(cl) && cl > MAX_BYTES) {
+            throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
+          }
+        }
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        const reader = remote.body?.getReader();
+        if (!reader) {
+          throw new HttpError(400, 'VALIDATION', 'Remote returned empty body');
+        }
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            received += value.byteLength;
+            if (received > MAX_BYTES) {
+              try { await reader.cancel(); } catch { /* ignore */ }
+              throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
+            }
+            chunks.push(value);
+          }
+        }
+        const fileBytes = Buffer.concat(chunks.map((c) => Buffer.from(c)));
         if (fileBytes.length > MAX_BYTES) {
           throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
         }

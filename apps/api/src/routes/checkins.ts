@@ -21,6 +21,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       data: {
         sessionId, callsign: body.callsign, nameAtCheckIn: body.nameAtCheckIn,
         comment: body.comment ?? null, userId: matched?.id ?? null,
+        createdById: req.user!.id,
       },
     });
     res.status(201).json(created);
@@ -32,7 +33,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const me = req.user!;
     const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
     const ownRecent =
-      ci.userId === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
+      ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
     if (!isOfficer && !ownRecent) {
       throw new HttpError(403, 'FORBIDDEN', 'Cannot delete this check-in');
     }

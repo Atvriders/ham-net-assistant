@@ -13,6 +13,24 @@ describe('Callsign', () => {
   it('rejects symbols', () => {
     expect(() => Callsign.parse('W1-ABC')).toThrow();
   });
+  it('rejects garbage input', () => {
+    expect(() => Callsign.parse('!!@@')).toThrow();
+  });
+  it('accepts /M mobile suffix', () => {
+    expect(Callsign.parse('w1aw/m')).toBe('W1AW/M');
+  });
+  it('accepts /P portable suffix', () => {
+    expect(Callsign.parse('kd0xyz/p')).toBe('KD0XYZ/P');
+  });
+  it('accepts DL/ prefix', () => {
+    expect(Callsign.parse('dl/w1aw')).toBe('DL/W1AW');
+  });
+  it('accepts /MM maritime mobile suffix', () => {
+    expect(Callsign.parse('w1aw/mm')).toBe('W1AW/MM');
+  });
+  it('accepts /AM aeronautical mobile suffix', () => {
+    expect(Callsign.parse('w1aw/am')).toBe('W1AW/AM');
+  });
 });
 
 describe('RegisterInput', () => {
