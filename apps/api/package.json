@@ -16,6 +16,7 @@
   "dependencies": {
     "@hna/shared": "*",
     "@prisma/client": "^5.13.0",
+    "prisma": "^5.13.0",
     "express": "^4.19.2",
     "cookie-parser": "^1.4.6",
     "argon2": "^0.40.1",
@@ -31,7 +32,6 @@
     "@types/node": "^20.12.7",
     "@types/supertest": "^6.0.2",
     "@types/react": "^18.3.1",
-    "prisma": "^5.13.0",
     "supertest": "^7.0.0",
     "tsx": "^4.7.2",
     "typescript": "^5.4.5",
