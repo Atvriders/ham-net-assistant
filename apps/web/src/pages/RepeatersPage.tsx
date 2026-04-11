@@ -7,6 +7,7 @@ import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { decodeGrid } from '../lib/grid.js';
+import { CsvImportModal } from '../components/CsvImportModal.js';
 
 interface CallsignLookupResponse {
   gridSquare: string | null;
@@ -80,6 +81,8 @@ export function RepeatersPage() {
   const [gridBusy, setGridBusy] = useState(false);
   const [suggestionSource, setSuggestionSource] = useState<string | null>(null);
   const [attemptedSources, setAttemptedSources] = useState<string[]>([]);
+
+  const [csvOpen, setCsvOpen] = useState(false);
 
   async function reload(signal?: AbortSignal) {
     const rows = await apiFetch<Repeater[]>('/repeaters', { signal });
@@ -315,6 +318,9 @@ export function RepeatersPage() {
             <Button variant="secondary" onClick={openCoords} disabled={suggesting}>
               Discover by coordinates
             </Button>
+            <Button variant="secondary" onClick={() => setCsvOpen(true)}>
+              Import from CSV
+            </Button>
             <Button onClick={openCreate}>Add repeater</Button>
           </>
         )}
@@ -378,6 +384,14 @@ export function RepeatersPage() {
           </Card>
         ))}
       </div>
+
+      <CsvImportModal
+        open={csvOpen}
+        onClose={() => setCsvOpen(false)}
+        onImported={() => {
+          reload().catch(() => {});
+        }}
+      />
 
       <Modal open={showForm} onClose={() => setShowForm(false)}>
         <h2>{editing ? 'Edit repeater' : 'Add repeater'}</h2>
