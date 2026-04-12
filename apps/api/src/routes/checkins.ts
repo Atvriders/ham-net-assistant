@@ -30,6 +30,19 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.status(201).json(created);
   }));
 
+  flat.get('/callsign-history/:callsign', requireAuth, asyncHandler(async (req, res) => {
+    const callsign = String(req.params.callsign ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9/]{3,10}$/.test(callsign)) {
+      throw new HttpError(400, 'VALIDATION', 'Invalid callsign');
+    }
+    const last = await prisma.checkIn.findFirst({
+      where: { callsign },
+      orderBy: { checkedInAt: 'desc' },
+      select: { nameAtCheckIn: true },
+    });
+    res.json({ callsign, name: last?.nameAtCheckIn ?? null });
+  }));
+
   flat.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
     const ci = await prisma.checkIn.findUnique({ where: { id: req.params.id } });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');

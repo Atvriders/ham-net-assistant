@@ -65,6 +65,29 @@ describe('check-ins', () => {
     expect(d.status).toBe(204);
   });
 
+  it('returns most recent nameAtCheckIn for a callsign via history endpoint', async () => {
+    await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0VIS', nameAtCheckIn: 'Alice' });
+    const res = await request(app)
+      .get('/api/checkins/callsign-history/KC0VIS')
+      .set('Cookie', member);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ callsign: 'KC0VIS', name: 'Alice' });
+  });
+
+  it('returns null name for never-seen callsign', async () => {
+    const res = await request(app)
+      .get('/api/checkins/callsign-history/KC9ZZZ')
+      .set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ callsign: 'KC9ZZZ', name: null });
+  });
+
+  it('callsign-history endpoint requires auth', async () => {
+    const res = await request(app).get('/api/checkins/callsign-history/W1AW');
+    expect(res.status).toBe(401);
+  });
+
   it('member can delete visitor check-in they created within 5 min', async () => {
     const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
       .set('Cookie', member).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });

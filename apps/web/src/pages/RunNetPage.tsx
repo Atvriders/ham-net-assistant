@@ -4,6 +4,7 @@ import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { Modal } from '../components/ui/Modal.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
@@ -47,7 +48,15 @@ export function RunNetPage() {
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [endNotes, setEndNotes] = useState('');
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const lastAutoFilledNameRef = useRef<string>('');
+  const nameRef = useRef<string>('');
+  useEffect(() => {
+    nameRef.current = name;
+  }, [name]);
 
   // Derive net from session payload; fall back to /nets if the backend
   // didn't inline it (older responses).
@@ -78,6 +87,48 @@ export function RunNetPage() {
     return () => ctrl.abort();
   }, []);
 
+  // Autofill name from member directory (instant) or check-in history (debounced)
+  useEffect(() => {
+    const cs = callsign.trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,7}$/.test(cs)) return;
+
+    const member = directory.find((d) => d.callsign === cs);
+    if (member) {
+      const current = nameRef.current;
+      if (current === '' || current === lastAutoFilledNameRef.current) {
+        setName(member.name);
+        lastAutoFilledNameRef.current = member.name;
+      }
+      return;
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      apiFetch<{ callsign: string; name: string | null }>(
+        `/checkins/callsign-history/${cs}`,
+        { signal: ctrl.signal },
+      )
+        .then((res) => {
+          if (!res.name) return;
+          const current = nameRef.current;
+          if (current === '' || current === lastAutoFilledNameRef.current) {
+            setName(res.name);
+            lastAutoFilledNameRef.current = res.name;
+          }
+        })
+        .catch((e) => {
+          if (!isAbortError(e)) {
+            /* network — ignore */
+          }
+        });
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [callsign, directory]);
+
   async function undoLast() {
     const last = session?.checkIns[0];
     if (!last) return;
@@ -85,12 +136,19 @@ export function RunNetPage() {
     await refresh();
   }
 
-  async function endNet() {
+  function endNet() {
     if (!sessionId) return;
-    if (!confirm('End this net?')) return;
+    setReviewOpen(true);
+  }
+
+  async function confirmEnd() {
+    if (!sessionId) return;
     await apiFetch(`/sessions/${sessionId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ endedAt: new Date().toISOString() }),
+      body: JSON.stringify({
+        endedAt: new Date().toISOString(),
+        notes: endNotes.trim() || undefined,
+      }),
     });
     nav(`/sessions/${sessionId}/summary`);
   }
@@ -112,21 +170,22 @@ export function RunNetPage() {
     });
     setCallsign('');
     setName('');
+    lastAutoFilledNameRef.current = '';
     inputRef.current?.focus();
     await refresh();
   }
 
-  // Escape key ends net
+  // Escape key opens the end-net review modal (Modal handles its own Escape to close)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        void endNet();
+      if (e.key === 'Escape' && !reviewOpen) {
+        endNet();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, reviewOpen]);
 
   function onCallsignKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Backspace' && callsign === '') {
@@ -260,6 +319,97 @@ export function RunNetPage() {
           ))}
         </ul>
       </Card>
+      <Modal open={reviewOpen} onClose={() => setReviewOpen(false)}>
+        <h2 style={{ marginTop: 0 }}>Review before ending net</h2>
+        <div style={{ marginBottom: 8 }}>
+          <strong>{net.name}</strong> — {net.repeater.name}
+          <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            {session.checkIns.length} check-in{session.checkIns.length === 1 ? '' : 's'}
+            {session.startedAt && (
+              <>
+                {' · '}
+                {Math.max(
+                  1,
+                  Math.round((Date.now() - new Date(session.startedAt).getTime()) / 60000),
+                )}{' '}
+                min
+              </>
+            )}
+          </div>
+        </div>
+        <ol
+          style={{
+            maxHeight: 320,
+            overflowY: 'auto',
+            margin: '8px 0',
+            padding: '8px 12px 8px 28px',
+            border: '1px solid var(--color-border)',
+            borderRadius: 6,
+            background: 'var(--color-bg-muted)',
+          }}
+        >
+          {[...session.checkIns]
+            .sort(
+              (a, b) =>
+                new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
+            )
+            .map((ci) => (
+              <li key={ci.id} style={{ padding: '2px 0' }}>
+                {new Date(ci.checkedInAt).toLocaleTimeString(undefined, {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                })}{' '}
+                — <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              </li>
+            ))}
+          {session.checkIns.length === 0 && (
+            <li style={{ listStyle: 'none', color: 'var(--color-text-muted)' }}>
+              No check-ins yet.
+            </li>
+          )}
+        </ol>
+        {notesExpanded ? (
+          <label style={{ display: 'block', marginTop: 8 }}>
+            Session notes (optional)
+            <textarea
+              className="hna-input"
+              value={endNotes}
+              onChange={(e) => setEndNotes(e.target.value)}
+              style={{ width: '100%', minHeight: 80, marginTop: 4 }}
+              autoFocus
+            />
+          </label>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setNotesExpanded(true)}
+            style={{ marginTop: 8 }}
+          >
+            Add notes
+          </Button>
+        )}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 8,
+            marginTop: 16,
+          }}
+        >
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setReviewOpen(false)}
+          >
+            Keep running
+          </Button>
+          <Button type="button" variant="danger" onClick={confirmEnd}>
+            End net
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
