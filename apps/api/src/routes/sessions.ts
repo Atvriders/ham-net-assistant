@@ -89,6 +89,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           },
         },
         checkIns: { orderBy: { checkedInAt: 'asc' } },
+        controlOp: { select: { callsign: true, name: true } },
       },
     });
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
@@ -117,6 +118,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
             links: { include: { repeater: true } },
           },
         },
+        controlOp: { select: { callsign: true, name: true } },
       },
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
@@ -142,6 +144,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           endedAt:
             body.endedAt === undefined ? undefined : body.endedAt ? new Date(body.endedAt) : null,
           notes: body.notes === undefined ? undefined : body.notes,
+          controlOpId: body.controlOpId ?? undefined,
         },
       });
       res.json(updated);

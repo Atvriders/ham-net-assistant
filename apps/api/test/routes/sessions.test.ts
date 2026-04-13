@@ -157,6 +157,32 @@ describe('sessions', () => {
     expect(g.status).toBe(200);
     expect(g.body.net.scriptMd).toBe('# Officer eyes only');
   });
+  it('PATCH controlOpId reassigns the control operator', async () => {
+    const email = `offb-${Date.now()}@x.co`;
+    await request(app).post('/api/auth/register').send({
+      email, password: 'hunter2hunter2', name: 'Officer B', callsign: 'W2BW',
+    });
+    const bUser = await prisma.user.findFirst({ where: { callsign: 'W2BW' } });
+    await prisma.user.update({ where: { id: bUser!.id }, data: { role: 'OFFICER' } });
+    // Re-login to get a token with the OFFICER role
+    const login = await request(app).post('/api/auth/login').send({ email, password: 'hunter2hunter2' });
+    const officerB = login.headers['set-cookie'][0];
+
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`)
+      .set('Cookie', officerB)
+      .send({ controlOpId: bUser!.id });
+    expect(patch.status).toBe(200);
+    expect(patch.body.controlOpId).toBe(bUser!.id);
+  });
+  it('GET session includes controlOp with callsign and name', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    expect(g.status).toBe(200);
+    expect(g.body.controlOp).toBeDefined();
+    expect(g.body.controlOp.callsign).toBe('W1AW');
+    expect(g.body.controlOp.name).toBe('A');
+  });
   it('GET /api/sessions/:id/summary returns aggregated data', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)

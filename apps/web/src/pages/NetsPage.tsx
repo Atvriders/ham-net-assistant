@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Net, NetInput, Repeater } from '@hna/shared';
+import type { Net, NetInput, NetSession, Repeater } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
@@ -20,6 +20,10 @@ interface NetLinkWithRepeater {
 interface NetWithRepeater extends Net {
   repeater: Repeater;
   links: NetLinkWithRepeater[];
+}
+
+interface ActiveSessionRow extends NetSession {
+  net: { id: string; name: string };
 }
 
 function toNetInput(n: NetWithRepeater): NetInput {
@@ -58,10 +62,26 @@ export function NetsPage() {
   const { data: repeatersData } = useAutoFetch<Repeater[]>('/repeaters', {
     intervalMs: 15000,
   });
+  const { data: activeData } = useAutoFetch<ActiveSessionRow[]>('/nets/active', {
+    intervalMs: 5000,
+  });
   const nets = netsData ?? [];
   const repeaters = repeatersData ?? [];
+  const activeByNetId = useMemo(() => {
+    const map: Record<string, { id: string; controlOpId: string | null }> = {};
+    for (const s of activeData ?? []) map[s.netId] = { id: s.id, controlOpId: s.controlOpId };
+    return map;
+  }, [activeData]);
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
   const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
+
+  async function takeControl(sessionId: string) {
+    await apiFetch(`/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ controlOpId: user!.id }),
+    });
+    nav(`/run/${sessionId}`);
+  }
 
   async function save() {
     if (!editing) return;
@@ -113,7 +133,24 @@ export function NetsPage() {
                 {n.theme && <div>Theme: {n.theme}</div>}
               </div>
               <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
-                {canEdit && <Button onClick={() => openStart(n.id, n.name)}>Start net</Button>}
+                {(() => {
+                  const active = activeByNetId[n.id];
+                  return (
+                    <>
+                      {canEdit && !active && (
+                        <Button onClick={() => openStart(n.id, n.name)}>Start net</Button>
+                      )}
+                      {canEdit && active && (
+                        <Button onClick={() => takeControl(active.id)}>Take control</Button>
+                      )}
+                      {active && (
+                        <Button variant="secondary" onClick={() => nav(`/nets/${n.id}/join`)}>
+                          Join as member
+                        </Button>
+                      )}
+                    </>
+                  );
+                })()}
                 {canEdit && (
                   <Button
                     variant="secondary"

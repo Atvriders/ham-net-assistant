@@ -8,6 +8,7 @@ import { Modal } from '../components/ui/Modal.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { useAuth } from '../auth/AuthProvider.js';
 import {
   capitalizeFirst,
   formatFrequency,
@@ -31,6 +32,7 @@ interface SessionResponse extends NetSession {
   net?: NetFull;
   topicTitle?: string | null;
   topic?: { id: string; title: string } | null;
+  controlOp?: { callsign: string; name: string } | null;
 }
 interface DirectoryEntry {
   callsign: string;
@@ -40,6 +42,7 @@ interface DirectoryEntry {
 export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const nav = useNavigate();
+  const { user } = useAuth();
   const { data: session, refresh } = useAutoFetch<SessionResponse>(
     sessionId ? `/sessions/${sessionId}` : null,
     { intervalMs: 3000 },
@@ -254,7 +257,26 @@ export function RunNetPage() {
             ))}
           </div>
         )}
+        {session.controlOp && (
+          <div style={{ marginTop: 8 }}>
+            <small>Control: {displayCallsign(session.controlOp.callsign)} — {session.controlOp.name}</small>
+          </div>
+        )}
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {user && session.controlOpId !== user.id && (
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                await apiFetch(`/sessions/${session.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ controlOpId: user.id }),
+                });
+                await refresh();
+              }}
+            >
+              Take control
+            </Button>
+          )}
           <Button variant="danger" onClick={endNet}>
             End net
           </Button>

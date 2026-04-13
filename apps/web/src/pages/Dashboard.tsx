@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Net, Repeater, NetSession } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
@@ -21,7 +21,17 @@ interface ActiveSessionRow extends NetSession {
 
 export function Dashboard() {
   const { user } = useAuth();
+  const nav = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
+  const canControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+
+  async function takeControl(sessionId: string) {
+    await apiFetch(`/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ controlOpId: user!.id }),
+    });
+    nav(`/run/${sessionId}`);
+  }
   const { data: netsData } = useAutoFetch<NetWithRepeater[]>('/nets', {
     intervalMs: 10000,
   });
@@ -104,9 +114,16 @@ export function Dashboard() {
                   </span>
                 )}
               </span>
-              <Link to={`/nets/${s.net.id}/join`}>
-                <Button>Join {s.net.name}</Button>
-              </Link>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {canControl && (
+                  <Button variant="secondary" onClick={() => takeControl(s.id)}>
+                    Take control
+                  </Button>
+                )}
+                <Link to={`/nets/${s.net.id}/join`}>
+                  <Button>Join {s.net.name}</Button>
+                </Link>
+              </div>
             </div>
           ))}
         </Card>
