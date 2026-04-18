@@ -21,6 +21,7 @@ model User {
   createdCheckIns    CheckIn[]    @relation("CheckInCreator")
   controlledSessions NetSession[] @relation("ControlOp")
   suggestions        TopicSuggestion[] @relation("TopicCreator")
+  messages           SessionMessage[] @relation("MessageAuthor")
 
   @@index([callsign])
 }
@@ -98,8 +99,24 @@ model NetSession {
   topic       TopicSuggestion? @relation("SessionTopic", fields: [topicId], references: [id], onDelete: SetNull)
   topicTitle  String?
   checkIns    CheckIn[]
+  messages    SessionMessage[]
 
   @@index([startedAt])
+}
+
+model SessionMessage {
+  id            String     @id @default(cuid())
+  sessionId     String
+  session       NetSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?      @relation("MessageAuthor", fields: [userId], references: [id], onDelete: SetNull)
+  callsign      String
+  nameAtMessage String
+  body          String
+  createdAt     DateTime   @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([userId])
 }
 
 model CheckIn {

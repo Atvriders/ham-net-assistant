@@ -14,6 +14,7 @@ import { logosRouter } from './routes/logos.js';
 import { usersRouter } from './routes/users.js';
 import { callsignLookupRouter } from './routes/callsignLookup.js';
 import { topicsRouter } from './routes/topics.js';
+import { messagesRouter } from './routes/messages.js';
 import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
@@ -37,6 +38,9 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/themes', logosRouter());
   app.use('/api/users', usersRouter(prisma));
   app.use('/api/topics', topicsRouter(prisma));
+  const messages = messagesRouter(prisma);
+  app.use('/api/sessions/:sessionId/messages', messages.nested);
+  app.use('/api/messages', messages.flat);
 
   mountStatic(app);
   app.use(errorHandler);

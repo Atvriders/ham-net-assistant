@@ -16,6 +16,7 @@ import {
   formatTone,
   displayCallsign,
 } from '../lib/format.js';
+import { ChatBox } from '../components/ChatBox.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -207,7 +208,8 @@ export function RunNetPage() {
       : directory.slice(0, 8);
 
   return (
-    <div className="hna-runnet-grid" style={{ display: 'grid', gap: 16, padding: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
+      <div className="hna-runnet-grid" style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
       <Card>
         <h2>{net.repeater.name}</h2>
         <div>{formatFrequency(net.repeater.frequency)}</div>
@@ -341,6 +343,8 @@ export function RunNetPage() {
           ))}
         </ul>
       </Card>
+      </div>
+      <ChatBox sessionId={session.id} />
       <Modal open={reviewOpen} onClose={() => setReviewOpen(false)}>
         <h2 style={{ marginTop: 0 }}>Review before ending net</h2>
         <div style={{ marginBottom: 8 }}>

@@ -13,6 +13,7 @@ import {
   formatTone,
   displayCallsign,
 } from '../lib/format.js';
+import { ChatBox } from '../components/ChatBox.js';
 
 interface NetFull extends Net {
   repeater: Repeater;
@@ -196,6 +197,7 @@ export function JoinNetPage() {
           ))}
         </ul>
       </Card>
+      <ChatBox sessionId={session.id} />
     </div>
   );
 }
