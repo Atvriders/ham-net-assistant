@@ -195,10 +195,6 @@ export function RunNetPage() {
     const trimmed = name.trim();
     if (!trimmed) return;
     const capitalized = capitalizeFirst(trimmed);
-    const isMember = directory.some((d) => d.callsign === callsign);
-    if (!isMember) {
-      if (!confirm(`Log ${callsign} as visitor?`)) return;
-    }
     await apiFetch(`/sessions/${sessionId}/checkins`, {
       method: 'POST',
       body: JSON.stringify({ callsign, nameAtCheckIn: capitalized }),
