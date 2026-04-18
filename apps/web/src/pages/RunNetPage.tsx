@@ -91,8 +91,8 @@ export function RunNetPage() {
     return () => ctrl.abort();
   }, []);
 
-  // Autofill name from member directory (instant), check-in history (debounced),
-  // or FCC callook lookup (final fallback for first-time visitors).
+  // Autofill name from member directory (instant), check-in history + FCC lookup
+  // (parallel, debounced) with history priority for repeat visitors.
   useEffect(() => {
     const cs = callsign.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,7}$/.test(cs)) return;
@@ -105,42 +105,40 @@ export function RunNetPage() {
       }
     };
 
+    // 1. Instant local directory match
     const member = directory.find((d) => d.callsign === cs);
     if (member) {
       maybeSetName(member.name);
       return;
     }
 
+    // 2. Parallel remote lookup with short debounce
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
-      apiFetch<{ callsign: string; name: string | null }>(
+      const history = apiFetch<{ callsign: string; name: string | null }>(
         `/checkins/callsign-history/${cs}`,
         { signal: ctrl.signal },
-      )
-        .then(async (res) => {
-          if (res.name) {
-            maybeSetName(res.name);
-            return;
-          }
-          // Third fallback: FCC (callook.info) lookup for first-time visitors.
-          try {
-            const fcc = await apiFetch<{ name: string | null; found: boolean }>(
-              `/callsign-lookup/${cs}`,
-              { signal: ctrl.signal },
-            );
-            if (fcc.name) maybeSetName(fcc.name);
-          } catch (e) {
-            if (!isAbortError(e)) {
-              /* network — ignore */
-            }
-          }
-        })
-        .catch((e) => {
-          if (!isAbortError(e)) {
-            /* network — ignore */
-          }
-        });
-    }, 300);
+      ).catch((e) => {
+        if (!isAbortError(e)) {
+          /* ignore */
+        }
+        return { callsign: cs, name: null };
+      });
+      const fcc = apiFetch<{ name: string | null; found: boolean }>(
+        `/callsign-lookup/${cs}`,
+        { signal: ctrl.signal },
+      ).catch((e) => {
+        if (!isAbortError(e)) {
+          /* ignore */
+        }
+        return { name: null, found: false };
+      });
+      Promise.all([history, fcc]).then(([h, f]) => {
+        // Priority: history wins, FCC fallback if history has no name
+        const pick = h.name ?? f.name;
+        if (pick) maybeSetName(pick);
+      });
+    }, 120);
 
     return () => {
       clearTimeout(timer);
