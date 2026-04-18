@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -37,11 +38,28 @@ export function SessionSummaryPage() {
   const nav = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-  const { data, error: err } = useAutoFetch<SummaryResponse>(
+  const { data, error: err, refresh } = useAutoFetch<SummaryResponse>(
     sessionId ? `/sessions/${sessionId}/summary` : null,
     { intervalMs: 30000 },
   );
   const [copied, setCopied] = useState(false);
+  const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
+
+  const canModify = (ci: CheckIn): boolean => {
+    if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
+    const recent = Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
+    return ci.createdById === user?.id && recent;
+  };
+
+  async function deleteCheckIn(id: string) {
+    if (!confirm('Delete this check-in?')) return;
+    try {
+      await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      console.warn('delete failed', e);
+    }
+  }
 
   async function deleteSession() {
     if (!sessionId) return;
@@ -137,16 +155,65 @@ export function SessionSummaryPage() {
           {checkIns.map((ci) => (
             <li
               key={ci.id}
-              style={{ borderBottom: '1px solid var(--color-border)', padding: '6px 0' }}
+              style={{
+                borderBottom: '1px solid var(--color-border)',
+                padding: '6px 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
-              <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
-              <span style={{ float: 'right', color: 'var(--color-muted)' }}>
-                {new Date(ci.checkedInAt).toLocaleTimeString(undefined, { hour12: true })}
+              <span>
+                <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: 'var(--color-muted)' }}>
+                  {new Date(ci.checkedInAt).toLocaleTimeString(undefined, { hour12: true })}
+                </span>
+                {canModify(ci) && (
+                  <>
+                    <button
+                      onClick={() => setEditingCheckIn(ci)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-fg)',
+                        opacity: 0.7,
+                        fontSize: 14,
+                      }}
+                      aria-label="Edit"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => deleteCheckIn(ci.id)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-danger)',
+                        opacity: 0.7,
+                        fontSize: 14,
+                      }}
+                      aria-label="Delete"
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </span>
             </li>
           ))}
         </ul>
       </Card>
+      <EditCheckInModal
+        open={editingCheckIn !== null}
+        checkIn={editingCheckIn}
+        onClose={() => setEditingCheckIn(null)}
+        onSaved={refresh}
+      />
     </div>
   );
 }

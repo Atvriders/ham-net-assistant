@@ -43,6 +43,35 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.json({ callsign, name: last?.nameAtCheckIn ?? null });
   }));
 
+  flat.patch('/:id', requireAuth, validateBody(CheckInInput), asyncHandler(async (req, res) => {
+    const ci = await prisma.checkIn.findUnique({ where: { id: req.params.id } });
+    if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
+    const me = req.user!;
+    const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
+    const ownRecent =
+      ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
+    if (!isOfficer && !ownRecent) {
+      throw new HttpError(403, 'FORBIDDEN', 'Cannot edit this check-in');
+    }
+    const body = req.body as typeof CheckInInput._type;
+    // If the new callsign maps to a registered member, relink userId;
+    // otherwise clear userId (it's now a visitor entry).
+    const matched = await prisma.user.findFirst({
+      where: { callsign: body.callsign },
+      orderBy: { createdAt: 'asc' },
+    });
+    const updated = await prisma.checkIn.update({
+      where: { id: ci.id },
+      data: {
+        callsign: body.callsign,
+        nameAtCheckIn: body.nameAtCheckIn,
+        comment: body.comment ?? null,
+        userId: matched?.id ?? null,
+      },
+    });
+    res.json(updated);
+  }));
+
   flat.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
     const ci = await prisma.checkIn.findUnique({ where: { id: req.params.id } });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');

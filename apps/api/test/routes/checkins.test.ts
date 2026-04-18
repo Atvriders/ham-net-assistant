@@ -96,4 +96,57 @@ describe('check-ins', () => {
     const d = await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', member);
     expect(d.status).toBe(204);
   });
+
+  it('officer can PATCH a check-in to update fields', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0NEW', nameAtCheckIn: 'Updated' });
+    expect(p.status).toBe(200);
+    expect(p.body.callsign).toBe('KC0NEW');
+    expect(p.body.nameAtCheckIn).toBe('Updated');
+  });
+
+  it('member can PATCH own check-in within 5 min', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', member).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', member)
+      .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Robert' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Robert');
+  });
+
+  it("member cannot PATCH someone else's check-in", async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', member)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'Hacker' });
+    expect(p.status).toBe(403);
+  });
+
+  it('PATCH unknown id returns 404', async () => {
+    const p = await request(app).patch('/api/checkins/does-not-exist').set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    expect(p.status).toBe(404);
+  });
+
+  it('PATCH with matching member callsign relinks userId', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor' });
+    expect(c.body.userId).toBeNull();
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    expect(p.status).toBe(200);
+    expect(p.body.userId).not.toBeNull();
+  });
+
+  it('PATCH with non-member callsign clears userId', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    expect(c.body.userId).not.toBeNull();
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0ZZZ', nameAtCheckIn: 'Stranger' });
+    expect(p.status).toBe(200);
+    expect(p.body.userId).toBeNull();
+  });
 });

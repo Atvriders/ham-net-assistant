@@ -14,6 +14,7 @@ import {
   displayCallsign,
 } from '../lib/format.js';
 import { ChatBox } from '../components/ChatBox.js';
+import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
 interface NetFull extends Net {
   repeater: Repeater;
@@ -41,6 +42,24 @@ export function JoinNetPage() {
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [checkedInAt, setCheckedInAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
+
+  const canModify = (ci: CheckIn): boolean => {
+    if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
+    const recent = Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
+    return ci.createdById === user?.id && recent;
+  };
+
+  async function deleteCheckIn(id: string) {
+    if (!confirm('Delete this check-in?')) return;
+    try {
+      await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
+      setCheckedInAt(null);
+      await refresh();
+    } catch (e) {
+      console.warn('delete failed', e);
+    }
+  }
 
   // When the polled session first arrives, lock the button if we're
   // already on the list.
@@ -183,21 +202,67 @@ export function JoinNetPage() {
               style={{
                 borderBottom: '1px solid var(--color-border)',
                 padding: '6px 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
               }}
             >
-              <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
-              <span style={{ float: 'right', color: 'var(--color-muted)' }}>
-                {new Date(ci.checkedInAt).toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
+              <span>
+                <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: 'var(--color-muted)' }}>
+                  {new Date(ci.checkedInAt).toLocaleTimeString(undefined, {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                </span>
+                {canModify(ci) && (
+                  <>
+                    <button
+                      onClick={() => setEditingCheckIn(ci)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-fg)',
+                        opacity: 0.7,
+                        fontSize: 14,
+                      }}
+                      aria-label="Edit"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => deleteCheckIn(ci.id)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-danger)',
+                        opacity: 0.7,
+                        fontSize: 14,
+                      }}
+                      aria-label="Delete"
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </span>
             </li>
           ))}
         </ul>
       </Card>
       <ChatBox sessionId={session.id} />
+      <EditCheckInModal
+        open={editingCheckIn !== null}
+        checkIn={editingCheckIn}
+        onClose={() => setEditingCheckIn(null)}
+        onSaved={refresh}
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   displayCallsign,
 } from '../lib/format.js';
 import { ChatBox } from '../components/ChatBox.js';
+import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -55,6 +56,7 @@ export function RunNetPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [endNotes, setEndNotes] = useState('');
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   const nameRef = useRef<string>('');
@@ -151,6 +153,22 @@ export function RunNetPage() {
     if (!last) return;
     await apiFetch(`/checkins/${last.id}`, { method: 'DELETE' });
     await refresh();
+  }
+
+  const canModify = (ci: CheckIn): boolean => {
+    if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
+    const recent = Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
+    return ci.createdById === user?.id && recent;
+  };
+
+  async function deleteCheckIn(id: string) {
+    if (!confirm('Delete this check-in?')) return;
+    try {
+      await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      console.warn('delete failed', e);
+    }
   }
 
   function endNet() {
@@ -364,9 +382,50 @@ export function RunNetPage() {
           {session.checkIns.map((ci) => (
             <li
               key={ci.id}
-              style={{ borderBottom: '1px solid var(--color-border)', padding: '4px 0' }}
+              style={{
+                borderBottom: '1px solid var(--color-border)',
+                padding: '4px 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
-              <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              <span>
+                <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              </span>
+              {canModify(ci) && (
+                <span style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    onClick={() => setEditingCheckIn(ci)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--color-fg)',
+                      opacity: 0.7,
+                      fontSize: 14,
+                    }}
+                    aria-label="Edit"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => deleteCheckIn(ci.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--color-danger)',
+                      opacity: 0.7,
+                      fontSize: 14,
+                    }}
+                    aria-label="Delete"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -464,6 +523,12 @@ export function RunNetPage() {
           </Button>
         </div>
       </Modal>
+      <EditCheckInModal
+        open={editingCheckIn !== null}
+        checkIn={editingCheckIn}
+        onClose={() => setEditingCheckIn(null)}
+        onSaved={refresh}
+      />
     </div>
   );
 }

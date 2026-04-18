@@ -16,5 +16,6 @@ export const CheckIn = z.object({
   nameAtCheckIn: z.string(),
   checkedInAt: z.string().datetime(),
   comment: z.string().nullable(),
+  createdById: z.string().nullable().optional(),
 });
 export type CheckIn = z.infer<typeof CheckIn>;
