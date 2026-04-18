@@ -91,18 +91,23 @@ export function RunNetPage() {
     return () => ctrl.abort();
   }, []);
 
-  // Autofill name from member directory (instant) or check-in history (debounced)
+  // Autofill name from member directory (instant), check-in history (debounced),
+  // or FCC callook lookup (final fallback for first-time visitors).
   useEffect(() => {
     const cs = callsign.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,7}$/.test(cs)) return;
 
-    const member = directory.find((d) => d.callsign === cs);
-    if (member) {
+    const maybeSetName = (candidate: string) => {
       const current = nameRef.current;
       if (current === '' || current === lastAutoFilledNameRef.current) {
-        setName(member.name);
-        lastAutoFilledNameRef.current = member.name;
+        setName(candidate);
+        lastAutoFilledNameRef.current = candidate;
       }
+    };
+
+    const member = directory.find((d) => d.callsign === cs);
+    if (member) {
+      maybeSetName(member.name);
       return;
     }
 
@@ -112,12 +117,22 @@ export function RunNetPage() {
         `/checkins/callsign-history/${cs}`,
         { signal: ctrl.signal },
       )
-        .then((res) => {
-          if (!res.name) return;
-          const current = nameRef.current;
-          if (current === '' || current === lastAutoFilledNameRef.current) {
-            setName(res.name);
-            lastAutoFilledNameRef.current = res.name;
+        .then(async (res) => {
+          if (res.name) {
+            maybeSetName(res.name);
+            return;
+          }
+          // Third fallback: FCC (callook.info) lookup for first-time visitors.
+          try {
+            const fcc = await apiFetch<{ name: string | null; found: boolean }>(
+              `/callsign-lookup/${cs}`,
+              { signal: ctrl.signal },
+            );
+            if (fcc.name) maybeSetName(fcc.name);
+          } catch (e) {
+            if (!isAbortError(e)) {
+              /* network — ignore */
+            }
           }
         })
         .catch((e) => {
@@ -195,6 +210,12 @@ export function RunNetPage() {
     if (e.key === 'Backspace' && callsign === '') {
       e.preventDefault();
       void undoLast();
+      return;
+    }
+    if (e.key === 'Enter') {
+      // Prevent the datalist from swallowing Enter as a suggestion commit
+      e.preventDefault();
+      void addCheckIn();
     }
   }
 
@@ -323,7 +344,16 @@ export function RunNetPage() {
           </label>
           <label>
             Name
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void addCheckIn();
+                }
+              }}
+            />
           </label>
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
             <Button type="submit">Add</Button>
