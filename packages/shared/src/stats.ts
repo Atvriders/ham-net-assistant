@@ -16,5 +16,23 @@ export const ParticipationStats = z.object({
   perNet: z.array(
     z.object({ netId: z.string(), netName: z.string(), sessions: z.number().int(), checkIns: z.number().int() }),
   ),
+  sessions: z.array(
+    z.object({
+      id: z.string(),
+      netId: z.string(),
+      netName: z.string(),
+      startedAt: z.string().datetime(),
+      endedAt: z.string().datetime().nullable(),
+      topic: z.string().nullable(),
+      controlOp: z.object({ callsign: z.string(), name: z.string() }).nullable(),
+      checkIns: z.array(
+        z.object({
+          callsign: z.string(),
+          name: z.string(),
+          checkedInAt: z.string().datetime(),
+        }),
+      ),
+    }),
+  ),
 });
 export type ParticipationStats = z.infer<typeof ParticipationStats>;

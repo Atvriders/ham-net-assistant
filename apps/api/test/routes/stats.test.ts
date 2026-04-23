@@ -6,6 +6,7 @@ import { makeTestApp, cleanupTestDb } from '../helpers.js';
 
 let app: Express; let prisma: PrismaClient; let dbFile: string;
 let officer: string;
+let sessionId: string;
 
 beforeAll(async () => {
   ({ app, prisma, dbFile } = await makeTestApp());
@@ -19,7 +20,9 @@ beforeAll(async () => {
     name: 'Wed Net', repeaterId: r.body.id, dayOfWeek: 3,
     startLocal: '20:00', timezone: 'America/Chicago',
   });
-  const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer);
+  const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer)
+    .send({ topicTitle: 'Antennas 101' });
+  sessionId = s.body.id;
   await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
     .send({ callsign: 'W1AW', nameAtCheckIn: 'Alice' });
   await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
@@ -41,6 +44,28 @@ describe('stats', () => {
     expect(res.body.perNet).toHaveLength(1);
   });
 
+  it('GET /api/stats/participation returns sessions array with per-session detail', async () => {
+    const res = await request(app).get('/api/stats/participation').set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.sessions)).toBe(true);
+    expect(res.body.sessions).toHaveLength(1);
+    const [s] = res.body.sessions;
+    expect(s.id).toBe(sessionId);
+    expect(s.netName).toBe('Wed Net');
+    expect(s.topic).toBe('Antennas 101');
+    expect(s.controlOp).toBeTruthy();
+    expect(s.controlOp.callsign).toBe('W1AW');
+    expect(s.controlOp.name).toBe('Alice');
+    expect(s.checkIns).toHaveLength(2);
+    // chronological: W1AW came first
+    expect(s.checkIns[0].callsign).toBe('W1AW');
+    expect(s.checkIns[0].name).toBe('Alice');
+    expect(s.checkIns[1].callsign).toBe('KC0GST');
+    const t0 = new Date(s.checkIns[0].checkedInAt).getTime();
+    const t1 = new Date(s.checkIns[1].checkedInAt).getTime();
+    expect(t0).toBeLessThanOrEqual(t1);
+  });
+
   it('GET /api/stats/participation 400 on malformed from', async () => {
     const res = await request(app)
       .get('/api/stats/participation?from=garbage')
@@ -56,6 +81,9 @@ describe('stats', () => {
     expect(res.text).toMatch(/callsign/i);
     expect(res.text).toMatch(/W1AW/);
     expect(res.text).toMatch(/KC0GST/);
+    expect(res.text).toMatch(/SESSION,Net,Started,Ended,Topic,Control,Check-ins/);
+    expect(res.text).toMatch(/Antennas 101/);
+    expect(res.text).toMatch(/W1AW - Alice/);
   });
 
   it('GET /api/stats/export.pdf returns PDF bytes', async () => {

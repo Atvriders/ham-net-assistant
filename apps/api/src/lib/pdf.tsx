@@ -9,6 +9,13 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', borderBottom: '1 solid #ddd', paddingVertical: 3 },
   cellWide: { flex: 3 },
   cellNarrow: { flex: 1, textAlign: 'right' },
+  sessionBlock: {
+    marginTop: 10,
+    paddingTop: 6,
+    borderTop: '1 solid #ddd',
+  },
+  sessionHeader: { fontSize: 12, fontWeight: 700 },
+  checkInLine: { fontSize: 10, marginLeft: 8 },
 });
 
 export function ParticipationPdf({
@@ -48,6 +55,31 @@ export function ParticipationPdf({
             </Text>
           </View>
         ))}
+
+        {stats.sessions.length > 0 && (
+          <>
+            <Text style={styles.h2}>Sessions</Text>
+            {stats.sessions.map((s) => (
+              <View key={s.id} style={styles.sessionBlock} wrap={false}>
+                <Text style={styles.sessionHeader}>
+                  {s.netName} — {s.startedAt.slice(0, 10)}
+                </Text>
+                {s.topic && <Text>Topic: {s.topic}</Text>}
+                {s.controlOp && (
+                  <Text>
+                    Control: {s.controlOp.callsign} — {s.controlOp.name}
+                  </Text>
+                )}
+                <Text>Check-ins ({s.checkIns.length}):</Text>
+                {s.checkIns.map((c, i) => (
+                  <Text key={i} style={styles.checkInLine}>
+                    {c.callsign} — {c.name}
+                  </Text>
+                ))}
+              </View>
+            ))}
+          </>
+        )}
       </Page>
     </Document>
   );

@@ -71,6 +71,55 @@ export function StatsPage() {
           </ol>
         )}
       </Card>
+      <Card>
+        <h3>Sessions</h3>
+        {stats.sessions.length === 0 && <p>No sessions in range.</p>}
+        {stats.sessions.map((s) => (
+          <div
+            key={s.id}
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
+              <strong>{s.netName}</strong>
+              <span style={{ opacity: 0.7, fontSize: 13 }}>
+                {new Date(s.startedAt).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                  hour12: true,
+                })}
+              </span>
+            </div>
+            {s.topic && <div>Topic: {s.topic}</div>}
+            {s.controlOp && (
+              <div>
+                Control: <strong>{displayCallsign(s.controlOp.callsign)}</strong> —{' '}
+                {s.controlOp.name}
+              </div>
+            )}
+            <div style={{ marginTop: 6 }}>
+              Check-ins ({s.checkIns.length}):
+              <ol style={{ margin: '4px 0 0 20px', padding: 0 }}>
+                {s.checkIns.map((c, i) => (
+                  <li key={i} style={{ fontSize: 13 }}>
+                    <strong>{displayCallsign(c.callsign)}</strong> — {c.name}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        ))}
+      </Card>
     </div>
   );
 }

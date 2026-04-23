@@ -28,7 +28,11 @@ async function computeStats(
 ): Promise<ParticipationStats> {
   const sessions = await prisma.netSession.findMany({
     where: { startedAt: { gte: from, lte: to } },
-    include: { net: true, checkIns: true },
+    include: {
+      net: true,
+      checkIns: true,
+      controlOp: { select: { callsign: true, name: true } },
+    },
   });
   const perMemberMap = new Map<string, { callsign: string; name: string; count: number }>();
   const perNetMap = new Map<
@@ -57,12 +61,38 @@ async function computeStats(
     }
     perNetMap.set(s.netId, netAgg);
   }
+
+  const sessionList = [...sessions]
+    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+    .map((s) => {
+      const sortedCheckIns = [...s.checkIns].sort(
+        (a, b) => a.checkedInAt.getTime() - b.checkedInAt.getTime(),
+      );
+      return {
+        id: s.id,
+        netId: s.netId,
+        netName: s.net.name,
+        startedAt: s.startedAt.toISOString(),
+        endedAt: s.endedAt ? s.endedAt.toISOString() : null,
+        topic: s.topicTitle ?? null,
+        controlOp: s.controlOp
+          ? { callsign: s.controlOp.callsign, name: s.controlOp.name }
+          : null,
+        checkIns: sortedCheckIns.map((ci) => ({
+          callsign: ci.callsign,
+          name: ci.nameAtCheckIn,
+          checkedInAt: ci.checkedInAt.toISOString(),
+        })),
+      };
+    });
+
   return {
     range: { from: from.toISOString(), to: to.toISOString() },
     totalSessions: sessions.length,
     totalCheckIns,
     perMember: [...perMemberMap.values()].sort((a, b) => b.count - a.count),
     perNet: [...perNetMap.values()],
+    sessions: sessionList,
   };
 }
 
@@ -92,6 +122,28 @@ export function statsRouter(prisma: PrismaClient): Router {
           ci.callsign,
           ci.nameAtCheckIn,
           ci.comment,
+        ]),
+      );
+    }
+
+    const stats = await computeStats(prisma, from, to);
+    res.write(toCsvRow([]));
+    res.write(
+      toCsvRow(['SESSION', 'Net', 'Started', 'Ended', 'Topic', 'Control', 'Check-ins']),
+    );
+    for (const s of stats.sessions) {
+      const checkInsStr = s.checkIns
+        .map((c) => `${c.callsign} - ${c.name}`)
+        .join(' | ');
+      res.write(
+        toCsvRow([
+          s.id,
+          s.netName,
+          s.startedAt,
+          s.endedAt ?? '',
+          s.topic ?? '',
+          s.controlOp ? `${s.controlOp.callsign} (${s.controlOp.name})` : '',
+          checkInsStr,
         ]),
       );
     }
