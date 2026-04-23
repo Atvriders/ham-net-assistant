@@ -77,7 +77,7 @@ async function readBoundedBody(res: Response): Promise<Buffer> {
   if (!reader) throw new HttpError(400, 'VALIDATION', 'empty body');
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
+  for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     if (value) {
