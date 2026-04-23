@@ -43,3 +43,71 @@
   color: var(--color-primary);
   background: rgba(255,255,255,0.05);
 }
+
+/* Form layout — label above input, consistent rhythm */
+.hna-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.hna-field {
+  display: grid;
+  gap: 6px;
+}
+.hna-field > label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg);
+  opacity: 0.75;
+  font-weight: 600;
+  margin: 0;
+}
+.hna-field > input,
+.hna-field > select,
+.hna-field > textarea,
+.hna-field > .hna-input {
+  width: 100%;
+}
+/* Inline group (e.g. hour / minute / AM-PM) */
+.hna-field-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.hna-field-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+/* Linked-repeater checkbox list inside a field */
+.hna-checkbox-list {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--color-bg-muted);
+}
+.hna-checkbox-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 2px;
+  margin: 0;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 1;
+  font-weight: normal;
+}
+.hna-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}

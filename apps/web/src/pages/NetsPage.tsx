@@ -99,18 +99,25 @@ export function NetsPage() {
   return (
     <div className="hna-container" style={{ maxWidth: 1000, margin: '0 auto' }}>
       <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        <h1>Nets</h1>
-        {canEdit && (
-          <Button
-            onClick={() =>
-              setEditing({
-                data: { ...empty, repeaterId: repeaters[0]?.id ?? '' },
-              })
-            }
-          >
-            Add net
-          </Button>
-        )}
+        <h1 style={{ margin: 0 }}>Nets</h1>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {canEdit && (
+            <Button variant="secondary" onClick={() => nav('/repeaters')}>
+              Manage repeaters
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              onClick={() =>
+                setEditing({
+                  data: { ...empty, repeaterId: repeaters[0]?.id ?? '' },
+                })
+              }
+            >
+              Add net
+            </Button>
+          )}
+        </div>
       </div>
       <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
         {nets.map((n) => (
@@ -179,163 +186,173 @@ export function NetsPage() {
       <Modal open={editing !== null} onClose={() => setEditing(null)}>
         {editing && (
           <div>
-            <h2>{editing.id ? 'Edit net' : 'New net'}</h2>
-            <label>
-              Name
-              <Input
-                value={editing.data.name}
-                onChange={(e) =>
-                  setEditing({ ...editing, data: { ...editing.data, name: e.target.value } })
-                }
-              />
-            </label>
-            <label>
-              Repeater
-              <select
-                value={editing.data.repeaterId}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    data: { ...editing.data, repeaterId: e.target.value },
-                  })
-                }
-              >
-                {repeaters.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>Linked repeaters (optional)</label>
-            <div
-              style={{
-                maxHeight: 180,
-                overflowY: 'auto',
-                border: '1px solid var(--color-border)',
-                borderRadius: 6,
-                padding: 8,
-              }}
-            >
-              {repeaters
-                .filter((r) => r.id !== editing.data.repeaterId)
-                .map((r) => (
-                  <label
-                    key={r.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 4 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={(editing.data.linkedRepeaterIds ?? []).includes(r.id)}
-                      onChange={(e) => {
-                        const current = editing.data.linkedRepeaterIds ?? [];
-                        const next = e.target.checked
-                          ? [...current, r.id]
-                          : current.filter((id) => id !== r.id);
-                        setEditing({
-                          ...editing,
-                          data: { ...editing.data, linkedRepeaterIds: next },
-                        });
-                      }}
-                    />
-                    <span>
+            <h2 style={{ marginTop: 0 }}>{editing.id ? 'Edit net' : 'New net'}</h2>
+            <div className="hna-form">
+              <div className="hna-field">
+                <label>Name</label>
+                <Input
+                  value={editing.data.name}
+                  onChange={(e) =>
+                    setEditing({ ...editing, data: { ...editing.data, name: e.target.value } })
+                  }
+                />
+              </div>
+
+              <div className="hna-field">
+                <label>Primary repeater</label>
+                <select
+                  className="hna-input"
+                  value={editing.data.repeaterId}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      data: { ...editing.data, repeaterId: e.target.value },
+                    })
+                  }
+                >
+                  {repeaters.map((r) => (
+                    <option key={r.id} value={r.id}>
                       {r.name} — {r.frequency.toFixed(3)} MHz
-                    </span>
-                  </label>
-                ))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="hna-field">
+                <label>Linked repeaters (optional)</label>
+                <div className="hna-checkbox-list">
+                  {repeaters.filter((r) => r.id !== editing.data.repeaterId).length === 0 && (
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>No other repeaters available.</div>
+                  )}
+                  {repeaters
+                    .filter((r) => r.id !== editing.data.repeaterId)
+                    .map((r) => {
+                      const checked = (editing.data.linkedRepeaterIds ?? []).includes(r.id);
+                      return (
+                        <label key={r.id}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const current = editing.data.linkedRepeaterIds ?? [];
+                              const next = e.target.checked
+                                ? [...current, r.id]
+                                : current.filter((id) => id !== r.id);
+                              setEditing({
+                                ...editing,
+                                data: { ...editing.data, linkedRepeaterIds: next },
+                              });
+                            }}
+                          />
+                          <span>{r.name} — {r.frequency.toFixed(3)} MHz</span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="hna-field-row-2">
+                <div className="hna-field">
+                  <label>Day of week</label>
+                  <select
+                    className="hna-input"
+                    value={editing.data.dayOfWeek}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        data: { ...editing.data, dayOfWeek: Number(e.target.value) },
+                      })
+                    }
+                  >
+                    {Array.from({ length: 7 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {dayName(i)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="hna-field">
+                  <label>Start time</label>
+                  {(() => {
+                    const t = to12h(editing.data.startLocal);
+                    const updateTime = (patch: Partial<typeof t>) => {
+                      const next = { ...t, ...patch };
+                      setEditing({
+                        ...editing,
+                        data: { ...editing.data, startLocal: to24h(next) },
+                      });
+                    };
+                    const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+                    return (
+                      <div className="hna-field-row">
+                        <select
+                          className="hna-input"
+                          value={t.hour}
+                          onChange={(e) => updateTime({ hour: Number(e.target.value) })}
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="hna-input"
+                          value={minutes.includes(t.minute) ? t.minute : 0}
+                          onChange={(e) => updateTime({ minute: Number(e.target.value) })}
+                        >
+                          {minutes.map((m) => (
+                            <option key={m} value={m}>
+                              {String(m).padStart(2, '0')}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="hna-input"
+                          value={t.meridiem}
+                          onChange={(e) =>
+                            updateTime({ meridiem: e.target.value as 'AM' | 'PM' })
+                          }
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="hna-field">
+                <label>Theme (this week's topic cue)</label>
+                <Input
+                  value={editing.data.theme ?? ''}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      data: { ...editing.data, theme: e.target.value },
+                    })
+                  }
+                />
+              </div>
+
+              <div className="hna-field">
+                <label>Script (markdown)</label>
+                <textarea
+                  rows={10}
+                  className="hna-input"
+                  value={editing.data.scriptMd ?? ''}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      data: { ...editing.data, scriptMd: e.target.value },
+                    })
+                  }
+                  style={{ minHeight: 180, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 13, lineHeight: 1.5, resize: 'vertical' }}
+                />
+              </div>
             </div>
-            <label>
-              Day of week
-              <select
-                value={editing.data.dayOfWeek}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    data: { ...editing.data, dayOfWeek: Number(e.target.value) },
-                  })
-                }
-              >
-                {Array.from({ length: 7 }, (_, i) => (
-                  <option key={i} value={i}>
-                    {dayName(i)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Start time
-              {(() => {
-                const t = to12h(editing.data.startLocal);
-                const updateTime = (patch: Partial<typeof t>) => {
-                  const next = { ...t, ...patch };
-                  setEditing({
-                    ...editing,
-                    data: { ...editing.data, startLocal: to24h(next) },
-                  });
-                };
-                const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-                return (
-                  <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
-                    <select
-                      value={t.hour}
-                      onChange={(e) => updateTime({ hour: Number(e.target.value) })}
-                    >
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                        <option key={h} value={h}>
-                          {h}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={minutes.includes(t.minute) ? t.minute : 0}
-                      onChange={(e) => updateTime({ minute: Number(e.target.value) })}
-                    >
-                      {minutes.map((m) => (
-                        <option key={m} value={m}>
-                          {String(m).padStart(2, '0')}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={t.meridiem}
-                      onChange={(e) =>
-                        updateTime({ meridiem: e.target.value as 'AM' | 'PM' })
-                      }
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
-                  </div>
-                );
-              })()}
-            </label>
-            <label>
-              Theme
-              <Input
-                value={editing.data.theme ?? ''}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    data: { ...editing.data, theme: e.target.value },
-                  })
-                }
-              />
-            </label>
-            <label>
-              Script (markdown)
-              <textarea
-                rows={10}
-                className="hna-input"
-                value={editing.data.scriptMd ?? ''}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    data: { ...editing.data, scriptMd: e.target.value },
-                  })
-                }
-              />
-            </label>
-            <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+            <div className="hna-modal-actions">
               <Button onClick={save}>Save</Button>
               <Button variant="secondary" onClick={() => setEditing(null)}>
                 Cancel

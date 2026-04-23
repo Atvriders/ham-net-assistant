@@ -38,7 +38,6 @@ function NavBar() {
       {user && (
         <>
           <Link className="hna-nav-link" to="/">Dashboard</Link>
-          <Link className="hna-nav-link" to="/repeaters">Repeaters</Link>
           <Link className="hna-nav-link" to="/nets">Nets</Link>
           <Link className="hna-nav-link" to="/topics">Topics</Link>
           <Link className="hna-nav-link" to="/stats">Stats</Link>

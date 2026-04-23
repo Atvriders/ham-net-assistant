@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Repeater, RepeaterInput } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
@@ -301,6 +302,11 @@ export function RepeatersPage() {
 
   return (
     <div className="hna-container" style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Link to="/nets" style={{ color: 'var(--color-fg)', opacity: 0.7, fontSize: 13 }}>
+          ← Back to nets
+        </Link>
+      </div>
       <div className="hna-flex-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h1 style={{ flex: 1 }}>Repeaters</h1>
         {isOfficer && (
@@ -387,79 +393,81 @@ export function RepeatersPage() {
       />
 
       <Modal open={showForm} onClose={() => setShowForm(false)}>
-        <h2>{editing ? 'Edit repeater' : 'Add repeater'}</h2>
+        <h2 style={{ marginTop: 0 }}>{editing ? 'Edit repeater' : 'Add repeater'}</h2>
         <form onSubmit={submitForm}>
-          <label>
-            Name
-            <Input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Frequency (MHz)
-            <Input
-              type="number"
-              step="0.001"
-              value={form.frequency}
-              onChange={(e) => setForm({ ...form, frequency: Number(e.target.value) })}
-              required
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Offset (kHz)
-            <Input
-              type="number"
-              value={form.offsetKhz}
-              onChange={(e) => setForm({ ...form, offsetKhz: Number(e.target.value) })}
-              required
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Tone (Hz)
-            <Input
-              type="number"
-              step="0.1"
-              value={form.toneHz ?? ''}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  toneHz: e.target.value ? Number(e.target.value) : null,
-                })
-              }
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Mode
-            <select
-              className="hna-input"
-              value={form.mode}
-              onChange={(e) =>
-                setForm({ ...form, mode: e.target.value as RepeaterInput['mode'] })
-              }
-            >
-              <option value="FM">FM</option>
-              <option value="DMR">DMR</option>
-              <option value="D-STAR">D-STAR</option>
-              <option value="Fusion">Fusion</option>
-            </select>
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Coverage
-            <Input
-              value={form.coverage ?? ''}
-              onChange={(e) =>
-                setForm({ ...form, coverage: e.target.value || null })
-              }
-            />
-          </label>
+          <div className="hna-form">
+            <div className="hna-field">
+              <label>Name</label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="hna-field">
+              <label>Frequency (MHz)</label>
+              <Input
+                type="number"
+                step="0.001"
+                value={form.frequency}
+                onChange={(e) => setForm({ ...form, frequency: Number(e.target.value) })}
+                required
+              />
+            </div>
+            <div className="hna-field">
+              <label>Offset (kHz)</label>
+              <Input
+                type="number"
+                value={form.offsetKhz}
+                onChange={(e) => setForm({ ...form, offsetKhz: Number(e.target.value) })}
+                required
+              />
+            </div>
+            <div className="hna-field">
+              <label>Tone (Hz)</label>
+              <Input
+                type="number"
+                step="0.1"
+                value={form.toneHz ?? ''}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    toneHz: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              />
+            </div>
+            <div className="hna-field">
+              <label>Mode</label>
+              <select
+                className="hna-input"
+                value={form.mode}
+                onChange={(e) =>
+                  setForm({ ...form, mode: e.target.value as RepeaterInput['mode'] })
+                }
+              >
+                <option value="FM">FM</option>
+                <option value="DMR">DMR</option>
+                <option value="D-STAR">D-STAR</option>
+                <option value="Fusion">Fusion</option>
+              </select>
+            </div>
+            <div className="hna-field">
+              <label>Coverage</label>
+              <Input
+                value={form.coverage ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, coverage: e.target.value || null })
+                }
+              />
+            </div>
+          </div>
           {formErr && (
             <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
               {formErr}
             </div>
           )}
-          <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <div className="hna-modal-actions">
             <Button type="submit" disabled={formBusy}>
               {formBusy ? 'Saving…' : 'Save'}
             </Button>
