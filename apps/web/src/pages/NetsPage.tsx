@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
 import { Card } from '../components/ui/Card.js';
 import { StartNetModal } from '../components/StartNetModal.js';
+import { ScriptImportModal } from '../components/ScriptImportModal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, to12h, to24h, formatStartLocal12h } from '../lib/time.js';
 
@@ -74,6 +75,7 @@ export function NetsPage() {
   }, [activeData]);
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
   const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
+  const [scriptImportOpen, setScriptImportOpen] = useState(false);
 
   async function takeControl(sessionId: string) {
     await apiFetch(`/sessions/${sessionId}`, {
@@ -337,7 +339,27 @@ export function NetsPage() {
               </div>
 
               <div className="hna-field">
-                <label>Script (markdown)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <label>Script (markdown)</label>
+                  <button
+                    type="button"
+                    onClick={() => setScriptImportOpen(true)}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      cursor: 'pointer',
+                      color: 'var(--color-fg)',
+                      fontSize: 12,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Import…
+                  </button>
+                </div>
                 <textarea
                   rows={10}
                   className="hna-input"
@@ -361,6 +383,16 @@ export function NetsPage() {
           </div>
         )}
       </Modal>
+      <ScriptImportModal
+        open={scriptImportOpen}
+        onClose={() => setScriptImportOpen(false)}
+        onImport={(md, mode) => {
+          if (!editing) return;
+          const current = editing.data.scriptMd ?? '';
+          const next = mode === 'replace' ? md : (current ? `${current}\n\n${md}` : md);
+          setEditing({ ...editing, data: { ...editing.data, scriptMd: next } });
+        }}
+      />
     </div>
   );
 }

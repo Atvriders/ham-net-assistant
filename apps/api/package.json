@@ -21,6 +21,7 @@
     "cookie-parser": "^1.4.6",
     "argon2": "^0.40.1",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.7.2",
     "zod": "^3.23.4",
     "@react-pdf/renderer": "^3.4.0",
     "react": "^18.3.1"
