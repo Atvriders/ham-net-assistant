@@ -8,7 +8,6 @@ import { useAuth } from '../auth/AuthProvider.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import {
   capitalizeFirst,
-  formatFrequency,
   formatOffset,
   formatTone,
   displayCallsign,
@@ -145,11 +144,53 @@ export function JoinNetPage() {
           </span>
         </h2>
         {net?.repeater && (
-          <div>
-            <div>{net.repeater.name}</div>
-            <div>{formatFrequency(net.repeater.frequency)}</div>
-            <div>Offset: {formatOffset(net.repeater.offsetKhz)}</div>
-            <div>Tone: {formatTone(net.repeater.toneHz)}</div>
+          <div className={`hna-repeater-grid ${!net.links || net.links.length === 0 ? 'one-col' : ''}`}>
+            {/* Primary repeater */}
+            <div>
+              <div className="hna-label">Primary</div>
+              <h3 style={{ fontFamily: 'var(--font-mono)', marginTop: 2 }}>{net.repeater.name}</h3>
+              <div className="hna-freq" style={{ fontSize: 18, marginTop: 4 }}>
+                {net.repeater.frequency.toFixed(3)} <span style={{ fontSize: 11, opacity: 0.6 }}>MHz</span>
+              </div>
+              <div className="hna-dot-leader" style={{ marginTop: 8, fontSize: 13 }}>
+                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Offset</span>
+                <span className="hna-mono">{formatOffset(net.repeater.offsetKhz)}</span>
+              </div>
+              <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Tone</span>
+                <span className="hna-mono">{formatTone(net.repeater.toneHz)}</span>
+              </div>
+              <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Mode</span>
+                <span className="hna-mono">{net.repeater.mode}</span>
+              </div>
+            </div>
+            {/* Linked repeaters */}
+            {net.links && net.links.length > 0 && (
+              <div>
+                <div className="hna-label">Linked</div>
+                {net.links.map((l) => (
+                  <div key={l.id} style={{ marginBottom: 12 }}>
+                    <h3 style={{ fontFamily: 'var(--font-mono)', marginTop: 2 }}>{l.repeater.name}</h3>
+                    <div className="hna-freq" style={{ fontSize: 18, marginTop: 4 }}>
+                      {l.repeater.frequency.toFixed(3)} <span style={{ fontSize: 11, opacity: 0.6 }}>MHz</span>
+                    </div>
+                    <div className="hna-dot-leader" style={{ marginTop: 8, fontSize: 13 }}>
+                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Offset</span>
+                      <span className="hna-mono">{formatOffset(l.repeater.offsetKhz)}</span>
+                    </div>
+                    <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Tone</span>
+                      <span className="hna-mono">{formatTone(l.repeater.toneHz)}</span>
+                    </div>
+                    <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Mode</span>
+                      <span className="hna-mono">{l.repeater.mode}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {topic && (
