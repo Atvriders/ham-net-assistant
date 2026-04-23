@@ -338,7 +338,10 @@ export function RunNetPage() {
           style={{
             minHeight: 400,
             width: '100%',
-            fontFamily: 'ui-monospace, Menlo, monospace',
+            fontFamily: 'var(--font-body)',
+            fontSize: 15,
+            lineHeight: 1.65,
+            padding: 16,
             background: 'var(--color-bg-muted)',
             cursor: 'default',
           }}
