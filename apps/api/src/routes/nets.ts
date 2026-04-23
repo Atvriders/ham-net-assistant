@@ -47,7 +47,7 @@ export function netsRouter(prisma: PrismaClient): Router {
   // Must be registered before `/:id`-style routes.
   router.get('/active', requireAuth, asyncHandler(async (req, res) => {
     const sessions = await prisma.netSession.findMany({
-      where: { endedAt: null },
+      where: { endedAt: null, deletedAt: null },
       include: {
         topic: true,
         net: { include: { repeater: true } },
@@ -60,11 +60,11 @@ export function netsRouter(prisma: PrismaClient): Router {
 
   router.get('/:netId/active-session', requireAuth, asyncHandler(async (req, res) => {
     const s = await prisma.netSession.findFirst({
-      where: { netId: req.params.netId, endedAt: null },
+      where: { netId: req.params.netId, endedAt: null, deletedAt: null },
       include: {
         topic: true,
         net: { include: { repeater: true, links: { include: { repeater: true } } } },
-        checkIns: { orderBy: { checkedInAt: 'desc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
       },
       orderBy: { startedAt: 'desc' },
     });

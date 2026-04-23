@@ -67,6 +67,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const { netId, from, to } = RangeQuery.parse(req.query);
     const list = await prisma.netSession.findMany({
       where: {
+        deletedAt: null,
         ...(netId ? { netId } : {}),
         ...(from || to
           ? { startedAt: { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined } }
@@ -78,8 +79,8 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.get('/:id/summary', asyncHandler(async (req, res) => {
-    const session = await prisma.netSession.findUnique({
-      where: { id: req.params.id },
+    const session = await prisma.netSession.findFirst({
+      where: { id: req.params.id, deletedAt: null },
       include: {
         topic: true,
         net: {
@@ -88,7 +89,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
             links: { include: { repeater: true } },
           },
         },
-        checkIns: { orderBy: { checkedInAt: 'asc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'asc' } },
         controlOp: { select: { callsign: true, name: true } },
       },
     });
@@ -107,11 +108,11 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.get('/:id', asyncHandler(async (req, res) => {
-    const s = await prisma.netSession.findUnique({
-      where: { id: req.params.id },
+    const s = await prisma.netSession.findFirst({
+      where: { id: req.params.id, deletedAt: null },
       include: {
         topic: true,
-        checkIns: { orderBy: { checkedInAt: 'desc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
         net: {
           include: {
             repeater: true,
@@ -127,30 +128,33 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.delete('/:id', requireRole('ADMIN'), asyncHandler(async (req, res) => {
-    try {
-      await prisma.netSession.delete({ where: { id: req.params.id } });
-      res.status(204).end();
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Session not found');
-    }
+    const existing = await prisma.netSession.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    await prisma.netSession.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
+    res.status(204).end();
   }));
 
   flat.patch('/:id', requireRole('OFFICER'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
     const body = req.body as typeof NetSessionUpdate._type;
-    try {
-      const updated = await prisma.netSession.update({
-        where: { id: req.params.id },
-        data: {
-          endedAt:
-            body.endedAt === undefined ? undefined : body.endedAt ? new Date(body.endedAt) : null,
-          notes: body.notes === undefined ? undefined : body.notes,
-          controlOpId: body.controlOpId ?? undefined,
-        },
-      });
-      res.json(updated);
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Session not found');
-    }
+    const existing = await prisma.netSession.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    const updated = await prisma.netSession.update({
+      where: { id: req.params.id },
+      data: {
+        endedAt:
+          body.endedAt === undefined ? undefined : body.endedAt ? new Date(body.endedAt) : null,
+        notes: body.notes === undefined ? undefined : body.notes,
+        controlOpId: body.controlOpId ?? undefined,
+      },
+    });
+    res.json(updated);
   }));
 
   return { nested, flat };

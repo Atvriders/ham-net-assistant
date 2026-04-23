@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import mammothBase from 'mammoth';
-import TurndownService from 'turndown';
-
-// mammoth's type defs omit convertToMarkdown, which exists at runtime.
-const mammoth = mammothBase as unknown as typeof mammothBase & {
-  convertToMarkdown: (input: { arrayBuffer: ArrayBuffer }) =>
-    Promise<{ value: string; messages: unknown[] }>;
-};
+import mammoth from 'mammoth';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
@@ -17,14 +10,17 @@ type Tab = 'file' | 'url' | 'paste';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onImport: (markdown: string, mode: 'replace' | 'append') => void;
+  onImport: (content: string, mode: 'replace' | 'append') => void;
 }
 
-const turndown = new TurndownService({
-  headingStyle: 'atx',
-  bulletListMarker: '-',
-  codeBlockStyle: 'fenced',
-});
+const mammothStyleMap = [
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  'b => strong',
+  'i => em',
+  'u => u',
+];
 
 async function parseFile(file: File): Promise<string> {
   const name = file.name.toLowerCase();
@@ -33,10 +29,12 @@ async function parseFile(file: File): Promise<string> {
   }
   if (name.endsWith('.docx')) {
     const buf = await file.arrayBuffer();
-    const result = await mammoth.convertToMarkdown({ arrayBuffer: buf });
+    const result = await mammoth.convertToHtml(
+      { arrayBuffer: buf },
+      { styleMap: mammothStyleMap, includeDefaultStyleMap: true },
+    );
     return result.value;
   }
-  // Fallback: try as text
   return await file.text();
 }
 
@@ -62,8 +60,8 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
     setBusy(true);
     setErr(null);
     try {
-      const md = await parseFile(f);
-      setPreview(md);
+      const content = await parseFile(f);
+      setPreview(content);
     } catch (ex) {
       setErr((ex as Error).message || 'Failed to parse file');
     } finally {
@@ -76,11 +74,13 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
     setBusy(true);
     setErr(null);
     try {
-      const res = await apiFetch<{ markdown: string; source: string }>(
-        '/script-import/url',
-        { method: 'POST', body: JSON.stringify({ url }) },
-      );
-      setPreview(res.markdown);
+      const res = await apiFetch<{
+        content?: string;
+        contentType?: string;
+        markdown?: string;
+        source?: string;
+      }>('/script-import/url', { method: 'POST', body: JSON.stringify({ url }) });
+      setPreview(res.content ?? res.markdown ?? '');
     } catch (ex) {
       setErr(ex instanceof ApiErrorException ? ex.payload.message : (ex as Error).message);
     } finally {
@@ -88,28 +88,21 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
     }
   }
 
-  function convertHtml() {
+  function commitPaste() {
     if (!html.trim()) return;
-    try {
-      setPreview(turndown.turndown(html));
-      setErr(null);
-    } catch (ex) {
-      setErr('Could not convert HTML');
-    }
+    // Keep pasted HTML verbatim so colors / styles survive.
+    setPreview(html);
+    setErr(null);
   }
 
-  // Paste event on the HTML tab — grab text/html clipboard data if available
+  // Paste event on the HTML tab — prefer text/html over plain text.
   function onHtmlPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const htmlClip = e.clipboardData.getData('text/html');
     if (htmlClip) {
       e.preventDefault();
       setHtml(htmlClip);
-      try {
-        setPreview(turndown.turndown(htmlClip));
-        setErr(null);
-      } catch {
-        // fall through to plain paste
-      }
+      setPreview(htmlClip);
+      setErr(null);
     }
   }
 
@@ -160,7 +153,7 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
               onPaste={onHtmlPaste}
               style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 13 }}
             />
-            <Button onClick={convertHtml} disabled={busy || !html.trim()} style={{ marginTop: 8 }}>Convert</Button>
+            <Button onClick={commitPaste} disabled={busy || !html.trim()} style={{ marginTop: 8 }}>Use pasted content</Button>
           </div>
         )}
 
@@ -168,7 +161,7 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
 
         {preview !== null && (
           <div style={{ marginTop: 16 }}>
-            <div className="hna-label" style={{ marginBottom: 6 }}>Preview (markdown)</div>
+            <div className="hna-label" style={{ marginBottom: 6 }}>Preview (source)</div>
             <textarea
               className="hna-input"
               readOnly

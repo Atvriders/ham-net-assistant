@@ -6,10 +6,7 @@ import dns from 'node:dns/promises';
 import mammothBase from 'mammoth';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
 
-// mammoth's type defs omit convertToMarkdown; cast to expose it for vi.spyOn.
-const mammoth = mammothBase as unknown as {
-  convertToMarkdown: (input: { buffer: Buffer }) => Promise<{ value: string; messages: unknown[] }>;
-};
+const mammoth = mammothBase;
 
 let app: Express;
 let prisma: PrismaClient;
@@ -67,7 +64,7 @@ describe('POST /api/script-import/url', () => {
     expect(res.body.error.code).toBe('VALIDATION');
   });
 
-  it('fetches a Google Docs URL, runs mammoth, returns markdown', async () => {
+  it('fetches a Google Docs URL, runs mammoth, returns HTML', async () => {
     const cookie = await authedCookie('gdocs@x.co', 'K0GDOC');
     mockDnsPublic();
 
@@ -82,8 +79,11 @@ describe('POST /api/script-import/url', () => {
       }),
     );
     const mammothSpy = vi
-      .spyOn(mammoth, 'convertToMarkdown')
-      .mockResolvedValue({ value: '# Converted', messages: [] } as never);
+      .spyOn(mammoth, 'convertToHtml')
+      .mockResolvedValue({
+        value: '<p><span style="color:#ff0000">Hi</span></p>',
+        messages: [],
+      } as never);
 
     const res = await request(app)
       .post('/api/script-import/url')
@@ -93,7 +93,8 @@ describe('POST /api/script-import/url', () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.markdown).toBe('# Converted');
+    expect(res.body.contentType).toBe('html');
+    expect(res.body.content).toContain('<span style="color:#ff0000">Hi</span>');
     expect(res.body.source).toBe('docx');
     expect(mammothSpy).toHaveBeenCalled();
     const call = mammothSpy.mock.calls[0]?.[0] as { buffer: Buffer };
@@ -105,7 +106,7 @@ describe('POST /api/script-import/url', () => {
     expect(String(fetchedUrl)).toContain('/export?format=docx');
   });
 
-  it('returns markdown === body for text/plain responses', async () => {
+  it('returns content === body for text/plain responses', async () => {
     const cookie = await authedCookie('txt@x.co', 'K0TXT');
     mockDnsPublic();
     const body = '# Hello\n\nPlain markdown body.';
@@ -120,7 +121,7 @@ describe('POST /api/script-import/url', () => {
       .set('Cookie', cookie)
       .send({ url: 'https://example.com/script.md' });
     expect(res.status).toBe(200);
-    expect(res.body.markdown).toBe(body);
-    expect(res.body.source).toBe('text');
+    expect(res.body.content).toBe(body);
+    expect(res.body.contentType).toBe('text');
   });
 });

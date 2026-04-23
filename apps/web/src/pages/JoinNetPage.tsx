@@ -13,6 +13,8 @@ import {
   formatTone,
   displayCallsign,
 } from '../lib/format.js';
+import { looksLikeHtml } from '../lib/scriptFormat.js';
+import { SanitizedHtml } from '../components/SanitizedHtml.js';
 import { ChatBox } from '../components/ChatBox.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
@@ -179,17 +181,29 @@ export function JoinNetPage() {
       {session.net?.scriptMd && (
         <Card>
           <h3 style={{ marginTop: 0 }}>Script</h3>
-          <pre
-            style={{
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'ui-monospace, Menlo, monospace',
-              fontSize: 14,
-              lineHeight: 1.5,
-              margin: 0,
-            }}
-          >
-            {session.net.scriptMd}
-          </pre>
+          {looksLikeHtml(session.net.scriptMd) ? (
+            <SanitizedHtml
+              className="hna-script-html"
+              html={session.net.scriptMd}
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 15,
+                lineHeight: 1.65,
+              }}
+            />
+          ) : (
+            <pre
+              style={{
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'ui-monospace, Menlo, monospace',
+                fontSize: 14,
+                lineHeight: 1.5,
+                margin: 0,
+              }}
+            >
+              {session.net.scriptMd}
+            </pre>
+          )}
         </Card>
       )}
       <Card>

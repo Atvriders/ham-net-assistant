@@ -156,3 +156,33 @@
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
 }
+
+.hna-script-html {
+  color: var(--color-fg);
+}
+.hna-script-html p { margin: 0 0 12px 0; }
+.hna-script-html h1,
+.hna-script-html h2,
+.hna-script-html h3 {
+  font-family: var(--font-display);
+  margin: 18px 0 8px 0;
+}
+.hna-script-html h1 { font-size: 20px; }
+.hna-script-html h2 { font-size: 17px; }
+.hna-script-html h3 { font-size: 15px; }
+.hna-script-html ul,
+.hna-script-html ol {
+  padding-left: 22px;
+  margin: 0 0 12px 0;
+}
+.hna-script-html a { color: var(--color-accent); }
+.hna-script-html table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+.hna-script-html td,
+.hna-script-html th {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+}

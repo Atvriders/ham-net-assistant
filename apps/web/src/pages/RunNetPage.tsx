@@ -16,6 +16,8 @@ import {
   formatTone,
   displayCallsign,
 } from '../lib/format.js';
+import { looksLikeHtml } from '../lib/scriptFormat.js';
+import { SanitizedHtml } from '../components/SanitizedHtml.js';
 import { ChatBox } from '../components/ChatBox.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
@@ -331,21 +333,38 @@ export function RunNetPage() {
       </Card>
       <Card>
         <h3>Script</h3>
-        <textarea
-          className="hna-input"
-          readOnly
-          value={net?.scriptMd ?? ''}
-          style={{
-            minHeight: 400,
-            width: '100%',
-            fontFamily: 'var(--font-body)',
-            fontSize: 15,
-            lineHeight: 1.65,
-            padding: 16,
-            background: 'var(--color-bg-muted)',
-            cursor: 'default',
-          }}
-        />
+        {looksLikeHtml(net?.scriptMd ?? '') ? (
+          <SanitizedHtml
+            className="hna-script-html"
+            html={net?.scriptMd ?? ''}
+            style={{
+              padding: 16,
+              background: 'var(--color-bg-muted)',
+              borderRadius: 6,
+              maxHeight: 520,
+              overflowY: 'auto',
+              fontFamily: 'var(--font-body)',
+              fontSize: 15,
+              lineHeight: 1.65,
+            }}
+          />
+        ) : (
+          <textarea
+            className="hna-input"
+            readOnly
+            value={net?.scriptMd ?? ''}
+            style={{
+              minHeight: 400,
+              width: '100%',
+              fontFamily: 'var(--font-body)',
+              fontSize: 15,
+              lineHeight: 1.65,
+              padding: 16,
+              background: 'var(--color-bg-muted)',
+              cursor: 'default',
+            }}
+          />
+        )}
       </Card>
       <Card>
         <h3>Check-ins ({session.checkIns.length})</h3>

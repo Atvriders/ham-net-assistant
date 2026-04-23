@@ -16,6 +16,7 @@ import { callsignLookupRouter } from './routes/callsignLookup.js';
 import { topicsRouter } from './routes/topics.js';
 import { messagesRouter } from './routes/messages.js';
 import { scriptImportRouter } from './routes/scriptImport.js';
+import { adminRouter } from './routes/admin.js';
 import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
@@ -43,6 +44,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/sessions/:sessionId/messages', messages.nested);
   app.use('/api/messages', messages.flat);
   app.use('/api/script-import', scriptImportRouter());
+  app.use('/api/admin', adminRouter(prisma));
 
   mountStatic(app);
   app.use(errorHandler);

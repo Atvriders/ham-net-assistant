@@ -1,14 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import mammothBase from 'mammoth';
-
-// mammoth's type defs omit convertToMarkdown, which exists at runtime
-// (see https://github.com/mwilliamson/mammoth.js#converting-to-markdown).
-interface MammothExt {
-  convertToMarkdown: (input: { buffer: Buffer } | { arrayBuffer: ArrayBuffer }) =>
-    Promise<{ value: string; messages: unknown[] }>;
-}
-const mammoth = mammothBase as unknown as typeof mammothBase & MammothExt;
+import mammoth from 'mammoth';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
@@ -55,22 +47,14 @@ function rewriteGoogleDocsUrl(u: URL): URL {
   return new URL(`https://docs.google.com/document/d/${m[1]}/export?format=docx`);
 }
 
-function htmlToMarkdown(html: string): string {
-  // Server-side HTML->markdown is thin. Prefer passing HTML back and letting
-  // the browser convert with turndown. But if we receive text/html directly,
-  // a minimal strip is acceptable.
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<\/(p|div|h[1-6]|li|br)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+const mammothStyleMap = [
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  'b => strong',
+  'i => em',
+  'u => u',
+];
 
 async function readBoundedBody(res: Response): Promise<Buffer> {
   const reader = res.body?.getReader();
@@ -111,16 +95,27 @@ export function scriptImportRouter(): Router {
     const buffer = await readBoundedBody(remote);
 
     if (contentType.includes('wordprocessingml.document') || contentType.includes('application/octet-stream') || target.pathname.endsWith('.docx')) {
-      const result = await mammoth.convertToMarkdown({ buffer });
-      res.json({ markdown: result.value, source: 'docx' });
+      const result = await mammoth.convertToHtml(
+        { buffer },
+        { styleMap: mammothStyleMap, includeDefaultStyleMap: true },
+      );
+      res.json({
+        content: result.value,
+        contentType: 'html',
+        // Back-compat fields for older clients.
+        markdown: result.value,
+        source: 'docx',
+      });
       return;
     }
     if (contentType.includes('text/markdown') || contentType.includes('text/plain') || target.pathname.endsWith('.md') || target.pathname.endsWith('.txt')) {
-      res.json({ markdown: buffer.toString('utf8'), source: 'text' });
+      const text = buffer.toString('utf8');
+      res.json({ content: text, contentType: 'text', markdown: text, source: 'text' });
       return;
     }
     if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-      res.json({ markdown: htmlToMarkdown(buffer.toString('utf8')), source: 'html' });
+      const html = buffer.toString('utf8');
+      res.json({ content: html, contentType: 'html', markdown: html, source: 'html' });
       return;
     }
     throw new HttpError(415, 'VALIDATION', `unsupported content-type: ${contentType || 'unknown'}`);

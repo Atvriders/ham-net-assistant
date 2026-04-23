@@ -27,10 +27,10 @@ async function computeStats(
   to: Date,
 ): Promise<ParticipationStats> {
   const sessions = await prisma.netSession.findMany({
-    where: { startedAt: { gte: from, lte: to } },
+    where: { startedAt: { gte: from, lte: to }, deletedAt: null },
     include: {
       net: true,
-      checkIns: true,
+      checkIns: { where: { deletedAt: null } },
       controlOp: { select: { callsign: true, name: true } },
     },
   });
@@ -110,7 +110,10 @@ export function statsRouter(prisma: PrismaClient): Router {
     res.setHeader('Content-Disposition', 'attachment; filename="checkins.csv"');
     res.write(toCsvRow(['checkedInAt', 'netName', 'callsign', 'name', 'comment']));
     const checkIns = await prisma.checkIn.findMany({
-      where: { session: { startedAt: { gte: from, lte: to } } },
+      where: {
+        deletedAt: null,
+        session: { startedAt: { gte: from, lte: to }, deletedAt: null },
+      },
       include: { session: { include: { net: true } } },
       orderBy: { checkedInAt: 'asc' },
     });

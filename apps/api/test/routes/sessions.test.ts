@@ -104,7 +104,7 @@ describe('sessions', () => {
     expect(g.status).toBe(200);
     expect(g.body.topicTitle).toBe('Snapshot topic');
   });
-  it('ADMIN can delete a session and cascade its check-ins', async () => {
+  it('ADMIN soft-deletes a session (row remains, filtered from GET)', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
@@ -112,8 +112,12 @@ describe('sessions', () => {
     expect(del.status).toBe(204);
     const get = await request(app).get(`/api/sessions/${s.body.id}`);
     expect(get.status).toBe(404);
+    const row = await prisma.netSession.findUnique({ where: { id: s.body.id } });
+    expect(row).not.toBeNull();
+    expect(row!.deletedAt).not.toBeNull();
+    // check-ins are NOT cascade-deleted; they stay in the DB as orphans
     const remainingCheckIns = await prisma.checkIn.findMany({ where: { sessionId: s.body.id } });
-    expect(remainingCheckIns).toHaveLength(0);
+    expect(remainingCheckIns).toHaveLength(1);
   });
   it('MEMBER cannot delete a session (403)', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

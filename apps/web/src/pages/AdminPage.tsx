@@ -8,11 +8,50 @@ import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 
+interface TrashSession {
+  id: string;
+  netId: string;
+  netName: string;
+  startedAt: string;
+  endedAt: string | null;
+  deletedAt: string | null;
+  topic: string | null;
+  controlOp: { callsign: string; name: string } | null;
+  checkInCount: number;
+}
+
+interface TrashCheckIn {
+  id: string;
+  sessionId: string;
+  netName: string;
+  callsign: string;
+  nameAtCheckIn: string;
+  checkedInAt: string;
+  deletedAt: string | null;
+}
+
+interface TrashPayload {
+  sessions: TrashSession[];
+  checkIns: TrashCheckIn[];
+}
+
+function formatWhen(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
 export function AdminPage() {
   const { user: currentUser } = useAuth();
   const { all: allThemes } = useTheme();
   const { data: users, refresh } = useAutoFetch<PublicUser[]>('/users', {
     intervalMs: 5000,
+  });
+  const { data: trash, refresh: refreshTrash } = useAutoFetch<TrashPayload>('/admin/trash', {
+    intervalMs: 15000,
   });
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
@@ -46,6 +85,37 @@ export function AdminPage() {
       body: JSON.stringify({ collegeSlug: slug === '' ? null : slug }),
     });
     await refresh();
+  }
+
+  async function restoreSession(id: string) {
+    await apiFetch(`/admin/trash/sessions/${id}/restore`, { method: 'POST' });
+    await refreshTrash();
+  }
+  async function restoreCheckIn(id: string) {
+    const res = await apiFetch<{ ok: boolean; parentSoftDeleted: boolean }>(
+      `/admin/trash/checkins/${id}/restore`,
+      { method: 'POST' },
+    );
+    if (res.parentSoftDeleted) {
+      window.alert(
+        'Check-in restored, but its session is still in the trash. Restore the session to see it.',
+      );
+    }
+    await refreshTrash();
+  }
+  async function purgeSession(s: TrashSession) {
+    if (!window.confirm(
+      `Permanently delete the session for ${s.netName} started ${formatWhen(s.startedAt)}? This cannot be undone.`,
+    )) return;
+    await apiFetch(`/admin/trash/sessions/${s.id}`, { method: 'DELETE' });
+    await refreshTrash();
+  }
+  async function purgeCheckIn(c: TrashCheckIn) {
+    if (!window.confirm(
+      `Permanently delete the check-in ${displayCallsign(c.callsign)} — ${c.nameAtCheckIn}? This cannot be undone.`,
+    )) return;
+    await apiFetch(`/admin/trash/checkins/${c.id}`, { method: 'DELETE' });
+    await refreshTrash();
   }
 
   async function saveDefaultTheme() {
@@ -135,6 +205,68 @@ export function AdminPage() {
         </table>
         </div>
       </Card>
+      {trash && (trash.sessions.length > 0 || trash.checkIns.length > 0) && (
+        <>
+          <div style={{ height: 16 }} />
+          <Card>
+            <h3>Recently deleted</h3>
+            <p style={{ fontSize: 13, opacity: 0.8 }}>
+              Items deleted in the last 30 days. Restore to undo, or remove permanently.
+            </p>
+            <div className="hna-table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th align="left">Type</th>
+                  <th align="left">Description</th>
+                  <th align="left">Deleted at</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {trash.sessions.map((s) => (
+                  <tr key={`s-${s.id}`} style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <td>Session</td>
+                    <td>
+                      {s.netName} — started {formatWhen(s.startedAt)}
+                      {s.topic ? ` (${s.topic})` : ''}
+                      {s.checkInCount > 0 ? ` · ${s.checkInCount} check-in(s)` : ''}
+                    </td>
+                    <td>{formatWhen(s.deletedAt)}</td>
+                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Button variant="secondary" onClick={() => restoreSession(s.id)}>
+                        Restore
+                      </Button>
+                      <Button variant="danger" onClick={() => purgeSession(s)}>
+                        Delete forever
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {trash.checkIns.map((c) => (
+                  <tr key={`c-${c.id}`} style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <td>Check-in</td>
+                    <td>
+                      <span className="hna-callsign">{displayCallsign(c.callsign)}</span>
+                      {' — '}{c.nameAtCheckIn} in {c.netName}
+                    </td>
+                    <td>{formatWhen(c.deletedAt)}</td>
+                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Button variant="secondary" onClick={() => restoreCheckIn(c.id)}>
+                        Restore
+                      </Button>
+                      <Button variant="danger" onClick={() => purgeCheckIn(c)}>
+                        Delete forever
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

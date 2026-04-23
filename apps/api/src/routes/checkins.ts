@@ -12,7 +12,9 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
 
   nested.post('/', requireAuth, validateBody(CheckInInput), asyncHandler(async (req, res) => {
     const { sessionId } = req.params as { sessionId: string };
-    const session = await prisma.netSession.findUnique({ where: { id: sessionId } });
+    const session = await prisma.netSession.findFirst({
+      where: { id: sessionId, deletedAt: null },
+    });
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     if (session.endedAt) throw new HttpError(409, 'CONFLICT', 'Session already ended');
     const body = req.body as typeof CheckInInput._type;
@@ -36,7 +38,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       throw new HttpError(400, 'VALIDATION', 'Invalid callsign');
     }
     const last = await prisma.checkIn.findFirst({
-      where: { callsign },
+      where: { callsign, deletedAt: null },
       orderBy: { checkedInAt: 'desc' },
       select: { nameAtCheckIn: true },
     });
@@ -44,7 +46,9 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.patch('/:id', requireAuth, validateBody(CheckInInput), asyncHandler(async (req, res) => {
-    const ci = await prisma.checkIn.findUnique({ where: { id: req.params.id } });
+    const ci = await prisma.checkIn.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
     const me = req.user!;
     const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
@@ -73,7 +77,9 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
-    const ci = await prisma.checkIn.findUnique({ where: { id: req.params.id } });
+    const ci = await prisma.checkIn.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
     const me = req.user!;
     const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
@@ -82,7 +88,10 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (!isOfficer && !ownRecent) {
       throw new HttpError(403, 'FORBIDDEN', 'Cannot delete this check-in');
     }
-    await prisma.checkIn.delete({ where: { id: ci.id } });
+    await prisma.checkIn.update({
+      where: { id: ci.id },
+      data: { deletedAt: new Date() },
+    });
     res.status(204).end();
   }));
 
