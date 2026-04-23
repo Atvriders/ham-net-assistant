@@ -69,3 +69,20 @@
 @media (max-width: 480px) {
   .hna-repeater-grid { grid-template-columns: 1fr !important; }
 }
+
+body {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(
+      circle at 50% 0%,
+      color-mix(in srgb, var(--color-primary) 8%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in srgb, var(--color-fg) 8%, transparent) 1px,
+      transparent 0
+    );
+  background-size: auto, 24px 24px;
+  background-attachment: fixed, fixed;
+}

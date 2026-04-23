@@ -243,12 +243,24 @@ export function RunNetPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
       <div className="hna-runnet-grid" style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 2fr 1fr' }}>
-      <Card>
-        <h2>{net.repeater.name}</h2>
-        <div>{formatFrequency(net.repeater.frequency)}</div>
-        <div>Offset: {formatOffset(net.repeater.offsetKhz)}</div>
-        <div>Tone: {formatTone(net.repeater.toneHz)}</div>
-        <div>Mode: {net.repeater.mode}</div>
+      <Card className="hna-card-featured">
+        <div className="hna-label">Repeater</div>
+        <h2 style={{ fontFamily: 'var(--font-mono)', marginTop: 2 }}>{net.repeater.name}</h2>
+        <div className="hna-freq" style={{ fontSize: 22, marginTop: 4 }}>
+          {net.repeater.frequency.toFixed(3)} <span style={{ fontSize: 12, opacity: 0.6 }}>MHz</span>
+        </div>
+        <div className="hna-dot-leader" style={{ marginTop: 10, fontSize: 13 }}>
+          <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Offset</span>
+          <span className="hna-mono">{formatOffset(net.repeater.offsetKhz)}</span>
+        </div>
+        <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+          <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Tone</span>
+          <span className="hna-mono">{formatTone(net.repeater.toneHz)}</span>
+        </div>
+        <div className="hna-dot-leader" style={{ fontSize: 13 }}>
+          <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Mode</span>
+          <span className="hna-mono">{net.repeater.mode}</span>
+        </div>
         <hr />
         <div>
           Net: <strong>{net.name}</strong>
@@ -294,7 +306,7 @@ export function RunNetPage() {
         )}
         {session.controlOp && (
           <div style={{ marginTop: 8 }}>
-            <small>Control: {displayCallsign(session.controlOp.callsign)} — {session.controlOp.name}</small>
+            <small>Control: <span className="hna-callsign">{displayCallsign(session.controlOp.callsign)}</span> — {session.controlOp.name}</small>
           </div>
         )}
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -388,7 +400,7 @@ export function RunNetPage() {
               }}
             >
               <span>
-                <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+                <strong className="hna-callsign">{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
               </span>
               {canModify(ci) && (
                 <span style={{ display: 'flex', gap: 4 }}>
@@ -469,7 +481,7 @@ export function RunNetPage() {
                   minute: '2-digit',
                   hour12: true,
                 })}{' '}
-                — <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+                — <strong className="hna-callsign">{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
               </li>
             ))}
           {session.checkIns.length === 0 && (

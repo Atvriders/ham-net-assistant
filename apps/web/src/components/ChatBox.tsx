@@ -110,7 +110,7 @@ export function ChatBox({ sessionId }: Props) {
               }}
             >
               <div style={{ fontSize: 11, opacity: 0.8 }}>
-                {displayCallsign(m.callsign)} · {m.nameAtMessage} ·{' '}
+                <span className="hna-callsign">{displayCallsign(m.callsign)}</span> · {m.nameAtMessage} ·{' '}
                 {new Date(m.createdAt).toLocaleTimeString(undefined, {
                   hour: 'numeric',
                   minute: '2-digit',

@@ -35,6 +35,7 @@ function applyTheme(t: Theme, mode: ColorMode): void {
   set('--color-danger', c.danger);
   set('--font-display', t.font.display);
   set('--font-body', t.font.body);
+  set('--font-mono', "'IBM Plex Mono', ui-monospace, Menlo, monospace");
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

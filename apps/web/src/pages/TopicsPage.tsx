@@ -140,7 +140,7 @@ export function TopicsPage() {
                     <StatusBadge status={t.status} />
                   </h3>
                   <div style={{ fontSize: 12, color: 'var(--color-border)' }}>
-                    by {t.createdByCallsign ? displayCallsign(t.createdByCallsign) : 'unknown'}
+                    by {t.createdByCallsign ? <span className="hna-callsign">{displayCallsign(t.createdByCallsign)}</span> : 'unknown'}
                     {t.createdByName ? ` (${t.createdByName})` : ''} ·{' '}
                     {new Date(t.createdAt).toLocaleString()}
                   </div>

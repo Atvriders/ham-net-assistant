@@ -100,7 +100,7 @@ export function AdminPage() {
           <tbody>
             {(users ?? []).map((u) => (
               <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td>{displayCallsign(u.callsign)}</td>
+                <td><span className="hna-callsign">{displayCallsign(u.callsign)}</span></td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>{u.role}</td>

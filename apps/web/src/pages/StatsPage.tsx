@@ -65,7 +65,7 @@ export function StatsPage() {
           <ol>
             {stats.perMember.slice(0, 10).map((m) => (
               <li key={m.callsign}>
-                {displayCallsign(m.callsign)} — {m.name}: {m.count}
+                <span className="hna-callsign">{displayCallsign(m.callsign)}</span> — {m.name}: {m.count}
               </li>
             ))}
           </ol>
@@ -103,7 +103,7 @@ export function StatsPage() {
             {s.topic && <div>Topic: {s.topic}</div>}
             {s.controlOp && (
               <div>
-                Control: <strong>{displayCallsign(s.controlOp.callsign)}</strong> —{' '}
+                Control: <strong className="hna-callsign">{displayCallsign(s.controlOp.callsign)}</strong> —{' '}
                 {s.controlOp.name}
               </div>
             )}
@@ -112,7 +112,7 @@ export function StatsPage() {
               <ol style={{ margin: '4px 0 0 20px', padding: 0 }}>
                 {s.checkIns.map((c, i) => (
                   <li key={i} style={{ fontSize: 13 }}>
-                    <strong>{displayCallsign(c.callsign)}</strong> — {c.name}
+                    <strong className="hna-callsign">{displayCallsign(c.callsign)}</strong> — {c.name}
                   </li>
                 ))}
               </ol>

@@ -27,24 +27,53 @@ function NavBar() {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 16,
-        padding: '12px 20px',
+        gap: 18,
+        padding: '14px 24px',
         background: 'var(--color-bg-muted)',
         borderBottom: '1px solid var(--color-border)',
+        position: 'relative',
       }}
     >
-      <img src={effectiveLogoUrl(current)} alt={current.logo.alt} style={{ height: 36 }} />
-      <strong style={{ color: 'var(--color-fg)' }}>Ham-Net-Assistant</strong>
+      <img src={effectiveLogoUrl(current)} alt={current.logo.alt} style={{ height: 28 }} />
+      <strong
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 600,
+          fontSize: 14,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+        }}
+      >
+        Ham-Net-Assistant
+      </strong>
       {user && (
         <>
-          <Link className="hna-nav-link" to="/">Dashboard</Link>
-          <Link className="hna-nav-link" to="/nets">Nets</Link>
-          <Link className="hna-nav-link" to="/topics">Topics</Link>
-          <Link className="hna-nav-link" to="/stats">Stats</Link>
-          <Link className="hna-nav-link" to="/settings">Settings</Link>
-          {user.role === 'ADMIN' && <Link className="hna-nav-link" to="/admin">Admin</Link>}
-          <span style={{ marginLeft: 'auto' }}>{displayCallsign(user.callsign)}</span>
-          <Button variant="secondary" onClick={() => logout()}>Sign out</Button>
+          <Link to="/" className="hna-nav-link">Dashboard</Link>
+          <Link to="/nets" className="hna-nav-link">Nets</Link>
+          <Link to="/topics" className="hna-nav-link">Topics</Link>
+          <Link to="/stats" className="hna-nav-link">Stats</Link>
+          <Link to="/settings" className="hna-nav-link">Settings</Link>
+          {user.role === 'ADMIN' && <Link to="/admin" className="hna-nav-link">Admin</Link>}
+          <span
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+            }}
+          >
+            <span style={{
+              height: 20,
+              width: 1,
+              background: 'var(--color-border)',
+              marginRight: 4,
+            }} />
+            {displayCallsign(user.callsign)}
+            <Button variant="secondary" onClick={() => logout()}>Sign out</Button>
+          </span>
         </>
       )}
     </nav>

@@ -209,7 +209,7 @@ export function JoinNetPage() {
               }}
             >
               <span>
-                <strong>{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+                <strong className="hna-callsign">{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: 'var(--color-muted)' }}>

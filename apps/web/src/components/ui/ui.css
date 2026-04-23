@@ -18,9 +18,34 @@
 .hna-input:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 
 .hna-card {
-  background: var(--color-bg); color: var(--color-fg);
-  border: 1px solid var(--color-border); border-radius: 8px;
-  padding: 16px;
+  position: relative;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  overflow: hidden;
+}
+.hna-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--color-primary);
+  opacity: 0.85;
+}
+.hna-card.hna-card-featured::after {
+  /* L-shaped corner tick top-right */
+  content: "";
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 10px; height: 10px;
+  border-top: 2px solid var(--color-accent);
+  border-right: 2px solid var(--color-accent);
+  opacity: 0.7;
+}
+.hna-card.hna-card-featured {
+  padding-top: 22px;
 }
 
 .hna-modal-backdrop {
@@ -36,12 +61,31 @@
 .hna-nav-link {
   color: var(--color-fg);
   text-decoration: none;
-  padding: 4px 6px;
+  padding: 6px 10px;
   border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  position: relative;
+  transition: color 120ms ease;
+}
+.hna-nav-link::after {
+  content: "";
+  position: absolute;
+  left: 10px; right: 10px;
+  bottom: 2px;
+  height: 1px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 180ms ease-out;
 }
 .hna-nav-link:hover {
-  color: var(--color-primary);
-  background: rgba(255,255,255,0.05);
+  color: var(--color-fg);
+}
+.hna-nav-link:hover::after {
+  transform: scaleX(1);
 }
 
 /* Form layout — label above input, consistent rhythm */
@@ -55,8 +99,9 @@
   gap: 6px;
 }
 .hna-field > label {
+  font-family: var(--font-body);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-fg);
   opacity: 0.75;
