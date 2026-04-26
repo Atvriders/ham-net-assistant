@@ -1,22 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { ParticipationStats } from '@hna/shared';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { buildSessionLogText } from '../lib/sessionLog.js';
 
 export function StatsPage() {
   const { data: stats } = useAutoFetch<ParticipationStats>(
     '/stats/participation',
     { intervalMs: 15000 },
   );
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
 
   function download(url: string, filename: string) {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
+  }
+
+  async function copySessionLog(sessionId: string, s: any) {
+    try {
+      await navigator.clipboard.writeText(buildSessionLogText(s));
+      setCopiedSessionId(sessionId);
+      setTimeout(() => setCopiedSessionId(null), 1500);
+    } catch {
+      /* ignore — older browsers */
+    }
   }
 
   if (!stats) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -89,15 +101,25 @@ export function StatsPage() {
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
                 gap: 8,
+                alignItems: 'center',
               }}
             >
               <strong>{s.netName}</strong>
-              <span style={{ opacity: 0.7, fontSize: 13 }}>
-                {new Date(s.startedAt).toLocaleString(undefined, {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                  hour12: true,
-                })}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ opacity: 0.7, fontSize: 13 }}>
+                  {new Date(s.startedAt).toLocaleString(undefined, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                    hour12: true,
+                  })}
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={() => copySessionLog(s.id, s)}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                >
+                  {copiedSessionId === s.id ? 'Copied ✓' : 'Copy log'}
+                </Button>
               </span>
             </div>
             {s.topic && <div>Topic: {s.topic}</div>}

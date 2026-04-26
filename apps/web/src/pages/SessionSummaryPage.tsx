@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { buildSessionLogText } from '../lib/sessionLog.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 
 interface NetLinkWithRepeater {
@@ -87,30 +88,22 @@ export function SessionSummaryPage() {
     a.click();
   }
 
-  function buildLogText(): string {
+  function logText(): string {
     if (!data) return '';
-    const date = new Date(data.session.startedAt).toLocaleDateString('en-US', {
-      year: '2-digit',
-      month: 'numeric',
-      day: 'numeric',
+    return buildSessionLogText({
+      startedAt: data.session.startedAt,
+      topic: data.session.topicTitle ?? data.session.topic?.title ?? null,
+      controlOp: data.session.controlOp ?? null,
+      checkIns: data.checkIns.map((c) => ({
+        callsign: c.callsign,
+        name: c.nameAtCheckIn,
+        checkedInAt: c.checkedInAt,
+      })),
     });
-    const lines: string[] = [date];
-    const topicTitle = data.session.topicTitle ?? data.session.topic?.title;
-    if (topicTitle) lines.push(`Topic: ${topicTitle}`);
-    const ctrl = data.session.controlOp;
-    lines.push(`NET control: ${ctrl ? `${ctrl.callsign} ${ctrl.name}` : '(none)'}`);
-    // Chronological order — backend may send newest-first, so re-sort defensively
-    const checkIns = [...data.checkIns].sort(
-      (a, b) => new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
-    );
-    for (const ci of checkIns) {
-      lines.push(`${ci.callsign} ${ci.nameAtCheckIn}`);
-    }
-    return lines.join('\n');
   }
 
   async function copyLog() {
-    const text = buildLogText();
+    const text = logText();
     if (!text) return;
     await navigator.clipboard.writeText(text);
     setCopied(true);
