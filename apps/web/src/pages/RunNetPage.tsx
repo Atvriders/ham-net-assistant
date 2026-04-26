@@ -226,8 +226,14 @@ export function RunNetPage() {
       return;
     }
     if (e.key === 'Enter') {
-      // Prevent the datalist from swallowing Enter as a suggestion commit
       e.preventDefault();
+      // If callsign is valid but name is empty, jump to the name field instead
+      // of silently no-op. This gives the user a clear next step.
+      if (/^[A-Z0-9]{3,7}$/.test(callsign) && !name.trim()) {
+        const nameInput = document.getElementById('checkin-name-input') as HTMLInputElement | null;
+        nameInput?.focus();
+        return;
+      }
       void addCheckIn();
     }
   }
@@ -404,6 +410,7 @@ export function RunNetPage() {
           <label>
             Name
             <Input
+              id="checkin-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {

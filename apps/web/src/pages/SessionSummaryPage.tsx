@@ -16,7 +16,11 @@ interface NetLinkWithRepeater {
   note?: string | null;
 }
 interface SummaryResponse {
-  session: NetSession & { topicTitle?: string | null; topic?: { id: string; title: string } | null };
+  session: NetSession & {
+    topicTitle?: string | null;
+    topic?: { id: string; title: string } | null;
+    controlOp?: { callsign: string; name: string } | null;
+  };
   net: Net & { links?: NetLinkWithRepeater[] };
   repeater: Repeater;
   checkIns: CheckIn[];
@@ -83,10 +87,32 @@ export function SessionSummaryPage() {
     a.click();
   }
 
+  function buildLogText(): string {
+    if (!data) return '';
+    const date = new Date(data.session.startedAt).toLocaleDateString('en-US', {
+      year: '2-digit',
+      month: 'numeric',
+      day: 'numeric',
+    });
+    const lines: string[] = [date];
+    const topicTitle = data.session.topicTitle ?? data.session.topic?.title;
+    if (topicTitle) lines.push(`Topic: ${topicTitle}`);
+    const ctrl = data.session.controlOp;
+    lines.push(`NET control: ${ctrl ? `${ctrl.callsign} ${ctrl.name}` : '(none)'}`);
+    // Chronological order — backend may send newest-first, so re-sort defensively
+    const checkIns = [...data.checkIns].sort(
+      (a, b) => new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
+    );
+    for (const ci of checkIns) {
+      lines.push(`${ci.callsign} ${ci.nameAtCheckIn}`);
+    }
+    return lines.join('\n');
+  }
+
   async function copyLog() {
-    if (!data) return;
-    const lines = data.checkIns.map((ci) => `${ci.callsign} - ${ci.nameAtCheckIn}`).join('\n');
-    await navigator.clipboard.writeText(lines);
+    const text = buildLogText();
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
