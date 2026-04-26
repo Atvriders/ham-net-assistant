@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { LogImportModal } from '../components/LogImportModal.js';
 
 interface TrashSession {
   id: string;
@@ -55,6 +56,7 @@ export function AdminPage() {
   });
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
+  const [logImportOpen, setLogImportOpen] = useState(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -150,6 +152,16 @@ export function AdminPage() {
             <span style={{ color: 'var(--color-success)' }}>Saved ({defaultSaved})</span>
           )}
         </div>
+      </Card>
+      <div style={{ height: 16 }} />
+      <Card>
+        <h3>Tools</h3>
+        <p style={{ fontSize: 13, opacity: 0.8 }}>
+          Bulk-import historical net logs from a Google Doc or pasted text.
+          Sessions are attached to a Net you choose, with check-ins linked
+          to existing members by callsign.
+        </p>
+        <Button onClick={() => setLogImportOpen(true)}>Import historical logs</Button>
       </Card>
       <div style={{ height: 16 }} />
       <Card>
@@ -267,6 +279,11 @@ export function AdminPage() {
           </Card>
         </>
       )}
+      <LogImportModal
+        open={logImportOpen}
+        onClose={() => setLogImportOpen(false)}
+        onImported={() => { /* nothing else needed */ }}
+      />
     </div>
   );
 }
