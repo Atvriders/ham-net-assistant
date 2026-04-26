@@ -44,6 +44,8 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
       setNets(rows);
       if (rows.length > 0 && !netId) setNetId(rows[0]!.id);
     }).catch(() => {});
+    // We intentionally only run this effect when the modal opens; netId is read inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function reset() {
