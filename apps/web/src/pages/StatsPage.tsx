@@ -21,7 +21,10 @@ export function StatsPage() {
     a.click();
   }
 
-  async function copySessionLog(sessionId: string, s: any) {
+  async function copySessionLog(
+    sessionId: string,
+    s: ParticipationStats['sessions'][number],
+  ) {
     try {
       await navigator.clipboard.writeText(buildSessionLogText(s));
       setCopiedSessionId(sessionId);
