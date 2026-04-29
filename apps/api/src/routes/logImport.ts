@@ -173,7 +173,7 @@ async function runImport(
     if (s.notes) notesSuffix += s.notes;
     if (s.backups.length) {
       const list = s.backups
-        .map((b) => (b.name ? `${b.name} ${b.callsign}` : b.callsign))
+        .map((b) => (b.name && b.name.trim() ? `${b.name.trim()} ${b.callsign}` : b.callsign))
         .join(', ');
       notesSuffix += (notesSuffix ? ' | ' : '') + `Backups: ${list}`;
     }
@@ -198,7 +198,7 @@ async function runImport(
       const checkedInAt = new Date(s.date.getTime() + (i + 1) * 1000);
       // `nameAtCheckIn` is non-null in the schema; fall back to the callsign
       // when the doc didn't record a name for this check-in.
-      const nameAtCheckIn = ci.name ?? ci.callsign;
+      const nameAtCheckIn = ci.name && ci.name.trim() ? ci.name.trim() : ci.callsign;
       await prisma.checkIn.create({
         data: {
           sessionId: created.id,

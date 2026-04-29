@@ -126,13 +126,13 @@ describe('parseLogText', () => {
   it('accepts NET control with no name (callsign only)', () => {
     const text = '4/25/26\nNET control: KC5QBT\nKA0JPM Mark';
     const { sessions } = parseLogText(text);
-    expect(sessions[0]!.controlOp).toEqual({ callsign: 'KC5QBT', name: null });
+    expect(sessions[0]!.controlOp).toEqual({ callsign: 'KC5QBT', name: '' });
   });
 
   it('accepts Control: alias with no name', () => {
     const text = '4/25/26\nControl: AB0ZW\nKA0JPM Mark';
     const { sessions } = parseLogText(text);
-    expect(sessions[0]!.controlOp).toEqual({ callsign: 'AB0ZW', name: null });
+    expect(sessions[0]!.controlOp).toEqual({ callsign: 'AB0ZW', name: '' });
   });
 
   it('captures Backup: <Name> <CALLSIGN>', () => {
@@ -150,7 +150,7 @@ describe('parseLogText', () => {
   it('captures Backup: callsign-only line', () => {
     const text = '4/25/26\nBackup: KE0VUM';
     const { sessions } = parseLogText(text);
-    expect(sessions[0]!.backups).toEqual([{ callsign: 'KE0VUM', name: null }]);
+    expect(sessions[0]!.backups).toEqual([{ callsign: 'KE0VUM', name: '' }]);
   });
 
   it('silently skips section headers (Check-ins:, Checkins:, Announcements)', () => {
@@ -168,14 +168,14 @@ describe('parseLogText', () => {
     expect(sessions[0]!.checkIns).toEqual([{ callsign: 'KC5QBT', name: 'Jeff' }]);
   });
 
-  it('accepts callsign-only check-ins (name is null)', () => {
+  it('accepts callsign-only check-ins (name is empty string)', () => {
     const text = '4/25/26\nKC5QBT\nKA0JPM\nKF0OEP';
     const { sessions, errors } = parseLogText(text);
     expect(errors).toEqual([]);
     expect(sessions[0]!.checkIns).toEqual([
-      { callsign: 'KC5QBT', name: null },
-      { callsign: 'KA0JPM', name: null },
-      { callsign: 'KF0OEP', name: null },
+      { callsign: 'KC5QBT', name: '' },
+      { callsign: 'KA0JPM', name: '' },
+      { callsign: 'KF0OEP', name: '' },
     ]);
   });
 
@@ -254,7 +254,7 @@ describe('parseLogText', () => {
     expect(s0.checkIns).toEqual([
       { callsign: 'KC5QBT', name: 'Jeff' },
       { callsign: 'KA0JPM', name: 'Mark' },
-      { callsign: 'KF0OEP', name: null },
+      { callsign: 'KF0OEP', name: '' },
     ]);
 
     // Session 2 — typo date and announcement prose; check-ins after the
@@ -265,9 +265,9 @@ describe('parseLogText', () => {
     expect(s1.date.getDate()).toBe(28);
     expect(s1.checkIns).toEqual([
       { callsign: 'W0QQQ/AB0ZW', name: 'James' },
-      { callsign: 'KA0JPM', name: null },
-      { callsign: 'KC5QBT', name: null },
-      { callsign: 'KF0OEP', name: null },
+      { callsign: 'KA0JPM', name: '' },
+      { callsign: 'KC5QBT', name: '' },
+      { callsign: 'KF0OEP', name: '' },
     ]);
 
     // Session 3 — trailing parenthetical, Control: alias, Backup capture,
@@ -277,7 +277,7 @@ describe('parseLogText', () => {
     expect(s2.date.getMonth()).toBe(2);
     expect(s2.date.getDate()).toBe(1);
     expect(s2.notes).toBe('(70cm repeater)');
-    expect(s2.controlOp).toEqual({ callsign: 'AB0ZW', name: null });
+    expect(s2.controlOp).toEqual({ callsign: 'AB0ZW', name: '' });
     expect(s2.backups).toEqual([{ callsign: 'KE0VUM', name: 'Tom Theis' }]);
     expect(s2.checkIns).toEqual([
       { callsign: 'KC5QBT', name: 'Jeff' },
@@ -301,5 +301,100 @@ describe('parseLogText', () => {
     const { sessions, errors } = parseLogText(text);
     expect(sessions).toHaveLength(0);
     expect(errors).toEqual([]);
+  });
+});
+
+describe('parseLog real-world tolerance', () => {
+  it('strips parenthetical annotations from date', () => {
+    const r = parseLogText('3/1/25 (70cm repeater)\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions).toHaveLength(1);
+    expect(r.sessions[0]!.date.getFullYear()).toBe(2025);
+    expect(r.sessions[0]!.date.getMonth()).toBe(2); // March
+  });
+
+  it('normalizes double slash in date', () => {
+    const r = parseLogText('3/28//26\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.date.getMonth()).toBe(2);
+    expect(r.sessions[0]!.date.getDate()).toBe(28);
+  });
+
+  it('strips trailing free text after date', () => {
+    const r = parseLogText('11/9/24 70cm > 2m\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+  });
+
+  it('handles long parenthetical annotation after date', () => {
+    const r = parseLogText('8/1/24 (2m rpt new pre-amp and reduced 5w RF output power)\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions).toHaveLength(1);
+  });
+
+  it('handles trailing prose plus parenthetical (DDay Memorial)', () => {
+    const r = parseLogText('6/6/24 DDay Memorial (First 70cm net)\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.date.getMonth()).toBe(5); // June
+    expect(r.sessions[0]!.date.getDate()).toBe(6);
+  });
+
+  it('accepts mixed-case Net control:', () => {
+    const r = parseLogText('1/1/26\nNet control: KC5QBT\nKF0OEP Bret');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.controlOp).toEqual({ callsign: 'KC5QBT', name: '' });
+  });
+
+  it('accepts short Control: prefix', () => {
+    const r = parseLogText('1/1/26\nControl: AB0ZW James\nKF0OEP Bret');
+    expect(r.sessions[0]!.controlOp).toEqual({ callsign: 'AB0ZW', name: 'James' });
+  });
+
+  it('accepts compound prefix callsign in control op', () => {
+    const r = parseLogText('1/1/26\nNet control: W0QQQ/AB0ZW James');
+    expect(r.sessions[0]!.controlOp?.callsign).toBe('W0QQQ/AB0ZW');
+    expect(r.sessions[0]!.controlOp?.name).toBe('James');
+  });
+
+  it('skips Check-ins: header silently', () => {
+    const r = parseLogText('1/1/26\nCheck-ins:\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.checkIns).toHaveLength(1);
+  });
+
+  it('skips Checkins: (no dash) header silently', () => {
+    const r = parseLogText('1/1/26\nCheckins:\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+  });
+
+  it('skips Announcements section silently', () => {
+    const r = parseLogText('1/1/26\nAnnouncements\nSomething happened\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.checkIns).toHaveLength(1);
+  });
+
+  it('skips Backup operator line silently (still captured to backups[])', () => {
+    const r = parseLogText('1/1/26\nBackup: Tommy KE0VUM\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.checkIns).toEqual([{ callsign: 'KC5QBT', name: 'Jeff' }]);
+  });
+
+  it('accepts a bare callsign with no name', () => {
+    const r = parseLogText('1/1/26\nKC5QBT');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.checkIns).toEqual([{ callsign: 'KC5QBT', name: '' }]);
+  });
+
+  it('uppercases lowercase callsigns', () => {
+    const r = parseLogText('1/1/26\nka0jpm\nkf0oep Bret');
+    expect(r.sessions[0]!.checkIns).toEqual([
+      { callsign: 'KA0JPM', name: '' },
+      { callsign: 'KF0OEP', name: 'Bret' },
+    ]);
+  });
+
+  it('skips prose lines silently (SkyWARN/Spotting paragraph)', () => {
+    const r = parseLogText('1/1/26\nSkyWARN/Spotting: 3/24 Riley County Storm Spotter Training\nKC5QBT Jeff');
+    expect(r.errors).toEqual([]);
+    expect(r.sessions[0]!.checkIns).toHaveLength(1);
   });
 });

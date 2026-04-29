@@ -6,11 +6,11 @@ export interface ParsedSession {
   /** Trailing prose on the date line (e.g. "(2m rpt)"), or null. */
   notes: string | null;
   topic: string | null;
-  /** Net control op. Name is optional — some logs only record the callsign. */
-  controlOp: { callsign: string; name: string | null } | null;
+  /** Net control op. Name may be empty when only a callsign was recorded. */
+  controlOp: { callsign: string; name: string } | null;
   /** Backup operators captured from `Backup:` lines (zero or more per session). */
-  backups: Array<{ callsign: string; name: string | null }>;
-  checkIns: Array<{ callsign: string; name: string | null }>;
+  backups: Array<{ callsign: string; name: string }>;
+  checkIns: Array<{ callsign: string; name: string }>;
 }
 
 export interface ParseResult {
@@ -79,7 +79,7 @@ export function parseLogText(text: string): ParseResult {
       if (ctrlMatch[1]) {
         current.controlOp = {
           callsign: ctrlMatch[1].toUpperCase(),
-          name: ctrlMatch[2]?.trim() || null,
+          name: (ctrlMatch[2] ?? '').trim(),
         };
       }
       continue;
@@ -95,13 +95,13 @@ export function parseLogText(text: string): ParseResult {
       const lastIsCall = !!lastToken && /^[A-Z0-9/]{3,14}$/i.test(lastToken);
       const firstIsCall = !!firstToken && /^[A-Z0-9/]{3,14}$/i.test(firstToken);
       let callsign: string | null = null;
-      let name: string | null = null;
+      let name = '';
       if (lastIsCall && tokens.length > 1) {
         callsign = lastToken!.toUpperCase();
-        name = tokens.slice(0, -1).join(' ').trim() || null;
+        name = tokens.slice(0, -1).join(' ').trim();
       } else if (firstIsCall) {
         callsign = firstToken!.toUpperCase();
-        name = tokens.slice(1).join(' ').trim() || null;
+        name = tokens.slice(1).join(' ').trim();
       }
       if (callsign) current.backups.push({ callsign, name });
       continue;
@@ -125,7 +125,7 @@ export function parseLogText(text: string): ParseResult {
     if (ciAloneMatch && /[A-Z]/i.test(ciAloneMatch[1]!) && /\d/.test(ciAloneMatch[1]!)) {
       current.checkIns.push({
         callsign: ciAloneMatch[1]!.toUpperCase(),
-        name: null,
+        name: '',
       });
       continue;
     }
