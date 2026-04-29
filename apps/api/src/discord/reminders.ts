@@ -33,7 +33,6 @@ async function getReminderLeads(
     const minutes = parsed
       .map((n: unknown) => Number(n))
       .filter((n) => Number.isInteger(n) && n > 0 && n <= 43200);
-    if (minutes.length === 0) return defaultLeads();
     return minutes.map((m) => ({
       kind: minutesToKind(m),
       leadMs: m * 60_000,
