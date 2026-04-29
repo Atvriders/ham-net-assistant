@@ -10,9 +10,11 @@ interface ImportSummary {
   parsed: Array<{
     rawDateLine: string;
     date: string;
+    notes: string | null;
     topic: string | null;
-    controlOp: { callsign: string; name: string } | null;
-    checkIns: Array<{ callsign: string; name: string }>;
+    controlOp: { callsign: string; name: string | null } | null;
+    backups: Array<{ callsign: string; name: string | null }>;
+    checkIns: Array<{ callsign: string; name: string | null }>;
   }>;
   errors: Array<{ block: string; reason: string }>;
   created: number;
@@ -128,6 +130,7 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
                 <li key={i}>
                   {new Date(s.date).toLocaleDateString('en-US', { year: '2-digit', month: 'numeric', day: 'numeric' })}
                   {' — '}{s.topic ?? '(no topic)'} — {s.checkIns.length} check-in(s)
+                  {s.notes && <span style={{ opacity: 0.7 }}> &middot; {s.notes}</span>}
                 </li>
               ))}
             </ul>

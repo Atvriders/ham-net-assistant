@@ -168,6 +168,16 @@ async function runImport(
       controlOpId = ctrl?.id ?? null;
     }
     const ended = new Date(s.date.getTime() + 60 * 60 * 1000); // +1h placeholder
+    // Compose session notes from trailing date prose + any backup operators.
+    let notesSuffix = '';
+    if (s.notes) notesSuffix += s.notes;
+    if (s.backups.length) {
+      const list = s.backups
+        .map((b) => (b.name ? `${b.name} ${b.callsign}` : b.callsign))
+        .join(', ');
+      notesSuffix += (notesSuffix ? ' | ' : '') + `Backups: ${list}`;
+    }
+    const finalNotes = notesSuffix || 'Imported from log';
     const created = await prisma.netSession.create({
       data: {
         netId,
@@ -175,7 +185,7 @@ async function runImport(
         endedAt: ended,
         controlOpId,
         topicTitle: s.topic,
-        notes: 'Imported from log',
+        notes: finalNotes,
       },
     });
     // CheckIns
@@ -186,11 +196,14 @@ async function runImport(
         orderBy: { createdAt: 'asc' },
       });
       const checkedInAt = new Date(s.date.getTime() + (i + 1) * 1000);
+      // `nameAtCheckIn` is non-null in the schema; fall back to the callsign
+      // when the doc didn't record a name for this check-in.
+      const nameAtCheckIn = ci.name ?? ci.callsign;
       await prisma.checkIn.create({
         data: {
           sessionId: created.id,
           callsign: ci.callsign,
-          nameAtCheckIn: ci.name,
+          nameAtCheckIn,
           checkedInAt,
           userId: userMatch?.id ?? null,
           createdById: null,
