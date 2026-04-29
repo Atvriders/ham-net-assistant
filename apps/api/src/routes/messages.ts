@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
+import { postToDiscord } from '../discord/client.js';
 
 export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Router } {
   const nested = Router({ mergeParams: true });
@@ -39,6 +40,22 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       },
     });
     res.status(201).json(created);
+    // Fire-and-forget mirror to Discord; never blocks or throws back to client.
+    void (async () => {
+      try {
+        const liveSession = await prisma.netSession.findUnique({ where: { id: sessionId } });
+        if (!liveSession || liveSession.endedAt) return;
+        const id = await postToDiscord(
+          prisma,
+          `**${user.callsign}** (${user.name}): ${created.body}`,
+        );
+        if (id) {
+          await prisma.discordRelay.create({
+            data: { discordMessageId: id, sessionMessageId: created.id, direction: 'out' },
+          });
+        }
+      } catch { /* ignore */ }
+    })();
   }));
 
   // DELETE /api/messages/:id  (own within 5min, or officer/admin)

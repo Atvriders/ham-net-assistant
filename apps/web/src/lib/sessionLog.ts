@@ -11,12 +11,12 @@ interface SessionForLog {
  *   M/D/YY
  *   Topic: ...
  *   NET control: <CALL> <name>
- *   <CALL1> <name1>
- *   <CALL2> <name2>
+ *   ● <CALL1> <name1>
+ *   ● <CALL2> <name2>
  *
  * Topic line is omitted when no topic. NET control line shows '(none)'
- * when no control op. Check-ins are rendered chronologically (oldest first),
- * with raw ASCII callsigns (no slashed-zero substitution).
+ * when no control op. Check-ins are rendered chronologically (oldest first)
+ * with a bullet glyph, raw ASCII callsigns (no slashed-zero substitution).
  */
 export function buildSessionLogText(s: SessionForLog): string {
   const date = new Date(s.startedAt).toLocaleDateString('en-US', {
@@ -33,7 +33,7 @@ export function buildSessionLogText(s: SessionForLog): string {
     (a, b) => new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
   );
   for (const ci of sorted) {
-    lines.push(`${ci.callsign} ${ci.name}`);
+    lines.push(`● ${ci.callsign} ${ci.name}`);
   }
   return lines.join('\n');
 }

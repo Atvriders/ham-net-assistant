@@ -110,6 +110,9 @@ a built-in HEALTHCHECK on `/api/themes`. An entrypoint script chowns the
 | `PORT` | no | API listen port, default 3000. |
 | `LOGO_DIR` | no | Directory for uploaded college logos, default `/data/logos` in production. |
 | `STATIC_DIR` | no | Served SPA dir, defaults to bundled `apps/web/dist`. |
+| `DISCORD_ENABLED` | no | `true`/`false` master switch. Also configurable from the Admin page. Env var takes precedence. |
+| `DISCORD_BOT_TOKEN` | no | Discord bot token. Same UI override behavior as above. Stored in the Setting KV table when set via UI. |
+| `DISCORD_CHANNEL_ID` | no | Discord channel id used for both the chat bridge and reminder posts. |
 
 Generate a secret with `openssl rand -hex 32`.
 

@@ -71,6 +71,39 @@ model Net {
   active     Boolean      @default(true)
   sessions   NetSession[]
   links      NetLink[]
+  reminders  NetReminder[]
+}
+
+/// Tracks which reminders have already been sent for a specific net occurrence,
+/// so the scheduler doesn't double-fire. The "occurrence" is the scheduled
+/// net start moment, normalized to the minute.
+model NetReminder {
+  id        String   @id @default(cuid())
+  netId     String
+  net       Net      @relation(fields: [netId], references: [id], onDelete: Cascade)
+  /// Scheduled start moment, normalized to the minute
+  occursAt  DateTime
+  /// Which reminder fired: "4h" or "30m"
+  kind      String
+  sentAt    DateTime @default(now())
+
+  @@unique([netId, occursAt, kind])
+  @@index([occursAt])
+}
+
+/// Discord bridge dedupe: external Discord message id, kept so we don't
+/// re-mirror a message that we already imported.
+model DiscordRelay {
+  id              String   @id @default(cuid())
+  /// Discord's snowflake message id
+  discordMessageId String  @unique
+  /// sessionMessageId we wrote into (null if outbound — we generated and posted)
+  sessionMessageId String?
+  /// "in" = arrived from Discord -> stored locally; "out" = generated locally -> posted to Discord
+  direction       String
+  createdAt       DateTime @default(now())
+
+  @@index([sessionMessageId])
 }
 
 model NetLink {

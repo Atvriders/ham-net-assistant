@@ -3,6 +3,7 @@ import type { PublicUser, Role } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
@@ -57,6 +58,11 @@ export function AdminPage() {
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
   const [logImportOpen, setLogImportOpen] = useState(false);
+  const [dEnabled, setDEnabled] = useState(false);
+  const [dChannel, setDChannel] = useState('');
+  const [dToken, setDToken] = useState('');
+  const [dTokenSet, setDTokenSet] = useState(false);
+  const [dSaved, setDSaved] = useState(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -67,6 +73,32 @@ export function AdminPage() {
       });
     return () => ctrl.abort();
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.role !== 'ADMIN') return;
+    apiFetch<{ enabled: boolean; channelId: string; tokenSet: boolean }>('/admin/discord/config')
+      .then((c) => {
+        setDEnabled(c.enabled);
+        setDChannel(c.channelId);
+        setDTokenSet(c.tokenSet);
+      })
+      .catch(() => { /* ignore */ });
+  }, [currentUser?.role]);
+
+  async function saveDiscord() {
+    await apiFetch('/admin/discord/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: dEnabled,
+        channelId: dChannel,
+        botToken: dToken || undefined,
+      }),
+    });
+    if (dToken) setDTokenSet(true);
+    setDToken('');
+    setDSaved(true);
+    window.setTimeout(() => setDSaved(false), 2000);
+  }
 
   async function setRole(id: string, role: Role) {
     await apiFetch(`/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
@@ -162,6 +194,58 @@ export function AdminPage() {
           to existing members by callsign.
         </p>
         <Button onClick={() => setLogImportOpen(true)}>Import historical logs</Button>
+      </Card>
+      <div style={{ height: 16 }} />
+      <Card>
+        <h3>Discord bridge</h3>
+        <p style={{ fontSize: 13, opacity: 0.8 }}>
+          Mirror the in-app chat to a Discord channel during active nets, and post
+          reminders 4 hours and 30 minutes before each scheduled net. Same channel
+          is used for both. Env vars (<code>DISCORD_BOT_TOKEN</code>,{' '}
+          <code>DISCORD_CHANNEL_ID</code>, <code>DISCORD_ENABLED</code>) override
+          these settings if set.
+        </p>
+        <div className="hna-form">
+          <div className="hna-field">
+            <label>Enabled</label>
+            <select
+              className="hna-input"
+              value={dEnabled ? 'on' : 'off'}
+              onChange={(e) => setDEnabled(e.target.value === 'on')}
+            >
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+          <div className="hna-field">
+            <label>Channel ID</label>
+            <Input
+              value={dChannel}
+              onChange={(e) => setDChannel(e.target.value)}
+              placeholder="123456789012345678"
+            />
+          </div>
+          <div className="hna-field">
+            <label>
+              Bot token{' '}
+              {dTokenSet && (
+                <span style={{ opacity: 0.7 }}>(currently set — leave blank to keep)</span>
+              )}
+            </label>
+            <Input
+              type="password"
+              value={dToken}
+              onChange={(e) => setDToken(e.target.value)}
+              placeholder={dTokenSet ? '••••••••' : 'paste new bot token'}
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+          <Button onClick={saveDiscord}>Save</Button>
+          {dSaved && (
+            <span style={{ color: 'var(--color-success)' }}>Saved</span>
+          )}
+        </div>
       </Card>
       <div style={{ height: 16 }} />
       <Card>

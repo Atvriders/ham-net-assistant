@@ -20,8 +20,17 @@ export function ChatBox({ sessionId }: Props) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [discordBridged, setDiscordBridged] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const messages = data ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ enabled: boolean }>('/discord/status')
+      .then((r) => { if (!cancelled) setDiscordBridged(r.enabled); })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const el = listRef.current;
@@ -67,9 +76,25 @@ export function ChatBox({ sessionId }: Props) {
 
   return (
     <Card>
-      <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         Chat
         <span style={{ fontSize: 11, color: 'var(--color-success)' }}>● live</span>
+        {discordBridged && (
+          <span
+            style={{
+              fontSize: 11,
+              padding: '2px 6px',
+              borderRadius: 10,
+              background: 'var(--color-bg-muted)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-fg)',
+              opacity: 0.85,
+            }}
+            title="In-app chat mirrors to a Discord channel during this net"
+          >
+            Bridged with Discord
+          </span>
+        )}
       </h3>
       <div
         ref={listRef}

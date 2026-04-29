@@ -18,6 +18,7 @@ import { messagesRouter } from './routes/messages.js';
 import { scriptImportRouter } from './routes/scriptImport.js';
 import { logImportRouter } from './routes/logImport.js';
 import { adminRouter } from './routes/admin.js';
+import { discordRouter } from './routes/discord.js';
 import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
@@ -47,6 +48,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/script-import', scriptImportRouter());
   app.use('/api/log-import', logImportRouter(prisma));
   app.use('/api/admin', adminRouter(prisma));
+  app.use('/api/discord', discordRouter(prisma));
 
   mountStatic(app);
   app.use(errorHandler);
