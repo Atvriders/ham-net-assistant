@@ -1,13 +1,8 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
-import { validateBody } from '../middleware/validate.js';
-import { getSetting, setSetting } from '../lib/settings.js';
-import { reconcileDiscord } from '../discord/client.js';
-import { handleInboundDiscordMessage } from '../discord/bridge.js';
 
 const TRASH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -117,42 +112,6 @@ export function adminRouter(prisma: PrismaClient): Router {
       throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
     }
   }));
-
-  router.get('/discord/config', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
-    const enabled = (await getSetting(prisma, 'discordEnabled')) === 'true';
-    const channelId = (await getSetting(prisma, 'discordChannelId')) ?? '';
-    // Don't return the token — return whether it's set (env var counts).
-    const tokenSet =
-      !!(await getSetting(prisma, 'discordBotToken')) || !!process.env.DISCORD_BOT_TOKEN;
-    res.json({ enabled, channelId, tokenSet });
-  }));
-
-  const DiscordConfigInput = z.object({
-    enabled: z.boolean(),
-    channelId: z.string().max(64).optional().nullable(),
-    botToken: z.string().max(200).optional().nullable(),
-  }).strict();
-
-  router.put(
-    '/discord/config',
-    requireRole('ADMIN'),
-    validateBody(DiscordConfigInput),
-    asyncHandler(async (req, res) => {
-      const body = req.body as typeof DiscordConfigInput._type;
-      await setSetting(prisma, 'discordEnabled', String(body.enabled));
-      if (body.channelId !== undefined && body.channelId !== null) {
-        await setSetting(prisma, 'discordChannelId', body.channelId);
-      }
-      if (body.botToken !== undefined && body.botToken !== null && body.botToken !== '') {
-        await setSetting(prisma, 'discordBotToken', body.botToken);
-      }
-      // Re-init the client with the new config (uses fresh settings/env state).
-      await reconcileDiscord(prisma, (m) => {
-        void handleInboundDiscordMessage(prisma, body.channelId ?? null, m);
-      }).catch(() => { /* ignore */ });
-      res.json({ ok: true });
-    }),
-  );
 
   return router;
 }

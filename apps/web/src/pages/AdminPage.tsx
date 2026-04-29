@@ -37,6 +37,16 @@ interface TrashPayload {
   checkIns: TrashCheckIn[];
 }
 
+interface DiscordConfig {
+  enabled: boolean;
+  channelId: string;
+  tokenSet: boolean;
+  tokenFromEnv: boolean;
+  channelIdFromEnv: boolean;
+  enabledFromEnv: boolean;
+  reminderLeadsMinutes: number[];
+}
+
 function formatWhen(iso: string | null): string {
   if (!iso) return '—';
   try {
@@ -58,11 +68,14 @@ export function AdminPage() {
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
   const [logImportOpen, setLogImportOpen] = useState(false);
-  const [dEnabled, setDEnabled] = useState(false);
-  const [dChannel, setDChannel] = useState('');
-  const [dToken, setDToken] = useState('');
-  const [dTokenSet, setDTokenSet] = useState(false);
-  const [dSaved, setDSaved] = useState(false);
+  const [discordCfg, setDiscordCfg] = useState<DiscordConfig | null>(null);
+  const [discordTokenInput, setDiscordTokenInput] = useState('');
+  const [discordChannelInput, setDiscordChannelInput] = useState('');
+  const [discordEnabledInput, setDiscordEnabledInput] = useState(false);
+  const [discordLeadsInput, setDiscordLeadsInput] = useState('240, 30');
+  const [discordSaving, setDiscordSaving] = useState(false);
+  const [discordSaved, setDiscordSaved] = useState(false);
+  const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -74,30 +87,69 @@ export function AdminPage() {
     return () => ctrl.abort();
   }, []);
 
+  async function loadDiscord() {
+    try {
+      const cfg = await apiFetch<DiscordConfig>('/discord/config');
+      setDiscordCfg(cfg);
+      setDiscordChannelInput(cfg.channelId);
+      setDiscordEnabledInput(cfg.enabled);
+      setDiscordLeadsInput(cfg.reminderLeadsMinutes.join(', '));
+    } catch {
+      /* ignore */
+    }
+  }
+
   useEffect(() => {
     if (currentUser?.role !== 'ADMIN') return;
-    apiFetch<{ enabled: boolean; channelId: string; tokenSet: boolean }>('/admin/discord/config')
-      .then((c) => {
-        setDEnabled(c.enabled);
-        setDChannel(c.channelId);
-        setDTokenSet(c.tokenSet);
-      })
-      .catch(() => { /* ignore */ });
+    void loadDiscord();
   }, [currentUser?.role]);
 
   async function saveDiscord() {
-    await apiFetch('/admin/discord/config', {
-      method: 'PUT',
-      body: JSON.stringify({
-        enabled: dEnabled,
-        channelId: dChannel,
-        botToken: dToken || undefined,
-      }),
+    if (!discordCfg) return;
+    setDiscordSaving(true);
+    try {
+      const body: Record<string, unknown> = {};
+      if (!discordCfg.enabledFromEnv) body.enabled = discordEnabledInput;
+      if (!discordCfg.channelIdFromEnv) body.channelId = discordChannelInput.trim();
+      if (!discordCfg.tokenFromEnv && discordTokenInput.trim()) {
+        body.token = discordTokenInput.trim();
+      }
+      const leads = discordLeadsInput
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0 && n <= 43200);
+      if (leads.length > 0) body.reminderLeadsMinutes = leads;
+      await apiFetch('/discord/config', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      setDiscordTokenInput('');
+      await loadDiscord();
+      setDiscordSaved(true);
+      window.setTimeout(() => setDiscordSaved(false), 2000);
+    } finally {
+      setDiscordSaving(false);
+    }
+  }
+
+  async function testDiscord() {
+    setDiscordTestResult(null);
+    try {
+      await apiFetch('/discord/test', { method: 'POST' });
+      setDiscordTestResult('Test message sent.');
+    } catch (e) {
+      setDiscordTestResult((e as Error).message);
+    }
+  }
+
+  async function clearDiscordToken() {
+    if (!window.confirm('Clear the saved Discord bot token?')) return;
+    await apiFetch('/discord/config', {
+      method: 'PATCH',
+      body: JSON.stringify({ token: null }),
     });
-    if (dToken) setDTokenSet(true);
-    setDToken('');
-    setDSaved(true);
-    window.setTimeout(() => setDSaved(false), 2000);
+    setDiscordTokenInput('');
+    await loadDiscord();
   }
 
   async function setRole(id: string, role: Role) {
@@ -196,57 +248,99 @@ export function AdminPage() {
         <Button onClick={() => setLogImportOpen(true)}>Import historical logs</Button>
       </Card>
       <div style={{ height: 16 }} />
-      <Card>
-        <h3>Discord bridge</h3>
-        <p style={{ fontSize: 13, opacity: 0.8 }}>
-          Mirror the in-app chat to a Discord channel during active nets, and post
-          reminders 4 hours and 30 minutes before each scheduled net. Same channel
-          is used for both. Env vars (<code>DISCORD_BOT_TOKEN</code>,{' '}
-          <code>DISCORD_CHANNEL_ID</code>, <code>DISCORD_ENABLED</code>) override
-          these settings if set.
-        </p>
-        <div className="hna-form">
-          <div className="hna-field">
-            <label>Enabled</label>
-            <select
-              className="hna-input"
-              value={dEnabled ? 'on' : 'off'}
-              onChange={(e) => setDEnabled(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </select>
-          </div>
-          <div className="hna-field">
-            <label>Channel ID</label>
-            <Input
-              value={dChannel}
-              onChange={(e) => setDChannel(e.target.value)}
-              placeholder="123456789012345678"
-            />
-          </div>
-          <div className="hna-field">
-            <label>
-              Bot token{' '}
-              {dTokenSet && (
-                <span style={{ opacity: 0.7 }}>(currently set — leave blank to keep)</span>
+      {discordCfg && (
+        <Card>
+          <h3>Discord integration</h3>
+          <p style={{ fontSize: 13, opacity: 0.8 }}>
+            Mirror the in-app chat to a Discord channel during active nets and
+            post reminders before each scheduled net. Env vars
+            (<code>DISCORD_BOT_TOKEN</code>, <code>DISCORD_CHANNEL_ID</code>,{' '}
+            <code>DISCORD_ENABLED</code>) override these settings if set; fields
+            driven by env are disabled and marked <em>(env)</em>.
+          </p>
+          <div className="hna-form">
+            <div className="hna-field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={discordEnabledInput}
+                  onChange={(e) => setDiscordEnabledInput(e.target.checked)}
+                  disabled={discordCfg.enabledFromEnv}
+                />
+                {' '}Enabled{' '}
+                {discordCfg.enabledFromEnv && <em>(env)</em>}
+              </label>
+            </div>
+            <div className="hna-field">
+              <label>
+                Bot token{' '}
+                {discordCfg.tokenFromEnv && <em>(env)</em>}
+              </label>
+              <Input
+                type="password"
+                placeholder={discordCfg.tokenSet ? 'set — leave blank to keep' : 'not set'}
+                value={discordTokenInput}
+                onChange={(e) => setDiscordTokenInput(e.target.value)}
+                disabled={discordCfg.tokenFromEnv}
+              />
+              {discordCfg.tokenSet && !discordCfg.tokenFromEnv && (
+                <button
+                  type="button"
+                  onClick={clearDiscordToken}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--color-danger)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: 0,
+                    marginTop: 4,
+                  }}
+                >
+                  Clear token
+                </button>
               )}
-            </label>
-            <Input
-              type="password"
-              value={dToken}
-              onChange={(e) => setDToken(e.target.value)}
-              placeholder={dTokenSet ? '••••••••' : 'paste new bot token'}
-            />
+            </div>
+            <div className="hna-field">
+              <label>
+                Channel ID{' '}
+                {discordCfg.channelIdFromEnv && <em>(env)</em>}
+              </label>
+              <Input
+                value={discordChannelInput}
+                onChange={(e) => setDiscordChannelInput(e.target.value)}
+                disabled={discordCfg.channelIdFromEnv}
+                placeholder="123456789012345678"
+              />
+            </div>
+            <div className="hna-field">
+              <label>Reminder leads (minutes, comma-separated)</label>
+              <Input
+                value={discordLeadsInput}
+                onChange={(e) => setDiscordLeadsInput(e.target.value)}
+                placeholder="240, 30"
+              />
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                Each value is the number of minutes before a net&apos;s start
+                time to post a reminder. Example: <code>240, 30</code> = 4 hours
+                and 30 minutes.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Button onClick={saveDiscord} disabled={discordSaving}>Save</Button>
+              <Button variant="secondary" onClick={testDiscord}>
+                Send test message
+              </Button>
+              {discordSaved && (
+                <span style={{ color: 'var(--color-success)' }}>Saved</span>
+              )}
+            </div>
+            {discordTestResult && (
+              <div style={{ fontSize: 13, marginTop: 8 }}>{discordTestResult}</div>
+            )}
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
-          <Button onClick={saveDiscord}>Save</Button>
-          {dSaved && (
-            <span style={{ color: 'var(--color-success)' }}>Saved</span>
-          )}
-        </div>
-      </Card>
+        </Card>
+      )}
       <div style={{ height: 16 }} />
       <Card>
         <h3>Members</h3>

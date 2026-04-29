@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Events, type Message, type TextChannel } from 'discord.js';
 import type { PrismaClient } from '@prisma/client';
 import { getSetting } from '../lib/settings.js';
+import { handleInboundDiscordMessage } from './bridge.js';
 
 let activeClient: Client | null = null;
 let activeToken: string | null = null;
@@ -12,13 +13,31 @@ export interface DiscordConfig {
   channelId: string | null;
 }
 
+/** Read a setting under the new key, falling back to the legacy key. */
+async function readSetting(
+  prisma: PrismaClient,
+  newKey: string,
+  legacyKey: string,
+): Promise<string | null> {
+  const v = await getSetting(prisma, newKey);
+  if (v !== null && v !== undefined && v !== '') return v;
+  return await getSetting(prisma, legacyKey);
+}
+
 export async function loadDiscordConfig(prisma: PrismaClient): Promise<DiscordConfig> {
   const envEnabled = (process.env.DISCORD_ENABLED ?? '').toLowerCase();
   const enabledFromEnv = envEnabled === 'true' ? true : envEnabled === 'false' ? false : null;
-  const enabledFromSetting = (await getSetting(prisma, 'discordEnabled')) === 'true';
+  const enabledSetting = await readSetting(prisma, 'discord.enabled', 'discordEnabled');
+  const enabledFromSetting = enabledSetting === 'true';
   const enabled = enabledFromEnv ?? enabledFromSetting;
-  const token = process.env.DISCORD_BOT_TOKEN || (await getSetting(prisma, 'discordBotToken')) || null;
-  const channelId = process.env.DISCORD_CHANNEL_ID || (await getSetting(prisma, 'discordChannelId')) || null;
+  const token =
+    process.env.DISCORD_BOT_TOKEN ||
+    (await readSetting(prisma, 'discord.token', 'discordBotToken')) ||
+    null;
+  const channelId =
+    process.env.DISCORD_CHANNEL_ID ||
+    (await readSetting(prisma, 'discord.channelId', 'discordChannelId')) ||
+    null;
   return { enabled: !!enabled, token, channelId };
 }
 
@@ -90,4 +109,36 @@ export function discordChannelMatches(prisma: PrismaClient, channelId: string): 
 
 export function getActiveClient(): Client | null {
   return activeClient;
+}
+
+/**
+ * Reload configuration and (re)connect the Discord client to match it. If the
+ * config is disabled or missing token/channel, disconnects any active client.
+ * Wraps reconcileDiscord with a default inbound-message handler so callers
+ * (e.g. the admin route after a config change) don't need to wire one in.
+ */
+export async function applyDiscordConfig(prisma: PrismaClient): Promise<void> {
+  const cfg = await loadDiscordConfig(prisma);
+  if (!cfg.enabled || !cfg.token || !cfg.channelId) {
+    if (activeClient) {
+      try { await activeClient.destroy(); } catch { /* ignore */ }
+      activeClient = null;
+      activeToken = null;
+      messageHandler = null;
+    }
+    return;
+  }
+  await reconcileDiscord(prisma, (m) => {
+    void handleInboundDiscordMessage(prisma, cfg.channelId, m);
+  });
+}
+
+/** Post a one-off test message via the active client. Returns id or null. */
+export async function sendTestMessage(
+  prisma: PrismaClient,
+  content: string,
+): Promise<string | null> {
+  // Make sure the client is up-to-date with current settings before sending.
+  await applyDiscordConfig(prisma);
+  return await postToDiscord(prisma, content);
 }
