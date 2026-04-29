@@ -47,6 +47,11 @@ interface DiscordConfig {
   reminderLeadsMinutes: number[];
 }
 
+interface ReminderRow {
+  hours: number;
+  minutes: number;
+}
+
 function formatWhen(iso: string | null): string {
   if (!iso) return '—';
   try {
@@ -72,7 +77,7 @@ export function AdminPage() {
   const [discordTokenInput, setDiscordTokenInput] = useState('');
   const [discordChannelInput, setDiscordChannelInput] = useState('');
   const [discordEnabledInput, setDiscordEnabledInput] = useState(false);
-  const [discordLeads, setDiscordLeads] = useState<number[]>([]);
+  const [discordLeadsRows, setDiscordLeadsRows] = useState<ReminderRow[]>([]);
   const [discordSaving, setDiscordSaving] = useState(false);
   const [discordSaved, setDiscordSaved] = useState(false);
   const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
@@ -93,7 +98,11 @@ export function AdminPage() {
       setDiscordCfg(cfg);
       setDiscordChannelInput(cfg.channelId);
       setDiscordEnabledInput(cfg.enabled);
-      setDiscordLeads([...cfg.reminderLeadsMinutes].sort((a, b) => b - a));
+      setDiscordLeadsRows(
+        cfg.reminderLeadsMinutes.length > 0
+          ? cfg.reminderLeadsMinutes.map((m) => ({ hours: Math.floor(m / 60), minutes: m % 60 }))
+          : [{ hours: 4, minutes: 0 }, { hours: 0, minutes: 30 }]
+      );
     } catch {
       /* ignore */
     }
@@ -114,8 +123,10 @@ export function AdminPage() {
       if (!discordCfg.tokenFromEnv && discordTokenInput.trim()) {
         body.token = discordTokenInput.trim();
       }
-      const leads = discordLeads.filter((m) => Number.isFinite(m) && m > 0 && m <= 43200);
-      body.reminderLeadsMinutes = leads;
+      const leads = discordLeadsRows
+        .map((r) => r.hours * 60 + r.minutes)
+        .filter((n) => Number.isFinite(n) && n > 0 && n <= 43200);
+      if (leads.length > 0) body.reminderLeadsMinutes = leads;
       await apiFetch('/discord/config', {
         method: 'PATCH',
         body: JSON.stringify(body),
@@ -311,104 +322,71 @@ export function AdminPage() {
               />
             </div>
             <div className="hna-field">
-              <label>Reminders before each net</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {discordLeads.length === 0 && (
-                  <div style={{ fontSize: 13, opacity: 0.7, fontStyle: 'italic' }}>
-                    No reminders scheduled.
-                  </div>
-                )}
-                {discordLeads.map((minutes, i) => {
-                  const hours = Math.floor(minutes / 60);
-                  const mins = minutes % 60;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex',
-                        gap: 8,
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        padding: '8px 10px',
-                        background: 'var(--color-bg-muted)',
-                        borderRadius: 6,
-                        border: '1px solid var(--color-border)',
+              <label>Reminder leads</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {discordLeadsRows.map((row, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <select
+                      className="hna-input"
+                      value={row.hours}
+                      onChange={(e) => {
+                        const next = [...discordLeadsRows];
+                        next[i] = { ...next[i]!, hours: Number(e.target.value) };
+                        setDiscordLeadsRows(next);
                       }}
+                      style={{ width: 80 }}
                     >
-                      <select
-                        className="hna-input"
-                        value={hours}
-                        onChange={(e) => {
-                          setDiscordLeads((prev) => {
-                            const next = [...prev];
-                            if (next[i] !== undefined) {
-                              next[i] = Number(e.target.value) * 60 + (next[i] % 60);
-                            }
-                            return next;
-                          });
-                        }}
-                        style={{ width: 80 }}
-                      >
-                        {Array.from({ length: 24 }, (_, h) => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                      <span style={{ fontSize: 13 }}>
-                        {hours === 1 ? 'hour' : 'hours'}
-                      </span>
-                      <select
-                        className="hna-input"
-                        value={mins}
-                        onChange={(e) => {
-                          setDiscordLeads((prev) => {
-                            const next = [...prev];
-                            if (next[i] !== undefined) {
-                              next[i] = Math.floor(next[i] / 60) * 60 + Number(e.target.value);
-                            }
-                            return next;
-                          });
-                        }}
-                        style={{ width: 80 }}
-                      >
-                        {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                          <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
-                        ))}
-                      </select>
-                      <span style={{ fontSize: 13 }}>
-                        {mins === 1 ? 'minute' : 'minutes'} before
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDiscordLeads((prev) => prev.filter((_, idx) => idx !== i));
-                        }}
-                        aria-label="Remove reminder"
-                        style={{
-                          marginLeft: 'auto',
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--color-danger)',
-                          cursor: 'pointer',
-                          fontSize: 18,
-                          lineHeight: 1,
-                          padding: '0 6px',
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setDiscordLeads((prev) => (prev.length >= 5 ? prev : [...prev, 60]));
-                  }}
-                  disabled={discordLeads.length >= 5}
-                  style={{ alignSelf: 'flex-start' }}
-                >
-                  + Add reminder
-                </Button>
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                    <span style={{ fontSize: 13, opacity: 0.8 }}>hours</span>
+                    <select
+                      className="hna-input"
+                      value={row.minutes - (row.minutes % 5)}
+                      onChange={(e) => {
+                        const next = [...discordLeadsRows];
+                        next[i] = { ...next[i]!, minutes: Number(e.target.value) };
+                        setDiscordLeadsRows(next);
+                      }}
+                      style={{ width: 80 }}
+                    >
+                      {Array.from({ length: 12 }, (_, k) => k * 5).map((m) => (
+                        <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+                      ))}
+                    </select>
+                    <span style={{ fontSize: 13, opacity: 0.8 }}>minutes before</span>
+                    <button
+                      type="button"
+                      onClick={() => setDiscordLeadsRows(discordLeadsRows.filter((_, j) => j !== i))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--color-danger)',
+                        fontSize: 18,
+                        lineHeight: 1,
+                        padding: 4,
+                      }}
+                      aria-label="Remove reminder"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {discordLeadsRows.length < 5 && (
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setDiscordLeadsRows([...discordLeadsRows, { hours: 1, minutes: 0 }])}
+                    style={{ alignSelf: 'flex-start', fontSize: 13, padding: '4px 12px' }}
+                  >
+                    + Add reminder
+                  </Button>
+                )}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+                Each row is how far ahead of a net's start time to ping Discord. Up to 5 reminders.
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
