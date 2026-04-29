@@ -55,7 +55,7 @@ describe('GET /api/discord/config', () => {
   it('admin sees defaults when nothing is configured', async () => {
     const res = await request(app).get('/api/discord/config').set('Cookie', admin);
     expect(res.status).toBe(200);
-    expect(res.body.reminderLeadsMinutes).toEqual([240, 30]);
+    expect(res.body.reminderTimesOfDay).toEqual(['16:00', '19:30']);
     expect(res.body.tokenSet).toBe(false);
     expect(res.body.channelId).toBe('');
     expect(res.body.enabled).toBe(false);
@@ -71,15 +71,15 @@ describe('PATCH /api/discord/config', () => {
     expect(res.status).toBe(403);
   });
 
-  it('admin can update reminder leads; sorted descending and deduped', async () => {
+  it('admin can update reminder times; sorted ascending and deduped', async () => {
     const res = await request(app)
       .patch('/api/discord/config')
       .set('Cookie', admin)
-      .send({ reminderLeadsMinutes: [15, 1440, 120, 120] });
+      .send({ reminderTimesOfDay: ['19:30', '07:00', '16:00', '16:00'] });
     expect(res.status).toBe(204);
 
     const got = await request(app).get('/api/discord/config').set('Cookie', admin);
-    expect(got.body.reminderLeadsMinutes).toEqual([1440, 120, 15]);
+    expect(got.body.reminderTimesOfDay).toEqual(['07:00', '16:00', '19:30']);
   });
 
   it('admin can set channel id and enabled flag', async () => {
@@ -109,19 +109,20 @@ describe('PATCH /api/discord/config', () => {
     expect(got.body.tokenSet).toBe(false);
   });
 
-  it('rejects out-of-range lead values', async () => {
+  it('rejects bad time string values', async () => {
     const res = await request(app)
       .patch('/api/discord/config')
       .set('Cookie', admin)
-      .send({ reminderLeadsMinutes: [99999] });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+      .send({ reminderTimesOfDay: ['25:99'] });
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe('VALIDATION');
   });
 
-  it('empty leads array is valid (no-op for reader)', async () => {
+  it('empty times array is valid (no-op for reader)', async () => {
     const res = await request(app)
       .patch('/api/discord/config')
       .set('Cookie', admin)
-      .send({ reminderLeadsMinutes: [] });
+      .send({ reminderTimesOfDay: [] });
     expect(res.status).toBe(204);
   });
 });

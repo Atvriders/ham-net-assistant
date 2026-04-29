@@ -7,6 +7,7 @@ import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
+import { to12h, to24h } from '../lib/time.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { LogImportModal } from '../components/LogImportModal.js';
 
@@ -44,12 +45,13 @@ interface DiscordConfig {
   tokenFromEnv: boolean;
   channelIdFromEnv: boolean;
   enabledFromEnv: boolean;
-  reminderLeadsMinutes: number[];
+  reminderTimesOfDay: string[];
 }
 
 interface ReminderRow {
-  hours: number;
-  minutes: number;
+  hour: number;        // 1..12
+  minute: number;      // 0..55 (5-min steps)
+  meridiem: 'AM' | 'PM';
 }
 
 function formatWhen(iso: string | null): string {
@@ -99,9 +101,9 @@ export function AdminPage() {
       setDiscordChannelInput(cfg.channelId);
       setDiscordEnabledInput(cfg.enabled);
       setDiscordLeadsRows(
-        cfg.reminderLeadsMinutes.length > 0
-          ? cfg.reminderLeadsMinutes.map((m) => ({ hours: Math.floor(m / 60), minutes: m % 60 }))
-          : [{ hours: 4, minutes: 0 }, { hours: 0, minutes: 30 }]
+        (cfg.reminderTimesOfDay ?? []).length > 0
+          ? cfg.reminderTimesOfDay.map((s: string) => to12h(s))
+          : [to12h('16:00'), to12h('19:30')]
       );
     } catch {
       /* ignore */
@@ -123,10 +125,10 @@ export function AdminPage() {
       if (!discordCfg.tokenFromEnv && discordTokenInput.trim()) {
         body.token = discordTokenInput.trim();
       }
-      const leads = discordLeadsRows
-        .map((r) => r.hours * 60 + r.minutes)
-        .filter((n) => Number.isFinite(n) && n > 0 && n <= 43200);
-      if (leads.length > 0) body.reminderLeadsMinutes = leads;
+      const times = discordLeadsRows
+        .map((r) => to24h({ hour: r.hour, minute: r.minute, meridiem: r.meridiem }))
+        .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
+      if (times.length > 0) body.reminderTimesOfDay = times;
       await apiFetch('/discord/config', {
         method: 'PATCH',
         body: JSON.stringify(body),
@@ -322,53 +324,64 @@ export function AdminPage() {
               />
             </div>
             <div className="hna-field">
-              <label>Reminder leads</label>
+              <label>Reminder times</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {discordLeadsRows.map((row, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <select
                       className="hna-input"
-                      value={row.hours}
+                      value={row.hour}
                       onChange={(e) => {
                         const next = [...discordLeadsRows];
-                        next[i] = { ...next[i]!, hours: Number(e.target.value) };
+                        next[i] = { ...next[i]!, hour: Number(e.target.value) };
                         setDiscordLeadsRows(next);
                       }}
-                      style={{ width: 80 }}
+                      style={{ width: 70 }}
                     >
-                      {Array.from({ length: 24 }, (_, h) => (
+                      {Array.from({ length: 12 }, (_, k) => k + 1).map((h) => (
                         <option key={h} value={h}>{h}</option>
                       ))}
                     </select>
-                    <span style={{ fontSize: 13, opacity: 0.8 }}>hours</span>
+                    <span style={{ fontSize: 14 }}>:</span>
                     <select
                       className="hna-input"
-                      value={row.minutes - (row.minutes % 5)}
+                      value={row.minute - (row.minute % 5)}
                       onChange={(e) => {
                         const next = [...discordLeadsRows];
-                        next[i] = { ...next[i]!, minutes: Number(e.target.value) };
+                        next[i] = { ...next[i]!, minute: Number(e.target.value) };
                         setDiscordLeadsRows(next);
                       }}
-                      style={{ width: 80 }}
+                      style={{ width: 70 }}
                     >
                       {Array.from({ length: 12 }, (_, k) => k * 5).map((m) => (
                         <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
                       ))}
                     </select>
-                    <span style={{ fontSize: 13, opacity: 0.8 }}>minutes before</span>
+                    <select
+                      className="hna-input"
+                      value={row.meridiem}
+                      onChange={(e) => {
+                        const next = [...discordLeadsRows];
+                        next[i] = { ...next[i]!, meridiem: e.target.value as 'AM' | 'PM' };
+                        setDiscordLeadsRows(next);
+                      }}
+                      style={{ width: 70 }}
+                    >
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
                     <button
                       type="button"
                       onClick={() => setDiscordLeadsRows(discordLeadsRows.filter((_, j) => j !== i))}
+                      aria-label="Remove"
                       style={{
                         background: 'transparent',
                         border: 'none',
                         cursor: 'pointer',
                         color: 'var(--color-danger)',
                         fontSize: 18,
-                        lineHeight: 1,
                         padding: 4,
                       }}
-                      aria-label="Remove reminder"
                     >
                       ×
                     </button>
@@ -378,7 +391,7 @@ export function AdminPage() {
                   <Button
                     variant="secondary"
                     type="button"
-                    onClick={() => setDiscordLeadsRows([...discordLeadsRows, { hours: 1, minutes: 0 }])}
+                    onClick={() => setDiscordLeadsRows([...discordLeadsRows, { hour: 4, minute: 0, meridiem: 'PM' }])}
                     style={{ alignSelf: 'flex-start', fontSize: 13, padding: '4px 12px' }}
                   >
                     + Add reminder
@@ -386,7 +399,8 @@ export function AdminPage() {
                 )}
               </div>
               <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-                Each row is how far ahead of a net's start time to ping Discord. Up to 5 reminders.
+                Pick the time(s) of day to ping Discord on the day of a net.
+                Reminders set after the net's start time are skipped.
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

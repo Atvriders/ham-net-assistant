@@ -19,9 +19,9 @@ const ConfigUpdateInput = z
     // Token: sending null clears it. Sending a non-empty string sets it.
     // Omitting the field leaves it unchanged.
     token: z.string().max(200).nullable().optional(),
-    // Reminder leads in minutes; max 5 entries; each 1..43200 (30 days)
-    reminderLeadsMinutes: z
-      .array(z.number().int().min(1).max(43200))
+    // Reminder times of day as 24h "HH:mm" strings; max 5 entries.
+    reminderTimesOfDay: z
+      .array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/))
       .max(5)
       .optional(),
   })
@@ -40,16 +40,16 @@ export function discordRouter(prisma: PrismaClient): Router {
   // Admin-only: read full config (token redacted to a marker if set).
   router.get('/config', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
     const cfg = await loadDiscordConfig(prisma);
-    const leadsRaw = await getSetting(prisma, 'discord.reminderLeadsMinutes');
-    let reminderLeadsMinutes: number[] = [240, 30];
+    const timesRaw = await getSetting(prisma, 'discord.reminderTimesOfDay');
+    let reminderTimesOfDay: string[] = ['16:00', '19:30'];
     try {
-      if (leadsRaw) {
-        const parsed = JSON.parse(leadsRaw);
+      if (timesRaw) {
+        const parsed = JSON.parse(timesRaw);
         if (Array.isArray(parsed)) {
           const filtered = parsed
-            .map((n: unknown) => Number(n))
-            .filter((n) => Number.isInteger(n) && n > 0 && n <= 43200);
-          if (filtered.length > 0) reminderLeadsMinutes = filtered;
+            .map(String)
+            .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
+          if (filtered.length > 0) reminderTimesOfDay = filtered;
         }
       }
     } catch {
@@ -64,7 +64,7 @@ export function discordRouter(prisma: PrismaClient): Router {
       enabledFromEnv:
         process.env.DISCORD_ENABLED === 'true' ||
         process.env.DISCORD_ENABLED === 'false',
-      reminderLeadsMinutes,
+      reminderTimesOfDay,
     });
   }));
 
@@ -87,14 +87,13 @@ export function discordRouter(prisma: PrismaClient): Router {
           await setSetting(prisma, 'discord.token', body.token);
         }
       }
-      if (body.reminderLeadsMinutes !== undefined) {
-        // Sort descending (longest lead first) for predictable label assignment.
-        const sorted = [...body.reminderLeadsMinutes].sort((a, b) => b - a);
-        // Dedupe identical entries.
+      if (body.reminderTimesOfDay !== undefined) {
+        // Sort ascending, dedupe.
+        const sorted = [...body.reminderTimesOfDay].sort();
         const unique = Array.from(new Set(sorted));
         await setSetting(
           prisma,
-          'discord.reminderLeadsMinutes',
+          'discord.reminderTimesOfDay',
           JSON.stringify(unique),
         );
       }
