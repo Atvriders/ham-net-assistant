@@ -38,6 +38,23 @@ interface TrashPayload {
   checkIns: TrashCheckIn[];
 }
 
+interface DuplicateSessionRow {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  topicTitle: string | null;
+  controlOpCallsign: string | null;
+  controlOpName: string | null;
+  checkInCount: number;
+}
+
+interface DuplicateGroup {
+  netId: string;
+  netName: string;
+  date: string;
+  sessions: DuplicateSessionRow[];
+}
+
 interface DiscordConfig {
   enabled: boolean;
   channelId: string;
@@ -72,6 +89,10 @@ export function AdminPage() {
   const { data: trash, refresh: refreshTrash } = useAutoFetch<TrashPayload>('/admin/trash', {
     intervalMs: 15000,
   });
+  const { data: dupes, refresh: refreshDupes } = useAutoFetch<DuplicateGroup[]>(
+    '/admin/duplicate-sessions',
+    { intervalMs: 30000 },
+  );
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
   const [logImportOpen, setLogImportOpen] = useState(false);
@@ -206,6 +227,36 @@ export function AdminPage() {
     await apiFetch(`/admin/trash/sessions/${s.id}`, { method: 'DELETE' });
     await refreshTrash();
   }
+  async function mergeDupGroup(group: DuplicateGroup, keepId: string) {
+    const others = group.sessions.filter((s) => s.id !== keepId);
+    if (others.length === 0) return;
+    const ok = window.confirm(
+      `Merge ${others.length} session(s) into the keeper for ${group.netName} on ${group.date}? ` +
+      'Check-ins will be re-parented and duplicates by callsign will be dropped.',
+    );
+    if (!ok) return;
+    await apiFetch('/admin/duplicate-sessions/merge', {
+      method: 'POST',
+      body: JSON.stringify({
+        keepSessionId: keepId,
+        mergeSessionIds: others.map((s) => s.id),
+      }),
+    });
+    await refreshDupes();
+  }
+
+  async function autoMergeAll(strategy: 'most-checkins' | 'earliest') {
+    const label = strategy === 'most-checkins'
+      ? 'most check-ins win'
+      : 'keep earliest';
+    if (!window.confirm(`Auto-merge every duplicate group (${label})?`)) return;
+    await apiFetch('/admin/duplicate-sessions/auto-merge-all', {
+      method: 'POST',
+      body: JSON.stringify({ strategy }),
+    });
+    await refreshDupes();
+  }
+
   async function purgeCheckIn(c: TrashCheckIn) {
     if (!window.confirm(
       `Permanently delete the check-in ${displayCallsign(c.callsign)} — ${c.nameAtCheckIn}? This cannot be undone.`,
@@ -472,6 +523,33 @@ export function AdminPage() {
         </table>
         </div>
       </Card>
+      {dupes && dupes.length > 0 && (
+        <>
+          <div style={{ height: 16 }} />
+          <Card>
+            <h3>Duplicate sessions</h3>
+            <p style={{ fontSize: 13, opacity: 0.8 }}>
+              Multiple non-deleted sessions exist for the same net on the same calendar day.
+              Merge to keep one canonical session per day.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <Button onClick={() => autoMergeAll('most-checkins')}>
+                Auto-merge all (most check-ins win)
+              </Button>
+              <Button variant="secondary" onClick={() => autoMergeAll('earliest')}>
+                Auto-merge all (keep earliest)
+              </Button>
+            </div>
+            {dupes.map((g) => (
+              <DuplicateGroupRow
+                key={`${g.netId}|${g.date}`}
+                group={g}
+                onMerge={(keepId) => mergeDupGroup(g, keepId)}
+              />
+            ))}
+          </Card>
+        </>
+      )}
       {trash && (trash.sessions.length > 0 || trash.checkIns.length > 0) && (
         <>
           <div style={{ height: 16 }} />
@@ -539,6 +617,112 @@ export function AdminPage() {
         onClose={() => setLogImportOpen(false)}
         onImported={() => { /* nothing else needed */ }}
       />
+    </div>
+  );
+}
+
+function pickDefaultKeeper(group: DuplicateGroup): string {
+  let keeper = group.sessions[0]!;
+  for (const s of group.sessions) {
+    if (
+      s.checkInCount > keeper.checkInCount ||
+      (s.checkInCount === keeper.checkInCount && s.startedAt < keeper.startedAt)
+    ) {
+      keeper = s;
+    }
+  }
+  return keeper.id;
+}
+
+function formatGroupDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map((p) => Number(p));
+  if (!y || !m || !d) return ymd;
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function DuplicateGroupRow({
+  group,
+  onMerge,
+}: {
+  group: DuplicateGroup;
+  onMerge: (keepId: string) => void | Promise<void>;
+}) {
+  const [keepId, setKeepId] = useState<string>(() => pickDefaultKeeper(group));
+  // If the group composition changes (e.g. fewer sessions), reset.
+  useEffect(() => {
+    if (!group.sessions.some((s) => s.id === keepId)) {
+      setKeepId(pickDefaultKeeper(group));
+    }
+  }, [group, keepId]);
+
+  return (
+    <div
+      style={{
+        marginBottom: 16,
+        padding: 12,
+        border: '1px solid var(--color-border)',
+        borderRadius: 6,
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>
+        {group.netName} — {formatGroupDate(group.date)}
+      </div>
+      <div className="hna-table-scroll">
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th align="left">Keep</th>
+              <th align="left">Started</th>
+              <th align="left">Topic</th>
+              <th align="left">Control</th>
+              <th align="left">Check-ins</th>
+              <th align="left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.sessions.map((s) => (
+              <tr key={s.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                <td>
+                  <input
+                    type="radio"
+                    name={`keep-${group.netId}-${group.date}`}
+                    checked={keepId === s.id}
+                    onChange={() => setKeepId(s.id)}
+                  />
+                </td>
+                <td>{formatTime(s.startedAt)}</td>
+                <td>{s.topicTitle ?? '—'}</td>
+                <td>
+                  {s.controlOpCallsign
+                    ? `${s.controlOpCallsign}${s.controlOpName ? ` (${s.controlOpName})` : ''}`
+                    : '—'}
+                </td>
+                <td>{s.checkInCount}</td>
+                <td>{s.endedAt ? 'ended' : 'running'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <Button onClick={() => onMerge(keepId)}>Merge</Button>
+      </div>
     </div>
   );
 }
