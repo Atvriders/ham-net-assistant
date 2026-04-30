@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
 
 interface Topic {
   id: string;
@@ -58,13 +58,17 @@ export function StartNetModal({
       } else if (selected !== '__none__') {
         body.topicId = selected;
       }
-      const s = await apiFetch<StartedSession>(`/nets/${netId}/sessions`, {
+      const s = await apiFetch<StartedSession & { reused?: boolean }>(`/nets/${netId}/sessions`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
       onStarted(s.id);
     } catch (e) {
-      setErr((e as Error).message);
+      if (e instanceof ApiErrorException && e.payload.code === 'CONFLICT') {
+        setErr(e.payload.message);
+      } else {
+        setErr((e as Error).message);
+      }
     } finally {
       setSubmitting(false);
     }

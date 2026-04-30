@@ -143,7 +143,17 @@ async function runImport(
   }
   const skipped: ImportSummary['skipped'] = [];
   const sessionIds: string[] = [];
+  const seenInBatch = new Set<string>();
+
   for (const s of sessions) {
+    // Check for duplicate within this import batch
+    const dayKey = `${netId}|${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, '0')}-${String(s.date.getDate()).padStart(2, '0')}`;
+    if (seenInBatch.has(dayKey)) {
+      skipped.push({ rawDateLine: s.rawDateLine, reason: 'duplicate within import (same date)' });
+      continue;
+    }
+    seenInBatch.add(dayKey);
+
     // Skip duplicates: a session for this net on the same calendar date already exists.
     const dayStart = new Date(s.date); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(s.date); dayEnd.setHours(23, 59, 59, 999);

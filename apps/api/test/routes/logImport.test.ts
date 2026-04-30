@@ -169,3 +169,28 @@ describe('POST /api/log-import/url', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('log import in-batch deduplication', () => {
+  it('same date twice in one batch is skipped on second occurrence', async () => {
+    const sameDateTwice = [
+      '4/25/26',
+      'Topic: First session',
+      'NET control: AB0ZW James',
+      'KC5QBT Jeff',
+      '',
+      '4/25/26',
+      'Topic: Duplicate session same date',
+      'NET control: AB0ZW James',
+      'KF0WBD Bret',
+    ].join('\n');
+    const res = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text: sameDateTwice, netId });
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(1);
+    expect(res.body.skipped).toHaveLength(1);
+    const skipped = res.body.skipped[0];
+    expect(skipped.reason).toContain('duplicate within import');
+  });
+});

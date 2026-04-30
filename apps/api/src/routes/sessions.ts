@@ -7,6 +7,7 @@ import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
+import { findSameDaySession } from '../lib/sessionDedupe.js';
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -31,6 +32,32 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const net = await prisma.net.findUnique({ where: { id: netId } });
     if (!net) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
 
+    // Check for existing same-day session
+    const existing = await findSameDaySession(prisma, netId, new Date());
+    if (existing) {
+      if (existing.endedAt === null) {
+        // Reuse the active session
+        const reused = await prisma.netSession.findUnique({
+          where: { id: existing.id },
+          include: {
+            topic: true,
+            checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+            net: {
+              include: {
+                repeater: true,
+                links: { include: { repeater: true } },
+              },
+            },
+            controlOp: { select: { callsign: true, name: true } },
+          },
+        });
+        res.status(200).json({ ...reused, reused: true });
+        return;
+      }
+      // Session already ended; refuse
+      throw new HttpError(409, 'CONFLICT', 'A session for this net already exists today');
+    }
+
     let topicId: string | null = null;
     let topicTitle: string | null = null;
     if (body.topicId) {
@@ -50,6 +77,17 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           controlOpId: req.user!.id,
           topicId,
           topicTitle,
+        },
+        include: {
+          topic: true,
+          checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+          net: {
+            include: {
+              repeater: true,
+              links: { include: { repeater: true } },
+            },
+          },
+          controlOp: { select: { callsign: true, name: true } },
         },
       });
       if (topicId) {

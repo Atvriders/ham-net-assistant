@@ -199,4 +199,25 @@ describe('sessions', () => {
     expect(res.body.checkIns).toHaveLength(1);
     expect(res.body.stats.count).toBe(1);
   });
+  it('starting same net twice on same day when first is active reuses session', async () => {
+    const s1 = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s1.status).toBe(201);
+    expect(s1.body.endedAt).toBeNull();
+    const s2 = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s2.status).toBe(200);
+    expect(s2.body.id).toBe(s1.body.id);
+    expect(s2.body.reused).toBe(true);
+  });
+  it('starting same net twice on same day when first is ended returns 409', async () => {
+    const s1 = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s1.status).toBe(201);
+    const end = await request(app).patch(`/api/sessions/${s1.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    expect(end.status).toBe(200);
+    expect(end.body.endedAt).not.toBeNull();
+    const s2 = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s2.status).toBe(409);
+    expect(s2.body.error.code).toBe('CONFLICT');
+    expect(s2.body.error.message).toContain('already exists today');
+  });
 });
