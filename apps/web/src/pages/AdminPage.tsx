@@ -559,15 +559,15 @@ export function AdminPage() {
         </table>
         </div>
       </Card>
-      {dupes && dupes.length > 0 && (
-        <>
-          <div style={{ height: 16 }} />
-          <Card>
-            <h3>Duplicate sessions</h3>
-            <p style={{ fontSize: 13, opacity: 0.8 }}>
-              Multiple non-deleted sessions exist for the same net on the same calendar day.
-              Merge to keep one canonical session per day.
-            </p>
+      <div style={{ height: 16 }} />
+      <Card>
+        <h3>Duplicate sessions</h3>
+        <p style={{ fontSize: 13, opacity: 0.8 }}>
+          Multiple non-deleted sessions exist for the same net on the same calendar day.
+          Merge to keep one canonical session per day.
+        </p>
+        {dupes && dupes.length > 0 ? (
+          <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               <Button onClick={() => autoMergeAll('most-checkins')}>
                 Auto-merge all (most check-ins win)
@@ -583,9 +583,13 @@ export function AdminPage() {
                 onMerge={(keepId) => mergeDupGroup(g, keepId)}
               />
             ))}
-          </Card>
-        </>
-      )}
+          </>
+        ) : (
+          <div style={{ fontSize: 13, opacity: 0.7, fontStyle: 'italic' }}>
+            No duplicates found. Sessions are unique per net per calendar day.
+          </div>
+        )}
+      </Card>
       {trash && (trash.sessions.length > 0 || trash.checkIns.length > 0) && (
         <>
           <div style={{ height: 16 }} />
