@@ -193,10 +193,11 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
 
   flat.patch('/:id', requireRole('OFFICER'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
     const body = req.body as typeof NetSessionUpdate._type;
-    const existing = await prisma.netSession.findFirst({
+    const before = await prisma.netSession.findUnique({
       where: { id: req.params.id, deletedAt: null },
+      select: { id: true, endedAt: true, netId: true, startedAt: true },
     });
-    if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    if (!before) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     const updated = await prisma.netSession.update({
       where: { id: req.params.id },
       data: {
@@ -205,8 +206,31 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         notes: body.notes === undefined ? undefined : body.notes,
         controlOpId: body.controlOpId ?? undefined,
       },
+      include: {
+        net: { include: { repeater: true } },
+        checkIns: { where: { deletedAt: null } },
+      },
     });
     res.json(updated);
+
+    // Post Discord notification if session just ended (endedAt transitioned from null to non-null)
+    const justEnded = before.endedAt === null && updated.endedAt !== null;
+    if (justEnded) {
+      void (async () => {
+        try {
+          const minutes = updated.endedAt
+            ? Math.max(1, Math.round((updated.endedAt.getTime() - updated.startedAt.getTime()) / 60000))
+            : 0;
+          const checkInCount = updated.checkIns?.filter((c: any) => !c.deletedAt).length ?? 0;
+          const freq = updated.net?.repeater?.frequency != null
+            ? ` on ${updated.net.repeater.frequency.toFixed(3)} MHz`
+            : '';
+          const topic = updated.topicTitle ? ` · Topic: ${updated.topicTitle}` : '';
+          const content = `🔴 **${updated.net?.name ?? 'Net'}** has ended${freq}${topic} · ${checkInCount} check-in(s) · ${minutes} min`;
+          await postToDiscord(prisma, content);
+        } catch { /* ignore */ }
+      })();
+    }
   }));
 
   return { nested, flat };

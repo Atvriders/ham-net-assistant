@@ -258,4 +258,62 @@ describe('sessions', () => {
     expect(s2.body.error.code).toBe('CONFLICT');
     expect(s2.body.error.message).toContain('already exists today');
   });
+
+  it('PATCH endedAt posts a Discord "net ended" notification', async () => {
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s.status).toBe(201);
+    // Add a check-in so we have something to count
+    await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    // End the session
+    const end = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    expect(end.status).toBe(200);
+    expect(end.body.endedAt).not.toBeNull();
+    // Wait for fire-and-forget to run
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const lastCall = fn.mock.calls[fn.mock.calls.length - 1];
+    const content = String(lastCall[1] ?? '');
+    expect(content).toContain('Wed Net');
+    expect(content).toContain('ended');
+    expect(content).toContain('check-in');
+  });
+
+  it('PATCH endedAt again on already-ended session does NOT re-post Discord', async () => {
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s.status).toBe(201);
+    // End the session once
+    const end1 = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    expect(end1.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    // Try to PATCH endedAt again with a different timestamp
+    const end2 = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date(Date.now() + 60000).toISOString() });
+    expect(end2.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBe(0);
+  });
+
+  it('PATCH notes only (no endedAt) does NOT post Discord', async () => {
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(s.status).toBe(201);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    // PATCH only notes, not endedAt
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ notes: 'just notes' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.notes).toBe('just notes');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBe(0);
+  });
 });
