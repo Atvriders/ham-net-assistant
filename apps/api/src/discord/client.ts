@@ -269,6 +269,17 @@ export async function sendTestMessage(
   prisma: PrismaClient,
   content: string,
 ): Promise<string> {
-  await applyDiscordConfig(prisma);
+  try {
+    await applyDiscordConfig(prisma);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[discord] login failed', e);
+    const m = (e as Error).message ?? String(e);
+    throw new HttpError(
+      400,
+      'VALIDATION',
+      `Discord login/connect failed: ${m}. Verify the bot token is correct, the bot's MESSAGE CONTENT INTENT is enabled in the Discord Developer Portal, and the bot has been invited to your server.`,
+    );
+  }
   return await postToDiscordStrict(prisma, content);
 }
