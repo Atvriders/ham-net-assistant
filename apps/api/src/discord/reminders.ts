@@ -88,8 +88,8 @@ async function tick(prisma: PrismaClient): Promise<void> {
         const minutesUntil = Math.round((occurs.getTime() - reminderAt.getTime()) / 60000);
         const lead = minutesUntil <= 60 ? 'Heads up' : 'Reminder';
         const content = `**${lead}:** *${net.name}* starts at ${format12h(net.startLocal)}${freq}${repeaterName}. (${human} reminder)`;
-        const messageId = await postToDiscord(prisma, content);
-        if (messageId) {
+        const result = await postToDiscord(prisma, content);
+        if (result.ok) {
           await prisma.netReminder.create({
             data: { netId: net.id, occursAt: occurrenceKey, kind: t },
           }).catch(() => {/* ignore unique conflicts */});

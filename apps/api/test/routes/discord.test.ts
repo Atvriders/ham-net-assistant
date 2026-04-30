@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import { HttpError } from '../../src/middleware/error.js';
 
 // Mock client side-effects so the route does not try to connect to Discord
 // during tests. sendTestMessage is overridden per-test by reassigning the
@@ -13,7 +14,9 @@ vi.mock('../../src/discord/client.js', async () => {
   return {
     ...actual,
     applyDiscordConfig: vi.fn(async () => undefined),
-    sendTestMessage: vi.fn(async () => null),
+    sendTestMessage: vi.fn(async () => {
+      throw new Error('Not configured');
+    }),
   };
 });
 
@@ -133,11 +136,15 @@ describe('POST /api/discord/test', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 500 when not configured (no message id)', async () => {
+  it('returns 400 with diagnostic reason when channel not configured', async () => {
     const sendMock = vi.mocked(discordClient.sendTestMessage);
-    sendMock.mockResolvedValueOnce(null);
+    sendMock.mockRejectedValueOnce(
+      new HttpError(400, 'VALIDATION', 'No channel id configured.'),
+    );
     const res = await request(app).post('/api/discord/test').set('Cookie', admin);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe('VALIDATION');
+    expect(res.body.error?.message).toContain('channel');
   });
 
   it('returns the message id on success', async () => {
@@ -147,6 +154,17 @@ describe('POST /api/discord/test', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.messageId).toBe('discord-msg-id-123');
+  });
+
+  it('returns 503 when discord client not connected', async () => {
+    const sendMock = vi.mocked(discordClient.sendTestMessage);
+    sendMock.mockRejectedValueOnce(
+      new HttpError(503, 'INTERNAL', 'Discord client not connected. Save the settings with Enabled checked first.'),
+    );
+    const res = await request(app).post('/api/discord/test').set('Cookie', admin);
+    expect(res.status).toBe(503);
+    expect(res.body.error?.code).toBe('INTERNAL');
+    expect(res.body.error?.message).toMatch(/client|Enabled/i);
   });
 });
 

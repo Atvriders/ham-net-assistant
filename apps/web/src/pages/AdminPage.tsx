@@ -171,8 +171,11 @@ export function AdminPage() {
       await apiFetch('/discord/test', { method: 'POST' });
       setDiscordTestResult('✓ Test message sent.');
     } catch (e) {
-      if (e instanceof ApiErrorException) setDiscordTestResult(`✗ ${e.payload.message}`);
-      else setDiscordTestResult(`✗ ${(e as Error).message}`);
+      if (e instanceof ApiErrorException) {
+        setDiscordTestResult(`✗ ${e.payload.message}`);
+      } else {
+        setDiscordTestResult(`✗ ${(e as Error).message}`);
+      }
     }
   }
 

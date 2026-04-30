@@ -45,13 +45,13 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       try {
         const liveSession = await prisma.netSession.findUnique({ where: { id: sessionId } });
         if (!liveSession || liveSession.endedAt) return;
-        const id = await postToDiscord(
+        const result = await postToDiscord(
           prisma,
           `**${user.callsign}** (${user.name}): ${created.body}`,
         );
-        if (id) {
+        if (result.ok && result.messageId) {
           await prisma.discordRelay.create({
-            data: { discordMessageId: id, sessionMessageId: created.id, direction: 'out' },
+            data: { discordMessageId: result.messageId, sessionMessageId: created.id, direction: 'out' },
           });
         }
       } catch { /* ignore */ }

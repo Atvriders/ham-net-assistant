@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Events, type Message, type TextChannel } fro
 import type { PrismaClient } from '@prisma/client';
 import { getSetting } from '../lib/settings.js';
 import { handleInboundDiscordMessage } from './bridge.js';
+import { HttpError } from '../middleware/error.js';
 
 let activeClient: Client | null = null;
 let activeToken: string | null = null;
@@ -87,19 +88,72 @@ export async function reconcileDiscord(
   messageHandler = onMessage;
 }
 
-export async function postToDiscord(prisma: PrismaClient, content: string): Promise<string | null> {
-  if (!activeClient) return null;
+export interface PostResult {
+  ok: boolean;
+  messageId?: string;
+  reason?: string;
+}
+
+export async function postToDiscordStrict(
+  prisma: PrismaClient,
+  content: string,
+): Promise<string> {
+  if (!activeClient) {
+    throw new HttpError(
+      503,
+      'INTERNAL',
+      'Discord client not connected. Save the settings with Enabled checked first.',
+    );
+  }
   const cfg = await loadDiscordConfig(prisma);
-  if (!cfg.channelId) return null;
+  if (!cfg.channelId) {
+    throw new HttpError(400, 'VALIDATION', 'No channel id configured.');
+  }
+  let channel: any;
   try {
-    const channel = await activeClient.channels.fetch(cfg.channelId);
-    if (!channel || !channel.isTextBased() || !('send' in channel)) return null;
-    const msg = await (channel as TextChannel).send(content);
+    channel = await activeClient.channels.fetch(cfg.channelId);
+  } catch (e) {
+    throw new HttpError(
+      400,
+      'VALIDATION',
+      `Could not fetch channel ${cfg.channelId}: ${(e as Error).message}. Verify the channel id is correct and the bot is in that server.`,
+    );
+  }
+  if (!channel) {
+    throw new HttpError(
+      400,
+      'VALIDATION',
+      `Channel ${cfg.channelId} not found. Bot may not be a member of that server, or the id is wrong.`,
+    );
+  }
+  if (!channel.isTextBased() || !('send' in channel)) {
+    throw new HttpError(
+      400,
+      'VALIDATION',
+      `Channel ${cfg.channelId} is not a text channel.`,
+    );
+  }
+  try {
+    const msg = await channel.send(content);
     return msg.id;
+  } catch (e) {
+    const m = (e as Error).message ?? String(e);
+    throw new HttpError(
+      400,
+      'VALIDATION',
+      `Send failed: ${m}. Verify the bot has Send Messages permission on this channel.`,
+    );
+  }
+}
+
+export async function postToDiscord(prisma: PrismaClient, content: string): Promise<PostResult> {
+  try {
+    const messageId = await postToDiscordStrict(prisma, content);
+    return { ok: true, messageId };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[discord] post failed', e);
-    return null;
+    return { ok: false, reason: `Discord error: ${(e as Error).message}` };
   }
 }
 
@@ -167,12 +221,53 @@ export async function applyDiscordConfig(prisma: PrismaClient): Promise<void> {
   });
 }
 
-/** Post a one-off test message via the active client. Throws on any error. */
+export async function postToDiscordOrThrow(
+  prisma: PrismaClient,
+  content: string,
+): Promise<string> {
+  if (!activeClient) {
+    throw new Error('Discord client is not connected (token or channel missing, or enabled=false)');
+  }
+  const cfg = await loadDiscordConfig(prisma);
+  if (!cfg.enabled) {
+    throw new Error('Discord integration is disabled');
+  }
+  if (!cfg.token) {
+    throw new Error('Discord bot token is not set');
+  }
+  if (!cfg.channelId) {
+    throw new Error('Discord channel ID is not set');
+  }
+  let channel;
+  try {
+    channel = await activeClient.channels.fetch(cfg.channelId);
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    throw new Error(`Could not fetch channel ${cfg.channelId}: ${msg}. Bot may not be in the server, or the channel ID is wrong.`);
+  }
+  if (!channel) {
+    throw new Error(`Channel ${cfg.channelId} not found. Check the channel ID and that the bot is in the server.`);
+  }
+  if (!channel.isTextBased()) {
+    throw new Error(`Channel ${cfg.channelId} is not a text channel`);
+  }
+  if (!('send' in channel)) {
+    throw new Error(`Channel ${cfg.channelId} does not support sending messages`);
+  }
+  try {
+    const msg = await (channel as TextChannel).send(content);
+    return msg.id;
+  } catch (e) {
+    const err = e as Error & { code?: number };
+    const msg = err?.message ?? String(e);
+    throw new Error(`Send failed: ${msg}. The bot probably lacks Send Messages permission in that channel.`);
+  }
+}
+
 export async function sendTestMessage(
   prisma: PrismaClient,
   content: string,
 ): Promise<string> {
-  // Make sure the client is up-to-date with current settings before sending.
   await applyDiscordConfig(prisma);
-  return await sendDiscordOrThrow(prisma, content);
+  return await postToDiscordStrict(prisma, content);
 }
