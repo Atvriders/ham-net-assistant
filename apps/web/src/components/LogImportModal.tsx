@@ -20,6 +20,7 @@ interface ImportSummary {
   created: number;
   skipped: Array<{ rawDateLine: string; reason: string }>;
   sessionIds: string[];
+  enriched?: number;
 }
 
 interface NetOption { id: string; name: string }
@@ -39,6 +40,7 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportSummary | null>(null);
+  const [enrichNames, setEnrichNames] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -63,8 +65,8 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
     try {
       const path = tab === 'paste' ? '/log-import/text' : '/log-import/url';
       const body = tab === 'paste'
-        ? { text, netId, dryRun }
-        : { url, netId, dryRun };
+        ? { text, netId, dryRun, enrichNames }
+        : { url, netId, dryRun, enrichNames };
       const res = await apiFetch<ImportSummary>(path, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -124,6 +126,9 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
               {' '}Created <strong>{preview.created}</strong>.
               {preview.skipped.length > 0 && <> Skipped <strong>{preview.skipped.length}</strong>.</>}
               {preview.errors.length > 0 && <> Errors: <strong>{preview.errors.length}</strong>.</>}
+              {preview.enriched != null && preview.enriched > 0 && (
+                <> Enriched <strong>{preview.enriched}</strong> name(s) from FCC.</>
+              )}
             </div>
             <ul style={{ marginTop: 8, fontSize: 13 }}>
               {preview.parsed.slice(0, 30).map((s, i) => (
@@ -152,6 +157,14 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
             )}
           </div>
         )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 12 }}>
+          <input
+            type="checkbox"
+            checked={enrichNames}
+            onChange={(e) => setEnrichNames(e.target.checked)}
+          />
+          Look up missing names from the FCC database (slower; fills names for bare callsigns)
+        </label>
         <div className="hna-modal-actions">
           <Button onClick={() => run(false)} disabled={busy || !netId}>Import</Button>
           <Button variant="secondary" onClick={() => run(true)} disabled={busy || !netId}>Dry run</Button>

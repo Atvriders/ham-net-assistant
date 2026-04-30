@@ -170,6 +170,112 @@ describe('POST /api/log-import/url', () => {
   });
 });
 
+describe('name enrichment from FCC / local users', () => {
+  const BARE = [
+    '6/13/26',
+    'Topic: Bare callsigns',
+    'NET control: AB0ZW James',
+    'KE0VUM',
+    'AA1BB',
+    'ZZ9NOPE',
+  ].join('\n');
+
+  function mockCallook(): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.includes('callook.info/AA1BB/')) {
+        return new Response(JSON.stringify({ status: 'VALID', name: 'JANE Q PUBLIC' }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (u.includes('callook.info/ZZ9NOPE/')) {
+        return new Response(JSON.stringify({ status: 'INVALID' }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Default: 404
+      return new Response('not found', { status: 404 });
+    });
+  }
+
+  it('enrichNames=true fills names from local users without hitting FCC', async () => {
+    // Pre-create a local user whose callsign maps to a name.
+    await prisma.user.create({
+      data: {
+        email: 'tom@example.com',
+        passwordHash: 'x',
+        name: 'Tom Theis',
+        callsign: 'KE0VUM',
+        role: 'MEMBER',
+      },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('not found', { status: 404 }),
+    );
+    const text = [
+      '6/14/26',
+      'Topic: Local lookup',
+      'NET control: AB0ZW James',
+      'KE0VUM',
+    ].join('\n');
+    const res = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text, netId, enrichNames: true });
+    expect(res.status).toBe(200);
+    expect(res.body.enriched).toBeGreaterThanOrEqual(1);
+    const ke0 = fetchSpy.mock.calls.find((c) => String(c[0]).includes('KE0VUM'));
+    expect(ke0).toBeUndefined();
+    const sessions = await prisma.netSession.findMany({
+      where: { netId }, include: { checkIns: true }, orderBy: { startedAt: 'desc' },
+    });
+    const ci = sessions[0]!.checkIns.find((c) => c.callsign === 'KE0VUM');
+    expect(ci?.nameAtCheckIn).toBe('Tom Theis');
+    // Cleanup user so other tests are unaffected.
+    await prisma.user.deleteMany({ where: { callsign: 'KE0VUM' } });
+  });
+
+  it('enrichNames=true falls back to callook.info; valid names applied, invalid fall back to callsign', async () => {
+    mockCallook();
+    const res = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text: BARE, netId, enrichNames: true });
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(1);
+    expect(res.body.enriched).toBe(1);
+    const sessions = await prisma.netSession.findMany({
+      where: { netId }, include: { checkIns: true },
+    });
+    const cis = sessions[0]!.checkIns;
+    const aa = cis.find((c) => c.callsign === 'AA1BB');
+    const zz = cis.find((c) => c.callsign === 'ZZ9NOPE');
+    expect(aa?.nameAtCheckIn).toBe('Jane Public');
+    // Invalid call falls back to using the callsign as the display name.
+    expect(zz?.nameAtCheckIn).toBe('ZZ9NOPE');
+  });
+
+  it('enrichNames=false skips lookups entirely (no FCC fetches, names remain callsign)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('should not be called', { status: 500 }),
+    );
+    const res = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text: BARE, netId, enrichNames: false });
+    expect(res.status).toBe(200);
+    expect(res.body.enriched).toBe(0);
+    const callookCalls = fetchSpy.mock.calls.filter((c) => String(c[0]).includes('callook.info'));
+    expect(callookCalls).toHaveLength(0);
+    const sessions = await prisma.netSession.findMany({
+      where: { netId }, include: { checkIns: true },
+    });
+    for (const ci of sessions[0]!.checkIns) {
+      expect(ci.nameAtCheckIn).toBe(ci.callsign);
+    }
+  });
+});
+
 describe('log import in-batch deduplication', () => {
   it('same date twice in one batch is skipped on second occurrence', async () => {
     const sameDateTwice = [

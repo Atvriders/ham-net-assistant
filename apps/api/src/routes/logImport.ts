@@ -7,6 +7,7 @@ import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
 import { validateBody } from '../middleware/validate.js';
 import { parseLogText, type ParsedSession } from '../lib/parseLog.js';
+import { enrichEmptyNames } from '../lib/callsignNameLookup.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 
@@ -14,12 +15,14 @@ const TextImportInput = z.object({
   text: z.string().min(1).max(200_000),
   netId: z.string().min(1),
   dryRun: z.boolean().optional(),
+  enrichNames: z.boolean().optional(),
 });
 
 const UrlImportInput = z.object({
   url: z.string().url().max(2000),
   netId: z.string().min(1),
   dryRun: z.boolean().optional(),
+  enrichNames: z.boolean().optional(),
 });
 
 const MAX_DOC_BYTES = 4 * 1024 * 1024;
@@ -74,7 +77,7 @@ export function logImportRouter(prisma: PrismaClient): Router {
 
   router.post('/text', requireRole('ADMIN'), validateBody(TextImportInput), asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof TextImportInput>;
-    const result = await runImport(prisma, body.text, body.netId, body.dryRun ?? false);
+    const result = await runImport(prisma, body.text, body.netId, body.dryRun ?? false, body.enrichNames ?? true);
     res.json(result);
   }));
 
@@ -114,7 +117,7 @@ export function logImportRouter(prisma: PrismaClient): Router {
     } else {
       throw new HttpError(415, 'VALIDATION', `unsupported content-type: ${ct || 'unknown'}`);
     }
-    const result = await runImport(prisma, text, body.netId, body.dryRun ?? false);
+    const result = await runImport(prisma, text, body.netId, body.dryRun ?? false, body.enrichNames ?? true);
     res.json(result);
   }));
 
@@ -127,6 +130,7 @@ interface ImportSummary {
   created: number;
   skipped: Array<{ rawDateLine: string; reason: string }>;
   sessionIds: string[];
+  enriched: number;
 }
 
 async function runImport(
@@ -134,12 +138,38 @@ async function runImport(
   text: string,
   netId: string,
   dryRun: boolean,
+  enrichNames: boolean,
 ): Promise<ImportSummary> {
   const netRow = await prisma.net.findUnique({ where: { id: netId } });
   if (!netRow) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
   const { sessions, errors } = parseLogText(text);
+  // Shared lookup cache across all sessions for this import.
+  const nameCache = new Map<string, string | null>();
+  let totalEnriched = 0;
+  if (enrichNames) {
+    for (const s of sessions) {
+      const r = await enrichEmptyNames(prisma, s.checkIns, { cache: nameCache });
+      totalEnriched += r.lookedUp;
+      if (s.controlOp && (!s.controlOp.name || !s.controlOp.name.trim())) {
+        const r2 = await enrichEmptyNames(
+          prisma,
+          [{ callsign: s.controlOp.callsign, name: '' }],
+          { cache: nameCache },
+        );
+        const co = r2.items[0]!;
+        if (co.name) {
+          s.controlOp.name = co.name;
+          totalEnriched += r2.lookedUp;
+        }
+      }
+      if (s.backups.length) {
+        const r3 = await enrichEmptyNames(prisma, s.backups, { cache: nameCache });
+        totalEnriched += r3.lookedUp;
+      }
+    }
+  }
   if (dryRun) {
-    return { parsed: sessions, errors, created: 0, skipped: [], sessionIds: [] };
+    return { parsed: sessions, errors, created: 0, skipped: [], sessionIds: [], enriched: totalEnriched };
   }
   const skipped: ImportSummary['skipped'] = [];
   const sessionIds: string[] = [];
@@ -228,5 +258,6 @@ async function runImport(
     created: sessionIds.length,
     skipped,
     sessionIds,
+    enriched: totalEnriched,
   };
 }
