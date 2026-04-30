@@ -6,13 +6,17 @@ import { Button } from '../components/ui/Button.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { buildSessionLogText } from '../lib/sessionLog.js';
+import { useAuth } from '../auth/AuthProvider.js';
+import { apiFetch } from '../api/client.js';
 
 export function StatsPage() {
-  const { data: stats } = useAutoFetch<ParticipationStats>(
+  const { data: stats, refresh } = useAutoFetch<ParticipationStats>(
     '/stats/participation',
     { intervalMs: 15000 },
   );
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
 
   function download(url: string, filename: string) {
     const a = document.createElement('a');
@@ -31,6 +35,22 @@ export function StatsPage() {
       setTimeout(() => setCopiedSessionId(null), 1500);
     } catch {
       /* ignore — older browsers */
+    }
+  }
+
+  async function deleteSession(id: string, label: string) {
+    if (
+      !confirm(
+        `Delete session "${label}"? This soft-deletes the session and all its check-ins. An admin can restore it from the Recently deleted card on the Admin page.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      alert((e as Error).message);
     }
   }
 
@@ -123,6 +143,20 @@ export function StatsPage() {
                 >
                   {copiedSessionId === s.id ? 'Copied ✓' : 'Copy log'}
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      deleteSession(
+                        s.id,
+                        `${s.netName} — ${new Date(s.startedAt).toLocaleDateString()}`,
+                      )
+                    }
+                    style={{ padding: '4px 10px', fontSize: 12 }}
+                  >
+                    Delete
+                  </Button>
+                )}
               </span>
             </div>
             {s.topic && <div>Topic: {s.topic}</div>}
