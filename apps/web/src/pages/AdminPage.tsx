@@ -104,6 +104,8 @@ export function AdminPage() {
   const [discordSaving, setDiscordSaving] = useState(false);
   const [discordSaved, setDiscordSaved] = useState(false);
   const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -265,6 +267,29 @@ export function AdminPage() {
     await refreshTrash();
   }
 
+  async function backfillNames() {
+    // TODO: future — add scope picker (by net, by date range). v1 is scope: 'all'.
+    if (!window.confirm(
+      'Look up FCC names for all check-ins missing a real name? '
+      + 'This may make many network calls and take a minute.',
+    )) return;
+    setBackfillBusy(true);
+    setBackfillResult(null);
+    try {
+      const r = await apiFetch<{ scanned: number; updated: number; lookedUp: number }>(
+        '/admin/backfill-names',
+        { method: 'POST', body: JSON.stringify({ scope: 'all' }) },
+      );
+      setBackfillResult(
+        `Scanned ${r.scanned} check-in(s); updated ${r.updated}, looked up ${r.lookedUp} from FCC.`,
+      );
+    } catch (e) {
+      setBackfillResult((e as Error).message);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
+
   async function saveDefaultTheme() {
     const res = await apiFetch<{ slug: string }>('/themes/default', {
       method: 'PATCH',
@@ -307,6 +332,17 @@ export function AdminPage() {
           to existing members by callsign.
         </p>
         <Button onClick={() => setLogImportOpen(true)}>Import historical logs</Button>
+        <div style={{ height: 12 }} />
+        <p style={{ fontSize: 13, opacity: 0.8 }}>
+          Find existing check-ins whose name is empty or just the callsign and
+          re-run the FCC lookup chain to populate real names.
+        </p>
+        <Button onClick={backfillNames} disabled={backfillBusy} variant="secondary">
+          {backfillBusy ? 'Looking up…' : 'Backfill missing names from FCC'}
+        </Button>
+        {backfillResult && (
+          <div style={{ fontSize: 13, marginTop: 6 }}>{backfillResult}</div>
+        )}
       </Card>
       <div style={{ height: 16 }} />
       {discordCfg && (

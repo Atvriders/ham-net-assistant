@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
+import { lookupCallsignName } from '../lib/callsignNameLookup.js';
 
 const TRASH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -214,6 +215,17 @@ const AutoMergeInput = z.object({
   strategy: z.enum(['most-checkins', 'earliest']).optional(),
 });
 
+const BackfillScope = z.union([
+  z.object({ scope: z.literal('all') }),
+  z.object({ scope: z.literal('session'), sessionId: z.string().min(1) }),
+  z.object({ scope: z.literal('net'), netId: z.string().min(1) }),
+  z.object({
+    scope: z.literal('range'),
+    from: z.string().datetime(),
+    to: z.string().datetime(),
+  }),
+]);
+
 export function adminRouter(prisma: PrismaClient): Router {
   const router = Router();
 
@@ -377,6 +389,77 @@ export function adminRouter(prisma: PrismaClient): Router {
 
     res.json({ groupsMerged, sessionsMerged, checkInsMoved });
   }));
+
+  router.post(
+    '/backfill-names',
+    requireRole('ADMIN'),
+    asyncHandler(async (req, res) => {
+      const raw = req.body && Object.keys(req.body).length > 0 ? req.body : { scope: 'all' };
+      const parsed = BackfillScope.safeParse(raw);
+      if (!parsed.success) {
+        throw new HttpError(400, 'VALIDATION', 'Invalid backfill scope');
+      }
+      const body = parsed.data;
+      const where: {
+        deletedAt: null;
+        sessionId?: string;
+        session?: {
+          deletedAt: null;
+          netId?: string;
+          startedAt?: { gte: Date; lte: Date };
+        };
+      } = { deletedAt: null };
+      if (body.scope === 'session') {
+        where.sessionId = body.sessionId;
+      } else if (body.scope === 'net') {
+        where.session = { deletedAt: null, netId: body.netId };
+      } else if (body.scope === 'range') {
+        where.session = {
+          deletedAt: null,
+          startedAt: { gte: new Date(body.from), lte: new Date(body.to) },
+        };
+      }
+
+      // Pull a wider candidate set and filter in JS — Prisma can't express
+      // a column-to-column comparison (nameAtCheckIn === callsign).
+      const candidates = await prisma.checkIn.findMany({
+        where,
+        select: { id: true, callsign: true, nameAtCheckIn: true },
+      });
+      const filtered = candidates.filter((c) => {
+        const n = (c.nameAtCheckIn ?? '').trim();
+        return n === '' || n === c.callsign;
+      });
+
+      const cache = new Map<string, string | null>();
+      const scanned = filtered.length;
+      let updated = 0;
+      let lookedUp = 0;
+
+      const queue = [...filtered];
+      async function worker(): Promise<void> {
+        while (queue.length > 0) {
+          const c = queue.shift();
+          if (!c) return;
+          const found = await lookupCallsignName(prisma, c.callsign, cache);
+          if (found) {
+            lookedUp += 1;
+            await prisma.checkIn.update({
+              where: { id: c.id },
+              data: { nameAtCheckIn: found },
+            });
+            updated += 1;
+          }
+        }
+      }
+      const workerCount = Math.max(1, Math.min(4, queue.length));
+      if (workerCount > 0) {
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      }
+
+      res.json({ scanned, updated, lookedUp });
+    }),
+  );
 
   return router;
 }
