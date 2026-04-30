@@ -1,8 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
+
+vi.mock('../../src/discord/client.js', async () => {
+  const actual: object = await vi.importActual('../../src/discord/client.js');
+  return {
+    ...actual,
+    postToDiscord: vi.fn().mockResolvedValue({ ok: false, reason: 'mocked' }),
+    getActiveClient: vi.fn().mockReturnValue(null),
+    loadDiscordConfig: vi.fn().mockResolvedValue({ enabled: false, token: null, channelId: null }),
+  };
+});
+
+import { postToDiscord } from '../../src/discord/client.js';
 
 let app: Express; let prisma: PrismaClient; let dbFile: string;
 let officer: string; let netId: string;
@@ -208,6 +220,32 @@ describe('sessions', () => {
     expect(s2.body.id).toBe(s1.body.id);
     expect(s2.body.reused).toBe(true);
   });
+  it('starting a new session posts a Discord notification', async () => {
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(res.status).toBe(201);
+    // Wait for the fire-and-forget tick to run
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const lastCall = fn.mock.calls[fn.mock.calls.length - 1];
+    const content = String(lastCall[1] ?? '');
+    expect(content).toContain('Wed Net');
+    expect(content).toContain('live');
+  });
+
+  it('reusing an active same-day session does NOT re-post to Discord', async () => {
+    await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body.reused).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBe(0);
+  });
+
   it('starting same net twice on same day when first is ended returns 409', async () => {
     const s1 = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     expect(s1.status).toBe(201);

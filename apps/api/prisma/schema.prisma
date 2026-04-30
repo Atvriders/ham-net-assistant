@@ -22,6 +22,7 @@ model User {
   controlledSessions NetSession[] @relation("ControlOp")
   suggestions        TopicSuggestion[] @relation("TopicCreator")
   messages           SessionMessage[] @relation("MessageAuthor")
+  reactions          SessionMessageReaction[] @relation("ReactionAuthor")
 
   @@index([callsign])
 }
@@ -149,9 +150,25 @@ model SessionMessage {
   nameAtMessage String
   body          String
   createdAt     DateTime   @default(now())
+  reactions     SessionMessageReaction[]
 
   @@index([sessionId, createdAt])
   @@index([userId])
+}
+
+model SessionMessageReaction {
+  id        String         @id @default(cuid())
+  messageId String
+  message   SessionMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  emoji     String
+  source    String
+  userId    String?
+  user      User?          @relation("ReactionAuthor", fields: [userId], references: [id], onDelete: SetNull)
+  authorTag String?
+  createdAt DateTime       @default(now())
+
+  @@unique([messageId, emoji, userId, authorTag])
+  @@index([messageId])
 }
 
 model CheckIn {

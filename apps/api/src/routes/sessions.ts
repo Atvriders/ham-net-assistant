@@ -8,6 +8,7 @@ import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
 import { findSameDaySession } from '../lib/sessionDedupe.js';
+import { postToDiscord } from '../discord/client.js';
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -99,6 +100,19 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       return session;
     });
     res.status(201).json(created);
+    // Fire-and-forget Discord "now live" notification. Only on truly new sessions
+    // (we already returned early above when reusing an active same-day session).
+    void (async () => {
+      try {
+        const repeater = created.net?.repeater;
+        const freq = repeater?.frequency != null ? `${repeater.frequency.toFixed(3)} MHz` : '';
+        const repeaterName = repeater?.name ? ` (${repeater.name})` : '';
+        const topicLine = created.topicTitle ? ` · Topic: ${created.topicTitle}` : '';
+        const content =
+          `🟢 **${created.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
+        await postToDiscord(prisma, content);
+      } catch { /* ignore */ }
+    })();
   }));
 
   flat.get('/', asyncHandler(async (req, res) => {

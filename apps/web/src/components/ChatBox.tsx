@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { SessionMessage } from '@hna/shared';
+import type { SessionMessage, MessageReaction } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { useAuth } from '../auth/AuthProvider.js';
@@ -9,6 +9,18 @@ import { displayCallsign } from '../lib/format.js';
 
 interface Props {
   sessionId: string;
+}
+
+const QUICK_EMOJI = ['👍', '❤️', '😂', '🎉', '📡', '⚡'];
+
+function groupReactions(rs: MessageReaction[]): Record<string, MessageReaction[]> {
+  const out: Record<string, MessageReaction[]> = {};
+  for (const r of rs) {
+    const list = out[r.emoji] ?? [];
+    list.push(r);
+    out[r.emoji] = list;
+  }
+  return out;
 }
 
 export function ChatBox({ sessionId }: Props) {
@@ -21,6 +33,7 @@ export function ChatBox({ sessionId }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [discordBridged, setDiscordBridged] = useState(false);
+  const [pickerForId, setPickerForId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const messages = data ?? [];
 
@@ -61,6 +74,30 @@ export function ChatBox({ sessionId }: Props) {
     if (!confirm('Delete this message?')) return;
     try {
       await apiFetch(`/messages/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      if (e instanceof ApiErrorException) setErr(e.payload.message);
+    }
+  }
+
+  async function addReaction(messageId: string, emoji: string) {
+    try {
+      await apiFetch(`/messages/${messageId}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      });
+      setPickerForId(null);
+      await refresh();
+    } catch (e) {
+      if (e instanceof ApiErrorException) setErr(e.payload.message);
+    }
+  }
+
+  async function removeReaction(messageId: string, emoji: string) {
+    try {
+      await apiFetch(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {
+        method: 'DELETE',
+      });
       await refresh();
     } catch (e) {
       if (e instanceof ApiErrorException) setErr(e.payload.message);
@@ -121,6 +158,8 @@ export function ChatBox({ sessionId }: Props) {
           const canDelete =
             (user && (user.role === 'OFFICER' || user.role === 'ADMIN')) ||
             (mine && recent);
+          const reactions = m.reactions ?? [];
+          const grouped = groupReactions(reactions);
           return (
             <div
               key={m.id}
@@ -160,6 +199,92 @@ export function ChatBox({ sessionId }: Props) {
               </div>
               <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {m.body}
+              </div>
+              <div style={{ marginTop: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+                {Object.entries(grouped).map(([emoji, group]) => {
+                  const myRow = user ? group.some((r) => r.userId === user.id) : false;
+                  return (
+                    <button
+                      key={emoji}
+                      onClick={() =>
+                        myRow ? removeReaction(m.id, emoji) : addReaction(m.id, emoji)
+                      }
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: myRow ? 'var(--color-primary)' : 'var(--color-bg-muted)',
+                        color: myRow ? 'var(--color-primary-fg)' : 'var(--color-fg)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 12,
+                        padding: '1px 7px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        marginRight: 4,
+                        marginTop: 4,
+                      }}
+                      aria-label={`${emoji} ${group.length}`}
+                      disabled={!user}
+                    >
+                      <span>{emoji}</span>
+                      <span style={{ opacity: 0.8 }}>{group.length}</span>
+                    </button>
+                  );
+                })}
+                {user && (
+                  <button
+                    onClick={() => setPickerForId(pickerForId === m.id ? null : m.id)}
+                    style={{
+                      background: 'transparent',
+                      border: '1px dashed var(--color-border)',
+                      borderRadius: 12,
+                      padding: '1px 7px',
+                      fontSize: 11,
+                      cursor: 'pointer',
+                      marginRight: 4,
+                      marginTop: 4,
+                      color: 'inherit',
+                      opacity: 0.7,
+                    }}
+                    aria-label="Add reaction"
+                    title="Add reaction"
+                  >
+                    + 🙂
+                  </button>
+                )}
+                {pickerForId === m.id && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      marginLeft: 4,
+                      marginTop: 4,
+                      padding: '1px 4px',
+                      background: 'var(--color-bg)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 12,
+                    }}
+                  >
+                    {QUICK_EMOJI.map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => addReaction(m.id, e)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          padding: '0 3px',
+                          color: 'inherit',
+                        }}
+                        aria-label={`React with ${e}`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );

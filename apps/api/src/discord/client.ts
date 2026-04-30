@@ -1,7 +1,22 @@
-import { Client, GatewayIntentBits, Events, type Message, type TextChannel } from 'discord.js';
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  Partials,
+  type Message,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+  type TextChannel,
+  type User as DiscordUser,
+} from 'discord.js';
 import type { PrismaClient } from '@prisma/client';
 import { getSetting } from '../lib/settings.js';
-import { handleInboundDiscordMessage } from './bridge.js';
+import {
+  handleInboundDiscordMessage,
+  handleDiscordReactionAdd,
+  handleDiscordReactionRemove,
+} from './bridge.js';
 import { HttpError } from '../middleware/error.js';
 
 let activeClient: Client | null = null;
@@ -71,13 +86,29 @@ export async function reconcileDiscord(
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
   client.on(Events.MessageCreate, (m) => {
     if (m.author.bot) return; // ignore other bots, including ourselves
     if (!messageHandler) return;
     messageHandler(m);
   });
+  client.on(
+    Events.MessageReactionAdd,
+    (reaction: MessageReaction | PartialMessageReaction, user: DiscordUser | PartialUser) => {
+      if (user.bot) return;
+      void handleDiscordReactionAdd(prisma, reaction, user);
+    },
+  );
+  client.on(
+    Events.MessageReactionRemove,
+    (reaction: MessageReaction | PartialMessageReaction, user: DiscordUser | PartialUser) => {
+      if (user.bot) return;
+      void handleDiscordReactionRemove(prisma, reaction, user);
+    },
+  );
   client.on(Events.Error, (e) => {
     // eslint-disable-next-line no-console
     console.warn('[discord] error', e);
