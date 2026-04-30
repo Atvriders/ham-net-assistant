@@ -103,6 +103,40 @@ export async function postToDiscord(prisma: PrismaClient, content: string): Prom
   }
 }
 
+export async function sendDiscordOrThrow(
+  prisma: PrismaClient,
+  content: string,
+): Promise<string> {
+  if (!activeClient) {
+    throw new Error('Discord bot is not running. Set Enabled + token + channel ID and Save first.');
+  }
+  const cfg = await loadDiscordConfig(prisma);
+  if (!cfg.channelId) {
+    throw new Error('No channel ID configured.');
+  }
+  let channel;
+  try {
+    channel = await activeClient.channels.fetch(cfg.channelId);
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    throw new Error(`Channel fetch failed: ${msg}. Verify the channel ID is correct and the bot has been invited to that server with View Channel permission.`);
+  }
+  if (!channel) {
+    throw new Error(`Channel ${cfg.channelId} not found. The bot may not be in the server, or the ID is wrong.`);
+  }
+  if (!channel.isTextBased() || !('send' in channel)) {
+    throw new Error('Configured channel is not text-based or doesn\'t accept messages.');
+  }
+  try {
+    const msg = await (channel as TextChannel).send(content);
+    return msg.id;
+  } catch (e) {
+    const err = e as Error & { code?: number };
+    const code = err.code ? ` (code ${err.code})` : '';
+    throw new Error(`Send failed${code}: ${err.message ?? String(e)}. Common causes: bot lacks Send Messages permission on this channel, MESSAGE CONTENT INTENT not enabled in the developer portal, or invalid token.`);
+  }
+}
+
 export function discordChannelMatches(prisma: PrismaClient, channelId: string): Promise<boolean> {
   return loadDiscordConfig(prisma).then((c) => !!c.channelId && c.channelId === channelId);
 }
@@ -133,12 +167,12 @@ export async function applyDiscordConfig(prisma: PrismaClient): Promise<void> {
   });
 }
 
-/** Post a one-off test message via the active client. Returns id or null. */
+/** Post a one-off test message via the active client. Throws on any error. */
 export async function sendTestMessage(
   prisma: PrismaClient,
   content: string,
-): Promise<string | null> {
+): Promise<string> {
   // Make sure the client is up-to-date with current settings before sending.
   await applyDiscordConfig(prisma);
-  return await postToDiscord(prisma, content);
+  return await sendDiscordOrThrow(prisma, content);
 }

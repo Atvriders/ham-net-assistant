@@ -106,18 +106,15 @@ export function discordRouter(prisma: PrismaClient): Router {
   );
 
   router.post('/test', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
-    const id = await sendTestMessage(
-      prisma,
-      'Ham-Net-Assistant test message — Discord bridge working.',
-    );
-    if (!id) {
-      throw new HttpError(
-        500,
-        'INTERNAL',
-        'Discord test send failed; check token, channel id, and bot permissions',
+    try {
+      const id = await sendTestMessage(
+        prisma,
+        'Ham-Net-Assistant test message — Discord bridge working.',
       );
+      res.json({ ok: true, messageId: id });
+    } catch (e) {
+      throw new HttpError(502, 'INTERNAL', (e as Error).message ?? 'Discord test send failed');
     }
-    res.json({ ok: true, messageId: id });
   }));
 
   return router;

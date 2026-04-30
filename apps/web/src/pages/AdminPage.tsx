@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { PublicUser, Role } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -169,9 +169,10 @@ export function AdminPage() {
     setDiscordTestResult(null);
     try {
       await apiFetch('/discord/test', { method: 'POST' });
-      setDiscordTestResult('Test message sent.');
+      setDiscordTestResult('✓ Test message sent.');
     } catch (e) {
-      setDiscordTestResult((e as Error).message);
+      if (e instanceof ApiErrorException) setDiscordTestResult(`✗ ${e.payload.message}`);
+      else setDiscordTestResult(`✗ ${(e as Error).message}`);
     }
   }
 
