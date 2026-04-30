@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, CheckIn } from '@prisma/client';
 import { z } from 'zod';
 import { NetSessionUpdate } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
@@ -221,7 +221,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           const minutes = updated.endedAt
             ? Math.max(1, Math.round((updated.endedAt.getTime() - updated.startedAt.getTime()) / 60000))
             : 0;
-          const checkInCount = updated.checkIns?.filter((c: any) => !c.deletedAt).length ?? 0;
+          const checkInCount = updated.checkIns?.filter((c: CheckIn) => !c.deletedAt).length ?? 0;
           const freq = updated.net?.repeater?.frequency != null
             ? ` on ${updated.net.repeater.frequency.toFixed(3)} MHz`
             : '';
