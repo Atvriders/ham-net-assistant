@@ -10,7 +10,6 @@ import {
   sendTestMessage,
 } from '../discord/client.js';
 import { getSetting, setSetting } from '../lib/settings.js';
-import { HttpError } from '../middleware/error.js';
 
 const ConfigUpdateInput = z
   .object({

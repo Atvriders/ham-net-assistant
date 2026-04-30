@@ -109,6 +109,7 @@ export async function postToDiscordStrict(
   if (!cfg.channelId) {
     throw new HttpError(400, 'VALIDATION', 'No channel id configured.');
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let channel: any;
   try {
     channel = await activeClient.channels.fetch(cfg.channelId);
