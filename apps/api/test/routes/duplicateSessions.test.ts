@@ -168,9 +168,9 @@ describe('admin duplicate-sessions', () => {
     await addCheckIn(g2b.id, 'W1AW', 'AW', atLocal(2026, 4, 26, 19, 1));
 
     // Group 3: Net B on Apr 25 with 3 sessions
-    const g3a = await makeSession(netB, atLocal(2026, 4, 25, 9, 0));
+    await makeSession(netB, atLocal(2026, 4, 25, 9, 0));
     const g3b = await makeSession(netB, atLocal(2026, 4, 25, 12, 0));
-    const g3c = await makeSession(netB, atLocal(2026, 4, 25, 18, 0));
+    await makeSession(netB, atLocal(2026, 4, 25, 18, 0));
     await addCheckIn(g3b.id, 'KE0XYZ', 'Xyz', atLocal(2026, 4, 25, 12, 1));
 
     const res = await request(app)
