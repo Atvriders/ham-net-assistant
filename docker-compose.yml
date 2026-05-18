@@ -1,6 +1,6 @@
 services:
   hna:
-    image: ghcr.io/atvriders/ham-net-assistant:latest
+    image: git.waterburp.com/atvriders/ham-net-assistant:latest
     pull_policy: always
     restart: unless-stopped
     ports:
