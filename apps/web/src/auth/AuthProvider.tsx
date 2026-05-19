@@ -26,6 +26,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Presence heartbeat: while authenticated and the tab is visible, ping the
+  // server every 45s so other members see this user as "online".
+  useEffect(() => {
+    if (!user) return;
+    const ping = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      apiFetch<void>('/presence/heartbeat', { method: 'POST' }).catch(() => {
+        /* ignore — presence is best-effort */
+      });
+    };
+    ping();
+    const id = window.setInterval(ping, 45000);
+    return () => window.clearInterval(id);
+  }, [user]);
+
   const login: AuthCtx['login'] = async (input) => {
     setUser(
       await apiFetch<PublicUser>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),

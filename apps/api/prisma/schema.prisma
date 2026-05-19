@@ -17,6 +17,8 @@ model User {
   role               String       @default("MEMBER")
   collegeSlug        String?
   createdAt          DateTime     @default(now())
+  /// Last time this user pinged the presence heartbeat; null if never seen.
+  lastSeenAt         DateTime?
   checkIns           CheckIn[]    @relation("CheckInSubject")
   createdCheckIns    CheckIn[]    @relation("CheckInCreator")
   controlledSessions NetSession[] @relation("ControlOp")
@@ -62,8 +64,12 @@ model Repeater {
 model Net {
   id         String       @id @default(cuid())
   name       String
+  /// "weekly" = scheduled net (dayOfWeek/startLocal/timezone meaningful);
+  /// "impromptu" = ad-hoc net, not picked up by the reminder scheduler.
+  kind       String       @default("weekly")
   repeaterId String
   repeater   Repeater     @relation(fields: [repeaterId], references: [id], onDelete: Cascade)
+  /// For impromptu nets these scheduling fields are sentinels (0 / "00:00" / "UTC").
   dayOfWeek  Int
   startLocal String
   timezone   String

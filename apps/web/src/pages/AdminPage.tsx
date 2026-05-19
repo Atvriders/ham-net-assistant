@@ -9,6 +9,8 @@ import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
 import { to12h, to24h } from '../lib/time.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { usePresence } from '../lib/usePresence.js';
+import { OnlineDot } from '../components/OnlineDot.js';
 import { LogImportModal } from '../components/LogImportModal.js';
 
 interface TrashSession {
@@ -86,6 +88,7 @@ export function AdminPage() {
   const { data: users, refresh } = useAutoFetch<PublicUser[]>('/users', {
     intervalMs: 5000,
   });
+  const { isOnlineById } = usePresence();
   const { data: trash, refresh: refreshTrash } = useAutoFetch<TrashPayload>('/admin/trash', {
     intervalMs: 15000,
   });
@@ -528,7 +531,12 @@ export function AdminPage() {
           <tbody>
             {(users ?? []).map((u) => (
               <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td><span className="hna-callsign">{displayCallsign(u.callsign)}</span></td>
+                <td>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <OnlineDot online={isOnlineById(u.id)} />
+                    <span className="hna-callsign">{displayCallsign(u.callsign)}</span>
+                  </span>
+                </td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>{u.role}</td>

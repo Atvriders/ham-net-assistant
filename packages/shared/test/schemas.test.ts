@@ -83,6 +83,17 @@ describe('NetInput', () => {
       }),
     ).toThrow();
   });
+  it('accepts an impromptu net without scheduling fields', () => {
+    const parsed = NetInput.parse({
+      name: 'Pop-up', repeaterId: 'x', kind: 'impromptu',
+    });
+    expect(parsed.kind).toBe('impromptu');
+  });
+  it('rejects a weekly net missing scheduling fields', () => {
+    expect(() =>
+      NetInput.parse({ name: 'x', repeaterId: 'y', kind: 'weekly' }),
+    ).toThrow();
+  });
 });
 
 describe('CheckInInput', () => {

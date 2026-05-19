@@ -32,6 +32,34 @@ async function assertRepeatersExist(prisma: PrismaClient, ids: string[]): Promis
   }
 }
 
+/**
+ * Resolve scheduling fields from the create/update payload. Weekly nets use the
+ * supplied values; impromptu nets fall back to sentinels since the scheduler
+ * never touches them.
+ */
+function schedulingFields(body: typeof NetInput._type): {
+  kind: string;
+  dayOfWeek: number;
+  startLocal: string;
+  timezone: string;
+} {
+  const kind = body.kind ?? 'weekly';
+  if (kind === 'impromptu') {
+    return {
+      kind,
+      dayOfWeek: body.dayOfWeek ?? 0,
+      startLocal: body.startLocal ?? '00:00',
+      timezone: body.timezone ?? 'UTC',
+    };
+  }
+  return {
+    kind,
+    dayOfWeek: body.dayOfWeek as number,
+    startLocal: body.startLocal as string,
+    timezone: body.timezone as string,
+  };
+}
+
 export function netsRouter(prisma: PrismaClient): Router {
   const router = Router();
 
@@ -77,12 +105,14 @@ export function netsRouter(prisma: PrismaClient): Router {
     const body = req.body as typeof NetInput._type;
     const linkIds = normalizeLinkedIds(body.linkedRepeaterIds, body.repeaterId);
     await assertRepeatersExist(prisma, linkIds);
+    const sched = schedulingFields(body);
     const created = await prisma.$transaction(async (tx) => {
       const net = await tx.net.create({
         data: {
           name: body.name, repeaterId: body.repeaterId,
-          dayOfWeek: body.dayOfWeek, startLocal: body.startLocal,
-          timezone: body.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
+          kind: sched.kind,
+          dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
+          timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
           active: body.active ?? true,
         },
       });
@@ -106,14 +136,16 @@ export function netsRouter(prisma: PrismaClient): Router {
       ? normalizeLinkedIds(body.linkedRepeaterIds, body.repeaterId)
       : [];
     if (touchLinks) await assertRepeatersExist(prisma, linkIds);
+    const sched = schedulingFields(body);
     try {
       const updated = await prisma.$transaction(async (tx) => {
         await tx.net.update({
           where: { id: netId },
           data: {
             name: body.name, repeaterId: body.repeaterId,
-            dayOfWeek: body.dayOfWeek, startLocal: body.startLocal,
-            timezone: body.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
+            kind: sched.kind,
+            dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
+            timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
             active: body.active ?? true,
           },
         });

@@ -47,6 +47,20 @@ describe('users', () => {
     expect(res.body[0]).toHaveProperty('name');
   });
 
+  it('GET /api/users/control-candidates lists OFFICER+ for officers, forbidden for members', async () => {
+    const forbidden = await request(app).get('/api/users/control-candidates').set('Cookie', member);
+    expect(forbidden.status).toBe(403);
+    const ok = await request(app).get('/api/users/control-candidates').set('Cookie', admin);
+    expect(ok.status).toBe(200);
+    expect(Array.isArray(ok.body)).toBe(true);
+    // Admin (W1AW) is OFFICER+; every entry must carry an id and an elevated role.
+    expect(ok.body.some((u: { callsign: string }) => u.callsign === 'W1AW')).toBe(true);
+    for (const u of ok.body) {
+      expect(u).toHaveProperty('id');
+      expect(['OFFICER', 'ADMIN']).toContain(u.role);
+    }
+  });
+
   it('PATCH /api/users/me rejects callsign field (immutable)', async () => {
     const res = await request(app).patch('/api/users/me').set('Cookie', member)
       .send({ callsign: 'W1ABC' });

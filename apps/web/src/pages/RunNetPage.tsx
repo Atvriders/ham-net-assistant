@@ -8,6 +8,8 @@ import { Modal } from '../components/ui/Modal.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { usePresence } from '../lib/usePresence.js';
+import { OnlineDot } from '../components/OnlineDot.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import {
   capitalizeFirst,
@@ -41,6 +43,12 @@ interface DirectoryEntry {
   callsign: string;
   name: string;
 }
+interface ControlCandidate {
+  id: string;
+  callsign: string;
+  name: string;
+  role: string;
+}
 
 export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -58,6 +66,10 @@ export function RunNetPage() {
   const [endNotes, setEndNotes] = useState('');
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
+  const [controlOpen, setControlOpen] = useState(false);
+  const [controlCandidates, setControlCandidates] = useState<ControlCandidate[]>([]);
+  const canManageControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   const nameRef = useRef<string>('');
@@ -93,6 +105,28 @@ export function RunNetPage() {
       });
     return () => ctrl.abort();
   }, []);
+
+  // Load the Net Control candidate roster when the reassign modal opens.
+  useEffect(() => {
+    if (!controlOpen || !canManageControl) return;
+    const ctrl = new AbortController();
+    apiFetch<ControlCandidate[]>('/users/control-candidates', { signal: ctrl.signal })
+      .then(setControlCandidates)
+      .catch((e) => {
+        if (!isAbortError(e)) console.warn('control candidates load failed', e);
+      });
+    return () => ctrl.abort();
+  }, [controlOpen, canManageControl]);
+
+  async function reassignControl(newControlOpId: string) {
+    if (!sessionId) return;
+    await apiFetch(`/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ controlOpId: newControlOpId }),
+    });
+    setControlOpen(false);
+    await refresh();
+  }
 
   // Autofill name from member directory (instant), check-in history + FCC lookup
   // (parallel, debounced) with history priority for repeat visitors.
@@ -345,6 +379,11 @@ export function RunNetPage() {
               Take control
             </Button>
           )}
+          {canManageControl && !session.endedAt && (
+            <Button variant="secondary" onClick={() => setControlOpen(true)}>
+              Change control
+            </Button>
+          )}
           <Button variant="danger" onClick={endNet}>
             End net
           </Button>
@@ -441,7 +480,8 @@ export function RunNetPage() {
                 gap: 8,
               }}
             >
-              <span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
                 <strong className="hna-callsign">{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
               </span>
               {canModify(ci) && (
@@ -579,6 +619,53 @@ export function RunNetPage() {
         onClose={() => setEditingCheckIn(null)}
         onSaved={refresh}
       />
+      <Modal open={controlOpen} onClose={() => setControlOpen(false)}>
+        <h2 style={{ marginTop: 0 }}>Change Net Control</h2>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+          Reassign the control operator for this active net.
+        </p>
+        <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0', maxHeight: 320, overflowY: 'auto' }}>
+          {controlCandidates.map((c) => (
+            <li
+              key={c.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 0',
+                borderBottom: '1px solid var(--color-border)',
+              }}
+            >
+              <span>
+                <strong className="hna-callsign">{displayCallsign(c.callsign)}</strong> — {c.name}
+                {session.controlOpId === c.id && (
+                  <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-success)' }}>
+                    current
+                  </span>
+                )}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={session.controlOpId === c.id}
+                onClick={() => reassignControl(c.id)}
+              >
+                Assign
+              </Button>
+            </li>
+          ))}
+          {controlCandidates.length === 0 && (
+            <li style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+              No eligible operators found.
+            </li>
+          )}
+        </ul>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+          <Button variant="secondary" onClick={() => setControlOpen(false)}>
+            Close
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

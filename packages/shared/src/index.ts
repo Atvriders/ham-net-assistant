@@ -6,5 +6,6 @@ export * from './session.js';
 export * from './checkin.js';
 export * from './stats.js';
 export * from './user.js';
+export * from './presence.js';
 export * from './topic.js';
 export * from './message.js';

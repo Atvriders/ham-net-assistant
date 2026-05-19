@@ -133,6 +133,46 @@ describe('nets CRUD', () => {
     expect(got.status).toBe(200);
     expect(got.body.net.scriptMd).toBe('# Hello');
   });
+  it('creates a weekly net with kind defaulting to "weekly"', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    expect(c.status).toBe(201);
+    expect(c.body.kind).toBe('weekly');
+  });
+  it('creates an impromptu net without scheduling fields', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Pop-up Net', repeaterId, kind: 'impromptu',
+    });
+    expect(c.status).toBe(201);
+    expect(c.body.kind).toBe('impromptu');
+    // Sentinel scheduling values keep the row valid.
+    expect(c.body.dayOfWeek).toBe(0);
+    expect(c.body.startLocal).toBe('00:00');
+    expect(c.body.timezone).toBe('UTC');
+  });
+  it('rejects a weekly net missing dayOfWeek', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Bad Net', repeaterId, startLocal: '20:00', timezone: 'UTC',
+    });
+    expect(c.status).toBe(400);
+    expect(c.body.error.code).toBe('VALIDATION');
+  });
+  it('can start a session from an impromptu net immediately', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Spontaneous', repeaterId, kind: 'impromptu',
+    });
+    const s = await request(app).post(`/api/nets/${c.body.id}/sessions`).set('Cookie', officer);
+    expect(s.status).toBe(201);
+    expect(s.body.netId).toBe(c.body.id);
+    expect(s.body.endedAt).toBeNull();
+  });
+  it('can switch a net from weekly to impromptu via PATCH', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    expect(c.body.kind).toBe('weekly');
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ name: 'Wed Net', repeaterId, kind: 'impromptu' });
+    expect(u.status).toBe(200);
+    expect(u.body.kind).toBe('impromptu');
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });

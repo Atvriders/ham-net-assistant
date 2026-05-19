@@ -124,8 +124,10 @@ async function tick(prisma: PrismaClient): Promise<void> {
   try {
     const times = await getReminderTimes(prisma);
     if (times.length === 0) return;
+    // Impromptu nets have no meaningful schedule, so the reminder scheduler
+    // must skip them — only weekly nets get reminder pings.
     const nets = await prisma.net.findMany({
-      where: { active: true },
+      where: { active: true, kind: 'weekly' },
       include: { repeater: true },
     });
     const now = Date.now();

@@ -19,6 +19,7 @@ import { scriptImportRouter } from './routes/scriptImport.js';
 import { logImportRouter } from './routes/logImport.js';
 import { adminRouter } from './routes/admin.js';
 import { discordRouter } from './routes/discord.js';
+import { presenceRouter } from './routes/presence.js';
 import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
@@ -49,6 +50,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api/log-import', logImportRouter(prisma));
   app.use('/api/admin', adminRouter(prisma));
   app.use('/api/discord', discordRouter(prisma));
+  app.use('/api/presence', presenceRouter(prisma));
 
   mountStatic(app);
   app.use(errorHandler);

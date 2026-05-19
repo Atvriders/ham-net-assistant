@@ -42,6 +42,17 @@ export function usersRouter(prisma: PrismaClient): Router {
     res.json(list);
   }));
 
+  // Roster of users eligible to be Net Control. Used by the active-session
+  // "change control" picker, which is gated to OFFICER+ in the UI.
+  router.get('/control-candidates', requireRole('OFFICER'), asyncHandler(async (_req, res) => {
+    const list = await prisma.user.findMany({
+      where: { role: { in: ['OFFICER', 'ADMIN'] } },
+      select: { id: true, callsign: true, name: true, role: true },
+      orderBy: { callsign: 'asc' },
+    });
+    res.json(list);
+  }));
+
   router.get('/', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
     const users = await prisma.user.findMany({
       select: publicSelect,

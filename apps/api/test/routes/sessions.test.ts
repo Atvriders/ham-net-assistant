@@ -190,6 +190,35 @@ describe('sessions', () => {
       .send({ controlOpId: bUser!.id });
     expect(patch.status).toBe(200);
     expect(patch.body.controlOpId).toBe(bUser!.id);
+    expect(patch.body.controlOp.callsign).toBe('W2BW');
+  });
+  it('rejects controlOpId pointing at a non-existent user', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ controlOpId: 'not-a-real-user' });
+    expect(patch.status).toBe(400);
+    expect(patch.body.error.code).toBe('VALIDATION');
+  });
+  it('refuses to change control on an already-ended session', async () => {
+    const a = await prisma.user.findFirst({ where: { callsign: 'W1AW' } });
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ controlOpId: a!.id });
+    expect(patch.status).toBe(409);
+    expect(patch.body.error.code).toBe('CONFLICT');
+  });
+  it('MEMBER cannot change net control', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-ctl-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'M', callsign: 'KB0CTL',
+    });
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`)
+      .set('Cookie', m.headers['set-cookie'][0])
+      .send({ controlOpId: m.body.id });
+    expect(patch.status).toBe(403);
   });
   it('GET session includes controlOp with callsign and name', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

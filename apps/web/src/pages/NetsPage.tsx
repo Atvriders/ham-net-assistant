@@ -30,6 +30,7 @@ interface ActiveSessionRow extends NetSession {
 function toNetInput(n: NetWithRepeater): NetInput {
   return {
     name: n.name,
+    kind: n.kind,
     repeaterId: n.repeaterId,
     dayOfWeek: n.dayOfWeek,
     startLocal: n.startLocal,
@@ -43,6 +44,7 @@ function toNetInput(n: NetWithRepeater): NetInput {
 
 const empty: NetInput = {
   name: '',
+  kind: 'weekly',
   repeaterId: '',
   dayOfWeek: 3,
   startLocal: '20:00',
@@ -121,15 +123,43 @@ export function NetsPage() {
           )}
         </div>
       </div>
-      <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
-        {nets.map((n) => (
+      {(['weekly', 'impromptu'] as const).map((kind) => {
+        const group = nets.filter((n) => (n.kind ?? 'weekly') === kind);
+        if (group.length === 0) return null;
+        return (
+          <div key={kind}>
+            <h2 style={{ marginTop: 24, marginBottom: 0, fontSize: 16, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+              {kind === 'weekly' ? 'Weekly nets' : 'Impromptu nets'}
+            </h2>
+            <div style={{ display: 'grid', gap: 16, marginTop: 12 }}>
+        {group.map((n) => (
           <Card key={n.id}>
             <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div>
-                <h3 style={{ margin: 0 }}>{n.name}</h3>
-                <div>
-                  {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
-                </div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {n.name}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-muted)',
+                    }}
+                  >
+                    {n.kind === 'impromptu' ? 'Impromptu' : 'Weekly'}
+                  </span>
+                </h3>
+                {n.kind === 'impromptu' ? (
+                  <div style={{ color: 'var(--color-text-muted)' }}>Ad-hoc — no fixed schedule</div>
+                ) : (
+                  <div>
+                    {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
+                  </div>
+                )}
                 <div>Repeater: {n.repeater.name}</div>
                 {n.links && n.links.length > 0 && (
                   <div>
@@ -172,7 +202,10 @@ export function NetsPage() {
             </div>
           </Card>
         ))}
-      </div>
+            </div>
+          </div>
+        );
+      })}
       {starting && (
         <StartNetModal
           open={starting !== null}
@@ -198,6 +231,31 @@ export function NetsPage() {
                     setEditing({ ...editing, data: { ...editing.data, name: e.target.value } })
                   }
                 />
+              </div>
+
+              <div className="hna-field">
+                <label>Kind</label>
+                <select
+                  className="hna-input"
+                  value={editing.data.kind ?? 'weekly'}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      data: {
+                        ...editing.data,
+                        kind: e.target.value as 'weekly' | 'impromptu',
+                      },
+                    })
+                  }
+                >
+                  <option value="weekly">Weekly (scheduled)</option>
+                  <option value="impromptu">Impromptu (ad-hoc)</option>
+                </select>
+                {(editing.data.kind ?? 'weekly') === 'impromptu' && (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                    Impromptu nets have no fixed schedule and are skipped by net reminders.
+                  </div>
+                )}
               </div>
 
               <div className="hna-field">
@@ -253,6 +311,7 @@ export function NetsPage() {
                 </div>
               </div>
 
+              {(editing.data.kind ?? 'weekly') === 'weekly' && (
               <div className="hna-field-row-2">
                 <div className="hna-field">
                   <label>Day of week</label>
@@ -276,7 +335,7 @@ export function NetsPage() {
                 <div className="hna-field">
                   <label>Start time</label>
                   {(() => {
-                    const t = to12h(editing.data.startLocal);
+                    const t = to12h(editing.data.startLocal ?? '20:00');
                     const updateTime = (patch: Partial<typeof t>) => {
                       const next = { ...t, ...patch };
                       setEditing({
@@ -324,6 +383,7 @@ export function NetsPage() {
                   })()}
                 </div>
               </div>
+              )}
 
               <div className="hna-field">
                 <label>Theme (this week's topic cue)</label>

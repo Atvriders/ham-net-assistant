@@ -198,6 +198,18 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       select: { id: true, endedAt: true, netId: true, startedAt: true },
     });
     if (!before) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    // Reassigning Net Control is only allowed on an in-progress session, and
+    // the new control op must be a real user.
+    if (body.controlOpId !== undefined) {
+      if (before.endedAt !== null) {
+        throw new HttpError(409, 'CONFLICT', 'Cannot change control on an ended session');
+      }
+      const exists = await prisma.user.findUnique({
+        where: { id: body.controlOpId },
+        select: { id: true },
+      });
+      if (!exists) throw new HttpError(400, 'VALIDATION', 'Unknown control operator');
+    }
     const updated = await prisma.netSession.update({
       where: { id: req.params.id },
       data: {
@@ -209,6 +221,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       include: {
         net: { include: { repeater: true } },
         checkIns: { where: { deletedAt: null } },
+        controlOp: { select: { callsign: true, name: true } },
       },
     });
     res.json(updated);
