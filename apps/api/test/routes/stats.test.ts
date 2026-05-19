@@ -66,6 +66,17 @@ describe('stats', () => {
     expect(t0).toBeLessThanOrEqual(t1);
   });
 
+  it('session detail exposes ids needed for editing', async () => {
+    const res = await request(app).get('/api/stats/participation').set('Cookie', officer);
+    const [s] = res.body.sessions;
+    // controlOpId + check-in ids let the Stats Edit modal pre-select and patch.
+    expect(typeof s.controlOpId).toBe('string');
+    expect('notes' in s).toBe(true);
+    for (const ci of s.checkIns) {
+      expect(typeof ci.id).toBe('string');
+    }
+  });
+
   it('GET /api/stats/participation 400 on malformed from', async () => {
     const res = await request(app)
       .get('/api/stats/participation?from=garbage')
@@ -99,5 +110,29 @@ describe('stats', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
     expect((res.body as Buffer).slice(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('topic + control corrections on an ended session show up in stats', async () => {
+    // Isolated net/session so the mutation does not disturb other tests.
+    const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'R2', frequency: 147.0, offsetKhz: 600, mode: 'FM' });
+    const n2 = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Edit Net', repeaterId: r2.body.id, dayOfWeek: 5,
+      startLocal: '19:00', timezone: 'America/Chicago',
+    });
+    const s2 = await request(app).post(`/api/nets/${n2.body.id}/sessions`).set('Cookie', officer)
+      .send({ topicTitle: 'Original topic' });
+    // End the session, then correct its topic + control + notes (a past-log fix).
+    await request(app).patch(`/api/sessions/${s2.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    const w1aw = await prisma.user.findFirst({ where: { callsign: 'W1AW' } });
+    const patch = await request(app).patch(`/api/sessions/${s2.body.id}`).set('Cookie', officer)
+      .send({ topicTitle: 'Corrected topic', controlOpId: w1aw!.id, notes: 'fixed log' });
+    expect(patch.status).toBe(200);
+    const res = await request(app).get('/api/stats/participation').set('Cookie', officer);
+    const found = res.body.sessions.find((x: { id: string }) => x.id === s2.body.id);
+    expect(found.topic).toBe('Corrected topic');
+    expect(found.controlOpId).toBe(w1aw!.id);
+    expect(found.notes).toBe('fixed log');
   });
 });

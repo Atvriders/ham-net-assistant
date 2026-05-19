@@ -198,12 +198,11 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       select: { id: true, endedAt: true, netId: true, startedAt: true },
     });
     if (!before) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
-    // Reassigning Net Control is only allowed on an in-progress session, and
-    // the new control op must be a real user.
+    // The control op (when set) must be a real user. Reassigning control is
+    // allowed on both in-progress sessions (live "change control") and ended
+    // sessions (correcting a past net's log on the Stats page) — a finished
+    // log is a legitimate thing to fix.
     if (body.controlOpId !== undefined) {
-      if (before.endedAt !== null) {
-        throw new HttpError(409, 'CONFLICT', 'Cannot change control on an ended session');
-      }
       const exists = await prisma.user.findUnique({
         where: { id: body.controlOpId },
         select: { id: true },
@@ -217,6 +216,12 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           body.endedAt === undefined ? undefined : body.endedAt ? new Date(body.endedAt) : null,
         notes: body.notes === undefined ? undefined : body.notes,
         controlOpId: body.controlOpId ?? undefined,
+        topicTitle:
+          body.topicTitle === undefined
+            ? undefined
+            : body.topicTitle && body.topicTitle.trim().length > 0
+              ? body.topicTitle.trim()
+              : null,
       },
       include: {
         net: { include: { repeater: true } },

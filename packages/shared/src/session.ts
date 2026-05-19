@@ -4,6 +4,7 @@ export const NetSessionUpdate = z.object({
   endedAt: z.string().datetime().nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
   controlOpId: z.string().optional(),
+  topicTitle: z.string().max(200).nullable().optional(),
 });
 export type NetSessionUpdate = z.infer<typeof NetSessionUpdate>;
 

@@ -8,6 +8,7 @@ import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { buildSessionLogText } from '../lib/sessionLog.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { apiFetch } from '../api/client.js';
+import { EditSessionModal } from '../components/EditSessionModal.js';
 
 export function StatsPage() {
   const { data: stats, refresh } = useAutoFetch<ParticipationStats>(
@@ -15,6 +16,9 @@ export function StatsPage() {
     { intervalMs: 15000 },
   );
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<
+    ParticipationStats['sessions'][number] | null
+  >(null);
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -145,6 +149,15 @@ export function StatsPage() {
                 </Button>
                 {isAdmin && (
                   <Button
+                    variant="secondary"
+                    onClick={() => setEditing(s)}
+                    style={{ padding: '4px 10px', fontSize: 12 }}
+                  >
+                    Edit
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button
                     variant="danger"
                     onClick={() =>
                       deleteSession(
@@ -179,6 +192,14 @@ export function StatsPage() {
           </div>
         ))}
       </Card>
+      <EditSessionModal
+        open={editing !== null}
+        session={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          void refresh();
+        }}
+      />
     </div>
   );
 }

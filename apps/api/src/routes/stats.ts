@@ -75,10 +75,13 @@ async function computeStats(
         startedAt: s.startedAt.toISOString(),
         endedAt: s.endedAt ? s.endedAt.toISOString() : null,
         topic: s.topicTitle ?? null,
+        notes: s.notes ?? null,
+        controlOpId: s.controlOpId ?? null,
         controlOp: s.controlOp
           ? { callsign: s.controlOp.callsign, name: s.controlOp.name }
           : null,
         checkIns: sortedCheckIns.map((ci) => ({
+          id: ci.id,
           callsign: ci.callsign,
           name: ci.nameAtCheckIn,
           checkedInAt: ci.checkedInAt.toISOString(),

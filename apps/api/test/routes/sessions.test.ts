@@ -213,15 +213,18 @@ describe('sessions', () => {
     expect(patch.status).toBe(400);
     expect(patch.body.error.code).toBe('VALIDATION');
   });
-  it('refuses to change control on an already-ended session', async () => {
+  it('allows correcting control + topic on an already-ended session', async () => {
     const a = await prisma.user.findFirst({ where: { callsign: 'W1AW' } });
-    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicTitle: 'Original topic' });
     await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
       .send({ endedAt: new Date().toISOString() });
+    // Correcting a finished log's control op + topic is a legitimate fix.
     const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
-      .send({ controlOpId: a!.id });
-    expect(patch.status).toBe(409);
-    expect(patch.body.error.code).toBe('CONFLICT');
+      .send({ controlOpId: a!.id, topicTitle: 'Corrected topic' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.controlOpId).toBe(a!.id);
+    expect(patch.body.topicTitle).toBe('Corrected topic');
   });
   it('MEMBER cannot change net control', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

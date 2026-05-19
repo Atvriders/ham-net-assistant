@@ -24,9 +24,12 @@ export const ParticipationStats = z.object({
       startedAt: z.string().datetime(),
       endedAt: z.string().datetime().nullable(),
       topic: z.string().nullable(),
+      notes: z.string().nullable(),
+      controlOpId: z.string().nullable(),
       controlOp: z.object({ callsign: z.string(), name: z.string() }).nullable(),
       checkIns: z.array(
         z.object({
+          id: z.string(),
           callsign: z.string(),
           name: z.string(),
           checkedInAt: z.string().datetime(),
