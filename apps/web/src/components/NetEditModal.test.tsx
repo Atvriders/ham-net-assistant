@@ -6,6 +6,7 @@ import type { NetWithRepeater } from './NetEditModal.js';
 
 const repeaters = [
   { id: 'r1', name: 'R1', frequency: 146.76, offsetKhz: -600, mode: 'FM' },
+  { id: 'r2', name: 'R2', frequency: 147.0, offsetKhz: 600, mode: 'FM' },
 ];
 
 const net: NetWithRepeater = {
@@ -66,6 +67,33 @@ describe('NetEditModal', () => {
       .closest('.hna-field')!
       .querySelector('textarea')!;
     expect(scriptBox).toHaveValue('Welcome to the net.');
+  });
+
+  it('groups the primary and linked repeaters under a Repeaters section', async () => {
+    const linkedNet: NetWithRepeater = {
+      ...net,
+      links: [
+        { id: 'l1', repeaterId: 'r2', repeater: repeaters[1] as never },
+      ],
+    } as never;
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(linkedNet)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const group = (await screen.findByText('Repeaters')).closest(
+      'fieldset',
+    )! as HTMLElement;
+    const summary = group.querySelector('.hna-repeater-group-summary')!;
+    expect(summary.textContent).toContain('Primary');
+    expect(summary.textContent).toContain('R1 — 146.760 MHz');
+    expect(summary.textContent).toContain('Linked');
+    expect(summary.textContent).toContain('R2 — 147.000 MHz');
   });
 
   it('PATCHes /nets/:id with the edited script and calls onSaved', async () => {

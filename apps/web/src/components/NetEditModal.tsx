@@ -161,59 +161,92 @@ export function NetEditModal({
               )}
             </div>
 
-            <div className="hna-field">
-              <label>Primary repeater</label>
-              <select
-                className="hna-input"
-                value={data.repeaterId}
-                onChange={(e) =>
-                  setData({ ...data, repeaterId: e.target.value })
-                }
-              >
-                {repeaters.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} — {r.frequency.toFixed(3)} MHz
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="hna-field">
-              <label>Linked repeaters (optional)</label>
-              <div className="hna-checkbox-list">
-                {repeaters.filter((r) => r.id !== data.repeaterId).length ===
-                  0 && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    No other repeaters available.
-                  </div>
-                )}
-                {repeaters
-                  .filter((r) => r.id !== data.repeaterId)
-                  .map((r) => {
-                    const checked = (data.linkedRepeaterIds ?? []).includes(
-                      r.id,
-                    );
-                    return (
-                      <label key={r.id}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const current = data.linkedRepeaterIds ?? [];
-                            const next = e.target.checked
-                              ? [...current, r.id]
-                              : current.filter((id) => id !== r.id);
-                            setData({ ...data, linkedRepeaterIds: next });
-                          }}
-                        />
+            <fieldset className="hna-repeater-group">
+              <legend>Repeaters</legend>
+              {(() => {
+                const primary = repeaters.find(
+                  (r) => r.id === data.repeaterId,
+                );
+                const linkedIds = data.linkedRepeaterIds ?? [];
+                const linked = repeaters.filter((r) =>
+                  linkedIds.includes(r.id),
+                );
+                return (
+                  <ul className="hna-repeater-group-summary">
+                    <li>
+                      <span className="hna-repeater-group-tag">Primary</span>
+                      <span>
+                        {primary
+                          ? `${primary.name} — ${primary.frequency.toFixed(3)} MHz`
+                          : '—'}
+                      </span>
+                    </li>
+                    {linked.map((r) => (
+                      <li key={r.id}>
+                        <span className="hna-repeater-group-tag">Linked</span>
                         <span>
                           {r.name} — {r.frequency.toFixed(3)} MHz
                         </span>
-                      </label>
-                    );
-                  })}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+
+              <div className="hna-field">
+                <label>Primary repeater</label>
+                <select
+                  className="hna-input"
+                  value={data.repeaterId}
+                  onChange={(e) =>
+                    setData({ ...data, repeaterId: e.target.value })
+                  }
+                >
+                  {repeaters.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} — {r.frequency.toFixed(3)} MHz
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
+
+              <div className="hna-field">
+                <label>Linked repeaters (optional)</label>
+                <div className="hna-checkbox-list">
+                  {repeaters.filter((r) => r.id !== data.repeaterId).length ===
+                    0 && (
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                      No other repeaters available.
+                    </div>
+                  )}
+                  {repeaters
+                    .filter((r) => r.id !== data.repeaterId)
+                    .map((r) => {
+                      const checked = (data.linkedRepeaterIds ?? []).includes(
+                        r.id,
+                      );
+                      return (
+                        <label key={r.id}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const current = data.linkedRepeaterIds ?? [];
+                              const next = e.target.checked
+                                ? [...current, r.id]
+                                : current.filter((id) => id !== r.id);
+                              setData({ ...data, linkedRepeaterIds: next });
+                            }}
+                          />
+                          <span>
+                            {r.name} — {r.frequency.toFixed(3)} MHz
+                          </span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+            </fieldset>
 
             {(data.kind ?? 'weekly') === 'weekly' && (
               <div className="hna-field-row-2">
