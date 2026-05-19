@@ -75,6 +75,8 @@ model Net {
   timezone   String
   theme      String?
   scriptMd   String?
+  /// Category of this net's script: "weekly" | "general" | "impromptu".
+  scriptCategory String   @default("general")
   active     Boolean      @default(true)
   sessions   NetSession[]
   links      NetLink[]

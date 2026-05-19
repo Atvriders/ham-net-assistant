@@ -3,11 +3,15 @@ import { z } from 'zod';
 export const NetKind = z.enum(['weekly', 'impromptu']);
 export type NetKind = z.infer<typeof NetKind>;
 
+export const ScriptCategory = z.enum(['weekly', 'general', 'impromptu']);
+export type ScriptCategory = z.infer<typeof ScriptCategory>;
+
 const baseNetFields = {
   name: z.string().min(1).max(120),
   repeaterId: z.string().min(1),
   theme: z.string().max(200).nullable().optional(),
   scriptMd: z.string().max(20000).nullable().optional(),
+  scriptCategory: ScriptCategory.optional(),
   active: z.boolean().optional(),
   linkedRepeaterIds: z.array(z.string()).max(30).optional(),
 };
@@ -58,6 +62,7 @@ export const Net = z.object({
   ...baseNetFields,
   id: z.string(),
   kind: NetKind,
+  scriptCategory: ScriptCategory,
   dayOfWeek: z.number().int(),
   startLocal: z.string(),
   timezone: z.string(),

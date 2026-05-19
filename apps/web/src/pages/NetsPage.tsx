@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Net, NetInput, NetSession, Repeater } from '@hna/shared';
+import type { Net, NetInput, NetSession, Repeater, ScriptCategory } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
@@ -37,6 +37,7 @@ function toNetInput(n: NetWithRepeater): NetInput {
     timezone: n.timezone,
     theme: n.theme ?? null,
     scriptMd: n.scriptMd ?? null,
+    scriptCategory: n.scriptCategory ?? 'general',
     active: n.active,
     linkedRepeaterIds: (n.links ?? []).map((l) => l.repeaterId),
   };
@@ -51,8 +52,15 @@ const empty: NetInput = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   theme: '',
   scriptMd: '',
+  scriptCategory: 'general',
   active: true,
   linkedRepeaterIds: [],
+};
+
+const SCRIPT_CATEGORY_LABELS: Record<ScriptCategory, string> = {
+  weekly: 'Weekly',
+  general: 'General',
+  impromptu: 'Impromptu',
 };
 
 export function NetsPage() {
@@ -78,6 +86,7 @@ export function NetsPage() {
   const [editing, setEditing] = useState<{ id?: string; data: NetInput } | null>(null);
   const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
   const [scriptImportOpen, setScriptImportOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<ScriptCategory | 'all'>('all');
 
   async function takeControl(sessionId: string) {
     await apiFetch(`/sessions/${sessionId}`, {
@@ -123,8 +132,26 @@ export function NetsPage() {
           )}
         </div>
       </div>
+      <div className="hna-field" style={{ marginTop: 16, maxWidth: 260 }}>
+        <label>Filter by script category</label>
+        <select
+          className="hna-input"
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value as ScriptCategory | 'all')}
+        >
+          <option value="all">All categories</option>
+          <option value="weekly">Weekly</option>
+          <option value="general">General</option>
+          <option value="impromptu">Impromptu</option>
+        </select>
+      </div>
       {(['weekly', 'impromptu'] as const).map((kind) => {
-        const group = nets.filter((n) => (n.kind ?? 'weekly') === kind);
+        const group = nets.filter(
+          (n) =>
+            (n.kind ?? 'weekly') === kind &&
+            (categoryFilter === 'all' ||
+              (n.scriptCategory ?? 'general') === categoryFilter),
+        );
         if (group.length === 0) return null;
         return (
           <div key={kind}>
@@ -151,6 +178,20 @@ export function NetsPage() {
                     }}
                   >
                     {n.kind === 'impromptu' ? 'Impromptu' : 'Weekly'}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-muted)',
+                    }}
+                  >
+                    Script: {SCRIPT_CATEGORY_LABELS[n.scriptCategory ?? 'general']}
                   </span>
                 </h3>
                 {n.kind === 'impromptu' ? (
@@ -396,6 +437,27 @@ export function NetsPage() {
                     })
                   }
                 />
+              </div>
+
+              <div className="hna-field">
+                <label>Script category</label>
+                <select
+                  className="hna-input"
+                  value={editing.data.scriptCategory ?? 'general'}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      data: {
+                        ...editing.data,
+                        scriptCategory: e.target.value as ScriptCategory,
+                      },
+                    })
+                  }
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="general">General</option>
+                  <option value="impromptu">Impromptu</option>
+                </select>
               </div>
 
               <div className="hna-field">

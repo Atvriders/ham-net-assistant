@@ -113,6 +113,7 @@ export function netsRouter(prisma: PrismaClient): Router {
           kind: sched.kind,
           dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
           timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
+          scriptCategory: body.scriptCategory ?? 'general',
           active: body.active ?? true,
         },
       });
@@ -146,6 +147,7 @@ export function netsRouter(prisma: PrismaClient): Router {
             kind: sched.kind,
             dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
             timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
+            scriptCategory: body.scriptCategory ?? 'general',
             active: body.active ?? true,
           },
         });

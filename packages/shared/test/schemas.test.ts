@@ -94,6 +94,21 @@ describe('NetInput', () => {
       NetInput.parse({ name: 'x', repeaterId: 'y', kind: 'weekly' }),
     ).toThrow();
   });
+  it('accepts each script category', () => {
+    for (const category of ['weekly', 'general', 'impromptu'] as const) {
+      const parsed = NetInput.parse({
+        name: 'Pop-up', repeaterId: 'x', kind: 'impromptu', scriptCategory: category,
+      });
+      expect(parsed.scriptCategory).toBe(category);
+    }
+  });
+  it('rejects an unknown script category', () => {
+    expect(() =>
+      NetInput.parse({
+        name: 'x', repeaterId: 'y', kind: 'impromptu', scriptCategory: 'monthly' as never,
+      }),
+    ).toThrow();
+  });
 });
 
 describe('CheckInInput', () => {

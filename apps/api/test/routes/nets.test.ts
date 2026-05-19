@@ -173,6 +173,35 @@ describe('nets CRUD', () => {
     expect(u.status).toBe(200);
     expect(u.body.kind).toBe('impromptu');
   });
+  it('defaults scriptCategory to "general"', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    expect(c.status).toBe(201);
+    expect(c.body.scriptCategory).toBe('general');
+  });
+  it('creates a net with each script category', async () => {
+    for (const category of ['weekly', 'general', 'impromptu'] as const) {
+      const c = await request(app).post('/api/nets').set('Cookie', officer)
+        .send({ ...netBody(), scriptCategory: category });
+      expect(c.status).toBe(201);
+      expect(c.body.scriptCategory).toBe(category);
+    }
+  });
+  it('round-trips scriptCategory through list and PATCH', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), scriptCategory: 'weekly' });
+    const list = await request(app).get('/api/nets');
+    expect(list.body[0].scriptCategory).toBe('weekly');
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ ...netBody(), scriptCategory: 'impromptu' });
+    expect(u.status).toBe(200);
+    expect(u.body.scriptCategory).toBe('impromptu');
+  });
+  it('rejects an unknown scriptCategory', async () => {
+    const res = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), scriptCategory: 'monthly' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });
