@@ -95,6 +95,18 @@ describe('NetsPage script category', () => {
     expect(screen.getByText('Weekly-Script Net')).toBeInTheDocument();
   });
 
+  it('opens the shared edit modal pre-filled when Edit is clicked', async () => {
+    renderPage();
+    await screen.findByText('General Net');
+    const [editButton] = await screen.findAllByRole('button', { name: 'Edit' });
+    await userEvent.click(editButton!);
+    await waitFor(() => {
+      expect(screen.getByText('Edit net')).toBeInTheDocument();
+    });
+    const nameInput = screen.getByDisplayValue('General Net');
+    expect(nameInput).toBeInTheDocument();
+  });
+
   it('offers a script category selector in the net form', async () => {
     renderPage();
     const addBtn = await screen.findByRole('button', { name: 'Add net' });

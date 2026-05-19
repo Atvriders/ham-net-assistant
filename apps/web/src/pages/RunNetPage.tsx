@@ -21,6 +21,7 @@ import { looksLikeHtml } from '../lib/scriptFormat.js';
 import { SanitizedHtml } from '../components/SanitizedHtml.js';
 import { ChatBox } from '../components/ChatBox.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
+import { NetEditModal, netToInput } from '../components/NetEditModal.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -68,6 +69,7 @@ export function RunNetPage() {
   const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
   const [controlOpen, setControlOpen] = useState(false);
   const [controlCandidates, setControlCandidates] = useState<ControlCandidate[]>([]);
+  const [editNetOpen, setEditNetOpen] = useState(false);
   const canManageControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -390,7 +392,21 @@ export function RunNetPage() {
         </div>
       </Card>
       <Card>
-        <h3>Script</h3>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <h3 style={{ margin: 0 }}>Script</h3>
+          {canManageControl && (
+            <Button variant="secondary" onClick={() => setEditNetOpen(true)}>
+              Edit net
+            </Button>
+          )}
+        </div>
         {looksLikeHtml(net?.scriptMd ?? '') ? (
           <SanitizedHtml
             className="hna-script-html"
@@ -619,6 +635,15 @@ export function RunNetPage() {
         onClose={() => setEditingCheckIn(null)}
         onSaved={refresh}
       />
+      {editNetOpen && (
+        <NetEditModal
+          open
+          netId={net.id}
+          initial={netToInput(net)}
+          onClose={() => setEditNetOpen(false)}
+          onSaved={refresh}
+        />
+      )}
       <Modal open={controlOpen} onClose={() => setControlOpen(false)}>
         <h2 style={{ marginTop: 0 }}>Change Net Control</h2>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
