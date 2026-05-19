@@ -192,6 +192,20 @@ describe('sessions', () => {
     expect(patch.body.controlOpId).toBe(bUser!.id);
     expect(patch.body.controlOp.callsign).toBe('W2BW');
   });
+  it('PATCH controlOpId can assign a regular MEMBER as control operator', async () => {
+    // A plain MEMBER is a valid Net Control target; only the user-exists check
+    // applies. The OFFICER acting role still gates who may *make* the change.
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-as-ctl-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'Plain Member', callsign: 'KB0PCM',
+    });
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ controlOpId: m.body.id });
+    expect(patch.status).toBe(200);
+    expect(patch.body.controlOpId).toBe(m.body.id);
+    expect(patch.body.controlOp.callsign).toBe('KB0PCM');
+  });
   it('rejects controlOpId pointing at a non-existent user', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)

@@ -365,7 +365,7 @@ export function RunNetPage() {
           </div>
         )}
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {user && session.controlOpId !== user.id && (
+          {user && canManageControl && session.controlOpId !== user.id && !session.endedAt && (
             <Button
               variant="secondary"
               onClick={async () => {

@@ -47,17 +47,24 @@ describe('users', () => {
     expect(res.body[0]).toHaveProperty('name');
   });
 
-  it('GET /api/users/control-candidates lists OFFICER+ for officers, forbidden for members', async () => {
+  it('GET /api/users/control-candidates is forbidden for members', async () => {
     const forbidden = await request(app).get('/api/users/control-candidates').set('Cookie', member);
     expect(forbidden.status).toBe(403);
+  });
+
+  it('GET /api/users/control-candidates includes regular MEMBERs (any member can be Net Control)', async () => {
+    // KB0BOB is a plain MEMBER; the picker must still list them so a club can
+    // hand control to a regular member. This is the bug the broadened list fixes.
     const ok = await request(app).get('/api/users/control-candidates').set('Cookie', admin);
     expect(ok.status).toBe(200);
     expect(Array.isArray(ok.body)).toBe(true);
-    // Admin (W1AW) is OFFICER+; every entry must carry an id and an elevated role.
     expect(ok.body.some((u: { callsign: string }) => u.callsign === 'W1AW')).toBe(true);
+    expect(ok.body.some((u: { callsign: string }) => u.callsign === 'KB0BOB')).toBe(true);
     for (const u of ok.body) {
       expect(u).toHaveProperty('id');
-      expect(['OFFICER', 'ADMIN']).toContain(u.role);
+      expect(u).toHaveProperty('callsign');
+      expect(u).toHaveProperty('name');
+      expect(['MEMBER', 'OFFICER', 'ADMIN']).toContain(u.role);
     }
   });
 
