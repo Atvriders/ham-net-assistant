@@ -144,3 +144,118 @@ describe('session messages', () => {
     expect(get.body[1].body).toBe('second');
   });
 });
+
+describe('session messages 24h backfill', () => {
+  // Each test in this block builds its own world (extra repeater/net/sessions)
+  // so it stays independent of the outer suite's shared fixtures.
+  it('returns recent messages from other sessions on the same Net but not older ones, and excludes other-Net or soft-deleted sessions', async () => {
+    const current = await prisma.netSession.findUniqueOrThrow({ where: { id: sessionId } });
+
+    // Same-Net sibling session, already ended (created directly to bypass the
+    // "one session per net per day" guard on POST /nets/:id/sessions).
+    const sibling = await prisma.netSession.create({
+      data: {
+        netId: current.netId,
+        startedAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
+        endedAt: new Date(Date.now() - 7 * 60 * 60 * 1000),
+      },
+    });
+
+    // Different Net.
+    const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'R2-backfill', frequency: 147.0, offsetKhz: -600, mode: 'FM' });
+    const otherNet = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Other Net BF', repeaterId: r2.body.id, dayOfWeek: 4,
+      startLocal: '20:00', timezone: 'America/Chicago',
+    });
+    const otherSession = await prisma.netSession.create({
+      data: {
+        netId: otherNet.body.id,
+        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        endedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      },
+    });
+
+    // Same-Net but soft-deleted.
+    const deletedSibling = await prisma.netSession.create({
+      data: {
+        netId: current.netId,
+        startedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+        endedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        deletedAt: new Date(),
+      },
+    });
+
+    // Seed messages:
+    //   - recent same-Net sibling (within 24h)  -> included
+    //   - old same-Net sibling (> 24h)         -> excluded
+    //   - other Net within 24h                 -> excluded
+    //   - soft-deleted same-Net within 24h     -> excluded
+    //   - current session                      -> included
+    const recent = await prisma.sessionMessage.create({
+      data: {
+        sessionId: sibling.id,
+        callsign: 'KB0BOB',
+        nameAtMessage: 'Bob',
+        body: 'recent sibling',
+        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      },
+    });
+    await prisma.sessionMessage.create({
+      data: {
+        sessionId: sibling.id,
+        callsign: 'KB0BOB',
+        nameAtMessage: 'Bob',
+        body: 'ancient sibling',
+        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      },
+    });
+    await prisma.sessionMessage.create({
+      data: {
+        sessionId: otherSession.id,
+        callsign: 'KC0CAR',
+        nameAtMessage: 'Cara',
+        body: 'other net chatter',
+        createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+      },
+    });
+    await prisma.sessionMessage.create({
+      data: {
+        sessionId: deletedSibling.id,
+        callsign: 'KC0CAR',
+        nameAtMessage: 'Cara',
+        body: 'deleted sibling chatter',
+        createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+      },
+    });
+    await request(app).post(`/api/sessions/${sessionId}/messages`)
+      .set('Cookie', member).send({ body: 'live one' });
+
+    const get = await request(app).get(`/api/sessions/${sessionId}/messages`)
+      .set('Cookie', member);
+    expect(get.status).toBe(200);
+    const bodies = get.body.map((m: { body: string }) => m.body);
+    expect(bodies).toContain('recent sibling');
+    expect(bodies).toContain('live one');
+    expect(bodies).not.toContain('ancient sibling');
+    expect(bodies).not.toContain('other net chatter');
+    expect(bodies).not.toContain('deleted sibling chatter');
+
+    // Order ascending by createdAt: recent sibling (2h ago) precedes live one.
+    const recentIdx = bodies.indexOf('recent sibling');
+    const liveIdx = bodies.indexOf('live one');
+    expect(recentIdx).toBeLessThan(liveIdx);
+
+    // Each row carries its sessionId so the client can tell apart backfill.
+    const recentRow = get.body.find((m: { id: string }) => m.id === recent.id);
+    expect(recentRow.sessionId).toBe(sibling.id);
+    const liveRow = get.body.find((m: { body: string }) => m.body === 'live one');
+    expect(liveRow.sessionId).toBe(sessionId);
+  });
+
+  it('GET on a non-existent session returns 404', async () => {
+    const res = await request(app).get('/api/sessions/no-such-id/messages')
+      .set('Cookie', member);
+    expect(res.status).toBe(404);
+  });
+});

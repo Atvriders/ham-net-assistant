@@ -45,10 +45,26 @@ export function ChatBox({ sessionId }: Props) {
     return () => { cancelled = true; };
   }, []);
 
+  // Jump to the bottom of the most recent message whenever the message count
+  // changes — this covers initial mount (so the panel opens already scrolled
+  // down through any 24h backfill rows) and any new arrivals.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, sessionId]);
+
+  // Identify where the backfill (other sessions, last 24h) ends and the
+  // current session begins, so we can render a subtle "— net started —"
+  // divider between them. If the current session has no messages yet,
+  // `firstCurrentIdx` is -1 — treat that as "all loaded rows are backfill"
+  // and render the divider at the end of the list.
+  const firstCurrentIdxRaw = messages.findIndex((m) => m.sessionId === sessionId);
+  const backfillCount = firstCurrentIdxRaw < 0
+    ? messages.filter((m) => m.sessionId !== sessionId).length
+    : firstCurrentIdxRaw;
+  const hasBackfill = backfillCount > 0;
+  const dividerAtIdx = firstCurrentIdxRaw < 0 ? messages.length : firstCurrentIdxRaw;
 
   async function send() {
     const body = text.trim();
@@ -152,7 +168,21 @@ export function ChatBox({ sessionId }: Props) {
             No messages yet.
           </div>
         )}
-        {messages.map((m) => {
+        {hasBackfill && (
+          <div
+            style={{
+              fontSize: 11,
+              opacity: 0.65,
+              textAlign: 'center',
+              padding: '2px 0',
+              alignSelf: 'stretch',
+            }}
+          >
+            Recent (last 24h)
+          </div>
+        )}
+        {messages.map((m, idx) => {
+          const dividerHere = hasBackfill && idx === dividerAtIdx;
           const mine = user && m.userId === user.id;
           const recent = Date.now() - new Date(m.createdAt).getTime() < 5 * 60 * 1000;
           const canDelete =
@@ -160,9 +190,27 @@ export function ChatBox({ sessionId }: Props) {
             (mine && recent);
           const reactions = m.reactions ?? [];
           const grouped = groupReactions(reactions);
+          const isBackfill = m.sessionId !== sessionId;
           return (
+            <React.Fragment key={m.id}>
+              {dividerHere && (
+                <div
+                  data-testid="net-started-divider"
+                  style={{
+                    fontSize: 11,
+                    opacity: 0.7,
+                    textAlign: 'center',
+                    padding: '4px 0',
+                    margin: '4px 0',
+                    borderTop: '1px solid var(--color-border)',
+                    color: 'var(--color-fg)',
+                    alignSelf: 'stretch',
+                  }}
+                >
+                  — net started —
+                </div>
+              )}
             <div
-              key={m.id}
               style={{
                 alignSelf: mine ? 'flex-end' : 'flex-start',
                 maxWidth: '85%',
@@ -171,6 +219,7 @@ export function ChatBox({ sessionId }: Props) {
                 border: '1px solid var(--color-border)',
                 borderRadius: 8,
                 padding: '6px 10px',
+                opacity: isBackfill ? 0.75 : 1,
               }}
             >
               <div style={{ fontSize: 11, opacity: 0.8 }}>
@@ -287,8 +336,26 @@ export function ChatBox({ sessionId }: Props) {
                 )}
               </div>
             </div>
+            </React.Fragment>
           );
         })}
+        {hasBackfill && dividerAtIdx === messages.length && (
+          <div
+            data-testid="net-started-divider"
+            style={{
+              fontSize: 11,
+              opacity: 0.7,
+              textAlign: 'center',
+              padding: '4px 0',
+              margin: '4px 0',
+              borderTop: '1px solid var(--color-border)',
+              color: 'var(--color-fg)',
+              alignSelf: 'stretch',
+            }}
+          >
+            — net started —
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <textarea

@@ -47,12 +47,35 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   const flat = Router();
 
   // GET /api/sessions/:sessionId/messages
+  //
+  // Returns the current session's messages plus a 24h backfill of messages
+  // from any other sessions on the same Net. This lets the Run Net chat panel
+  // open already populated with the tail end of the previous session(s) so
+  // participants have context when a fresh net starts. Soft-deleted sessions
+  // are excluded from the backfill. Rows are returned ascending by createdAt
+  // and each row includes its sessionId so the client can distinguish current-
+  // session messages from the backfill.
   nested.get('/', requireAuth, asyncHandler(async (req, res) => {
     const { sessionId } = req.params as { sessionId: string };
+    const session = await prisma.netSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, netId: true },
+    });
+    if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const rows = await prisma.sessionMessage.findMany({
-      where: { sessionId },
+      where: {
+        OR: [
+          { sessionId },
+          {
+            sessionId: { not: sessionId },
+            session: { netId: session.netId, deletedAt: null },
+            createdAt: { gte: cutoff },
+          },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
-      take: 200,
+      take: 400,
       include: {
         reactions: {
           select: {
