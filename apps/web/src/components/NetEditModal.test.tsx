@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { NetEditModal, netToInput } from './NetEditModal.js';
+import { NetEditModal, netToInput, emptyNetInput } from './NetEditModal.js';
 import type { NetWithRepeater } from './NetEditModal.js';
 
 const repeaters = [
@@ -209,6 +209,10 @@ describe('NetEditModal', () => {
     await waitFor(() => expect(patched.length).toBeGreaterThan(0));
     const saved = (patched[0] as { scriptMd: string }).scriptMd;
     expect(saved).toContain('**hello**');
+  });
+
+  it('defaults new nets to reminders OFF (emptyNetInput.reminderMinutes === [])', () => {
+    expect(emptyNetInput.reminderMinutes).toEqual([]);
   });
 
   it('shows the existing reminderMinutes as chips for a weekly net', async () => {

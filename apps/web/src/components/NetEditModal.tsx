@@ -49,7 +49,9 @@ export const emptyNetInput: NetInput = {
   theme: '',
   scriptMd: '',
   scriptCategory: 'general',
-  reminderMinutes: [...DEFAULT_REMINDER_MINUTES],
+  // New nets start with reminders OFF; officers opt in from the edit form
+  // or the centralized Reminder Settings panel.
+  reminderMinutes: [],
   active: true,
   linkedRepeaterIds: [],
 };
