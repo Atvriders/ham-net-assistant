@@ -9,3 +9,4 @@ export * from './user.js';
 export * from './presence.js';
 export * from './topic.js';
 export * from './message.js';
+export * from './script.js';

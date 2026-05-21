@@ -25,6 +25,7 @@ model User {
   suggestions        TopicSuggestion[] @relation("TopicCreator")
   messages           SessionMessage[] @relation("MessageAuthor")
   reactions          SessionMessageReaction[] @relation("ReactionAuthor")
+  scripts            NetScript[] @relation("ScriptAuthor")
 
   @@index([callsign])
 }
@@ -33,6 +34,26 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// Reusable script in the saved-script library. Officers can pick from these
+/// in NetEditModal instead of pasting the same boilerplate into every net.
+/// Soft-deleted via `deletedAt` so picks-by-id from older nets degrade safely.
+model NetScript {
+  id          String   @id @default(cuid())
+  title       String
+  /// 'weekly' | 'general' | 'impromptu' — mirrors Net.scriptCategory
+  category    String   @default("general")
+  /// Markdown body, capped at 20000 chars to match Net.scriptMd
+  body        String
+  createdById String?
+  createdBy   User?    @relation("ScriptAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt])
+  @@index([category])
 }
 
 model TopicSuggestion {

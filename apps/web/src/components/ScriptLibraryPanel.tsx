@@ -1,0 +1,213 @@
+import React, { useEffect, useState } from 'react';
+import type { NetScript, ScriptCategory } from '@hna/shared';
+import { apiFetch, ApiErrorException } from '../api/client.js';
+import { useAuth } from '../auth/AuthProvider.js';
+import { Card } from './ui/Card.js';
+import { Button } from './ui/Button.js';
+import { Input } from './ui/Input.js';
+import { Modal } from './ui/Modal.js';
+import { ScriptEditor } from './ScriptEditor.js';
+
+const CATEGORIES: ScriptCategory[] = ['weekly', 'general', 'impromptu'];
+
+interface EditState {
+  id: string | null; // null = creating
+  title: string;
+  category: ScriptCategory;
+  body: string;
+}
+
+/**
+ * Officer-only panel listing saved scripts in the reusable script library
+ * with minimal CRUD: rename / recategorize / edit body / delete (soft).
+ * Mounted from AdminPage so officers and admins manage the library from one
+ * place; renders nothing for members.
+ */
+export function ScriptLibraryPanel() {
+  const { user } = useAuth();
+  const canEdit = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  const [scripts, setScripts] = useState<NetScript[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [edit, setEdit] = useState<EditState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function refresh(): Promise<void> {
+    try {
+      const rows = await apiFetch<NetScript[]>('/scripts');
+      setScripts(rows);
+    } catch (e) {
+      setError(e instanceof ApiErrorException ? e.payload.message : (e as Error).message);
+    }
+  }
+
+  useEffect(() => {
+    if (!canEdit) return;
+    void refresh();
+  }, [canEdit]);
+
+  if (!canEdit) return null;
+
+  function startCreate(): void {
+    setSaveError(null);
+    setEdit({ id: null, title: '', category: 'general', body: '' });
+  }
+
+  function startEdit(s: NetScript): void {
+    setSaveError(null);
+    setEdit({ id: s.id, title: s.title, category: s.category, body: s.body });
+  }
+
+  async function saveEdit(): Promise<void> {
+    if (!edit) return;
+    const title = edit.title.trim();
+    if (!title) {
+      setSaveError('Title is required.');
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (edit.id) {
+        await apiFetch(`/scripts/${edit.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title, category: edit.category, body: edit.body }),
+        });
+      } else {
+        await apiFetch('/scripts', {
+          method: 'POST',
+          body: JSON.stringify({ title, category: edit.category, body: edit.body }),
+        });
+      }
+      setEdit(null);
+      await refresh();
+    } catch (e) {
+      setSaveError(e instanceof ApiErrorException ? e.payload.message : (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(s: NetScript): Promise<void> {
+    if (!window.confirm(`Delete saved script "${s.title}"? This cannot be undone from the UI.`)) {
+      return;
+    }
+    try {
+      await apiFetch(`/scripts/${s.id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiErrorException ? e.payload.message : (e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <Card>
+        <h3>Script library</h3>
+        <p style={{ fontSize: 13, opacity: 0.8 }}>
+          Reusable scripts available to any net. When creating or editing a
+          net, officers can pick one from this library instead of pasting the
+          same boilerplate every time.
+        </p>
+        <div style={{ marginBottom: 12 }}>
+          <Button onClick={startCreate}>New script</Button>
+        </div>
+        {error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
+        {scripts === null && !error && <div style={{ fontSize: 13 }}>Loading…</div>}
+        {scripts !== null && scripts.length === 0 && (
+          <div style={{ fontSize: 13, opacity: 0.7, fontStyle: 'italic' }}>
+            No saved scripts yet.
+          </div>
+        )}
+        {scripts !== null && scripts.length > 0 && (
+          <div className="hna-table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th align="left">Title</th>
+                  <th align="left">Category</th>
+                  <th align="left">Author</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {scripts.map((s) => (
+                  <tr key={s.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <td>{s.title}</td>
+                    <td>{s.category}</td>
+                    <td>{s.createdByCallsign ?? '—'}</td>
+                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Button variant="secondary" onClick={() => startEdit(s)}>
+                        Edit
+                      </Button>
+                      <Button variant="danger" onClick={() => void remove(s)}>
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Modal open={edit !== null} onClose={() => setEdit(null)} size="wide">
+        {edit && (
+          <div>
+            <h2 style={{ marginTop: 0 }}>
+              {edit.id ? 'Edit saved script' : 'New saved script'}
+            </h2>
+            <div className="hna-form">
+              <div className="hna-field">
+                <label>Title</label>
+                <Input
+                  value={edit.title}
+                  onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+                  placeholder="e.g. Weekly tech net — opening"
+                />
+              </div>
+              <div className="hna-field">
+                <label>Category</label>
+                <select
+                  className="hna-input"
+                  value={edit.category}
+                  onChange={(e) =>
+                    setEdit({ ...edit, category: e.target.value as ScriptCategory })
+                  }
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="hna-field">
+                <label>Body</label>
+                <ScriptEditor
+                  value={edit.body}
+                  onChange={(md) => setEdit({ ...edit, body: md })}
+                />
+              </div>
+            </div>
+            {saveError && (
+              <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{saveError}</div>
+            )}
+            <div className="hna-modal-actions">
+              <Button onClick={() => void saveEdit()} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setEdit(null)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}

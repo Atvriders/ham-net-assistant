@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import type { Net, NetInput, Repeater, ScriptCategory } from '@hna/shared';
+import type { Net, NetInput, NetScript, Repeater, ScriptCategory } from '@hna/shared';
 import { DEFAULT_REMINDER_MINUTES } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
 import { ScriptImportModal } from './ScriptImportModal.js';
+import { ScriptLibraryPicker } from './ScriptLibraryPicker.js';
 import { ScriptEditor } from './ScriptEditor.js';
 import { dayName, to12h, to24h } from '../lib/time.js';
 
@@ -95,11 +96,18 @@ export function NetEditModal({
   const [data, setData] = useState<NetInput>(initial);
   const [repeaters, setRepeaters] = useState<Repeater[]>(repeatersProp ?? []);
   const [scriptImportOpen, setScriptImportOpen] = useState(false);
+  const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
+  const [loadedScriptTitle, setLoadedScriptTitle] = useState<string | null>(null);
+  const [saveScriptStatus, setSaveScriptStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Re-seed the form whenever the modal (re)opens for a different net.
   useEffect(() => {
-    if (open) setData(initial);
+    if (open) {
+      setData(initial);
+      setLoadedScriptTitle(null);
+      setSaveScriptStatus(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, netId]);
 
@@ -138,6 +146,57 @@ export function NetEditModal({
       onClose();
     } finally {
       setSaving(false);
+    }
+  }
+
+  function applySavedScript(script: NetScript): void {
+    const current = (data.scriptMd ?? '').trim();
+    if (current.length > 0) {
+      const ok = window.confirm(
+        `Replace the current script with "${script.title}"? This cannot be undone.`,
+      );
+      if (!ok) return;
+    }
+    setData({
+      ...data,
+      scriptMd: script.body,
+      scriptCategory: script.category,
+    });
+    setLoadedScriptTitle(script.title);
+    setScriptPickerOpen(false);
+  }
+
+  async function saveAsScript(): Promise<void> {
+    const body = data.scriptMd ?? '';
+    if (!body.trim()) {
+      setSaveScriptStatus('Script is empty — nothing to save.');
+      return;
+    }
+    const defaultTitle = `${(data.name || 'Untitled').trim()} script`;
+    // eslint-disable-next-line no-alert
+    const titleRaw = window.prompt('Save this script as…', defaultTitle);
+    if (titleRaw === null) return;
+    const title = titleRaw.trim();
+    if (!title) {
+      setSaveScriptStatus('A title is required.');
+      return;
+    }
+    setSaveScriptStatus('Saving…');
+    try {
+      const created = await apiFetch<NetScript>('/scripts', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          category: data.scriptCategory ?? 'general',
+          body,
+        }),
+      });
+      setLoadedScriptTitle(created.title);
+      setSaveScriptStatus(`Saved as "${created.title}".`);
+    } catch (e) {
+      const msg =
+        e instanceof ApiErrorException ? e.payload.message : (e as Error).message;
+      setSaveScriptStatus(`Save failed: ${msg}`);
     }
   }
 
@@ -391,28 +450,54 @@ export function NetEditModal({
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'baseline',
+                  gap: 8,
+                  flexWrap: 'wrap',
                 }}
               >
                 <label>Script</label>
-                <button
-                  type="button"
-                  onClick={() => setScriptImportOpen(true)}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setScriptPickerOpen(true)}
+                    style={scriptToolbarBtnStyle}
+                  >
+                    Use saved script…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveAsScript()}
+                    style={scriptToolbarBtnStyle}
+                  >
+                    Save as saved script
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScriptImportOpen(true)}
+                    style={scriptToolbarBtnStyle}
+                  >
+                    Import…
+                  </button>
+                </div>
+              </div>
+              {(loadedScriptTitle || saveScriptStatus) && (
+                <div
                   style={{
-                    background: 'transparent',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 4,
-                    padding: '2px 8px',
-                    cursor: 'pointer',
-                    color: 'var(--color-fg)',
                     fontSize: 12,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                    fontWeight: 600,
+                    opacity: 0.75,
+                    margin: '4px 0 6px',
                   }}
                 >
-                  Import…
-                </button>
-              </div>
+                  {loadedScriptTitle && (
+                    <span data-testid="loaded-script-title">
+                      Loaded from saved script: <strong>{loadedScriptTitle}</strong>
+                    </span>
+                  )}
+                  {loadedScriptTitle && saveScriptStatus && <span> · </span>}
+                  {saveScriptStatus && (
+                    <span data-testid="save-script-status">{saveScriptStatus}</span>
+                  )}
+                </div>
+              )}
               <ScriptEditor
                 value={data.scriptMd ?? ''}
                 onChange={(md) => setData({ ...data, scriptMd: md })}
@@ -443,9 +528,28 @@ export function NetEditModal({
           setData({ ...data, scriptMd: next });
         }}
       />
+      <ScriptLibraryPicker
+        open={scriptPickerOpen}
+        onClose={() => setScriptPickerOpen(false)}
+        onPick={applySavedScript}
+        preferredCategory={data.scriptCategory ?? 'general'}
+      />
     </>
   );
 }
+
+const scriptToolbarBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--color-border)',
+  borderRadius: 4,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  color: 'var(--color-fg)',
+  fontSize: 12,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  fontWeight: 600,
+};
 
 interface ReminderEditorProps {
   value: readonly number[];

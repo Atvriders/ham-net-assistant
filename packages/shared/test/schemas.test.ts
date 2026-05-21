@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   Callsign, RegisterInput, RepeaterInput, NetInput, CheckInInput,
   ReminderMinutes, parseReminderMinutes, DEFAULT_REMINDER_MINUTES,
+  NetScript, NetScriptInput,
 } from '../src/index.js';
 
 describe('Callsign', () => {
@@ -169,5 +170,80 @@ describe('parseReminderMinutes', () => {
   });
   it('matches the legacy 4h+30m default', () => {
     expect([...DEFAULT_REMINDER_MINUTES]).toEqual([240, 30]);
+  });
+});
+
+describe('NetScriptInput', () => {
+  it('accepts a minimal valid payload', () => {
+    const out = NetScriptInput.parse({ title: 'Hello', body: 'a body' });
+    expect(out.title).toBe('Hello');
+    expect(out.body).toBe('a body');
+    expect(out.category).toBeUndefined();
+  });
+  it('trims and accepts a 1-char title', () => {
+    expect(NetScriptInput.parse({ title: '  x  ', body: '' }).title).toBe('x');
+  });
+  it('rejects an empty title', () => {
+    expect(() => NetScriptInput.parse({ title: '', body: '' })).toThrow();
+  });
+  it('rejects whitespace-only title (post-trim is empty)', () => {
+    expect(() => NetScriptInput.parse({ title: '   ', body: '' })).toThrow();
+  });
+  it('rejects a title over 200 chars', () => {
+    expect(() =>
+      NetScriptInput.parse({ title: 'x'.repeat(201), body: '' }),
+    ).toThrow();
+  });
+  it('rejects a body over 20000 chars', () => {
+    expect(() =>
+      NetScriptInput.parse({ title: 'ok', body: 'x'.repeat(20001) }),
+    ).toThrow();
+  });
+  it('accepts all valid categories', () => {
+    expect(
+      NetScriptInput.parse({ title: 'a', body: '', category: 'weekly' }).category,
+    ).toBe('weekly');
+    expect(
+      NetScriptInput.parse({ title: 'a', body: '', category: 'impromptu' })
+        .category,
+    ).toBe('impromptu');
+    expect(
+      NetScriptInput.parse({ title: 'a', body: '', category: 'general' }).category,
+    ).toBe('general');
+  });
+  it('rejects an unknown category', () => {
+    expect(() =>
+      NetScriptInput.parse({ title: 'a', body: '', category: 'mystery' }),
+    ).toThrow();
+  });
+});
+
+describe('NetScript', () => {
+  it('round-trips a fully-populated row', () => {
+    const row = {
+      id: 'cuid1',
+      title: 'Opening',
+      category: 'weekly' as const,
+      body: '# hi',
+      createdById: 'u1',
+      createdByCallsign: 'W1AW',
+      createdByName: 'Alice',
+      createdAt: '2026-05-21T12:00:00.000Z',
+      updatedAt: '2026-05-21T12:00:00.000Z',
+    };
+    const parsed = NetScript.parse(row);
+    expect(parsed).toEqual(row);
+  });
+  it('accepts a null author (createdBy SetNull)', () => {
+    const parsed = NetScript.parse({
+      id: 'x',
+      title: 't',
+      category: 'general',
+      body: '',
+      createdById: null,
+      createdAt: '2026-05-21T12:00:00.000Z',
+      updatedAt: '2026-05-21T12:00:00.000Z',
+    });
+    expect(parsed.createdById).toBeNull();
   });
 });
