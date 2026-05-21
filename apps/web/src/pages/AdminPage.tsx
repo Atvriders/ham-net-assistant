@@ -11,6 +11,7 @@ import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { usePresence } from '../lib/usePresence.js';
 import { OnlineDot } from '../components/OnlineDot.js';
 import { LogImportModal } from '../components/LogImportModal.js';
+import { ReminderSettingsPanel } from '../components/ReminderSettingsPanel.js';
 
 interface TrashSession {
   id: string;
@@ -313,6 +314,8 @@ export function AdminPage() {
         </div>
       </Card>
       <div style={{ height: 16 }} />
+      <ReminderSettingsPanel />
+      <div style={{ height: 16 }} />
       <Card>
         <h3>Tools</h3>
         <p style={{ fontSize: 13, opacity: 0.8 }}>
@@ -398,10 +401,6 @@ export function AdminPage() {
                 disabled={discordCfg.channelIdFromEnv}
                 placeholder="123456789012345678"
               />
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>
-              Reminder lead times are now configured per-net on the{' '}
-              <strong>Nets</strong> page.
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Button onClick={saveDiscord} disabled={discordSaving}>Save</Button>
