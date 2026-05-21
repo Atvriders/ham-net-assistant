@@ -58,7 +58,8 @@ describe('GET /api/discord/config', () => {
   it('admin sees defaults when nothing is configured', async () => {
     const res = await request(app).get('/api/discord/config').set('Cookie', admin);
     expect(res.status).toBe(200);
-    expect(res.body.reminderTimesOfDay).toEqual(['16:00', '19:30']);
+    // Reminder lead times moved to per-net config; no global key here anymore.
+    expect(res.body.reminderTimesOfDay).toBeUndefined();
     expect(res.body.tokenSet).toBe(false);
     expect(res.body.channelId).toBe('');
     expect(res.body.enabled).toBe(false);
@@ -72,17 +73,6 @@ describe('PATCH /api/discord/config', () => {
       .set('Cookie', member)
       .send({ enabled: true });
     expect(res.status).toBe(403);
-  });
-
-  it('admin can update reminder times; sorted ascending and deduped', async () => {
-    const res = await request(app)
-      .patch('/api/discord/config')
-      .set('Cookie', admin)
-      .send({ reminderTimesOfDay: ['19:30', '07:00', '16:00', '16:00'] });
-    expect(res.status).toBe(204);
-
-    const got = await request(app).get('/api/discord/config').set('Cookie', admin);
-    expect(got.body.reminderTimesOfDay).toEqual(['07:00', '16:00', '19:30']);
   });
 
   it('admin can set channel id and enabled flag', async () => {
@@ -112,21 +102,13 @@ describe('PATCH /api/discord/config', () => {
     expect(got.body.tokenSet).toBe(false);
   });
 
-  it('rejects bad time string values', async () => {
+  it('rejects unknown fields (reminderTimesOfDay is no longer accepted)', async () => {
     const res = await request(app)
       .patch('/api/discord/config')
       .set('Cookie', admin)
-      .send({ reminderTimesOfDay: ['25:99'] });
+      .send({ reminderTimesOfDay: ['16:00'] });
     expect(res.status).toBe(400);
     expect(res.body.error?.code).toBe('VALIDATION');
-  });
-
-  it('empty times array is valid (no-op for reader)', async () => {
-    const res = await request(app)
-      .patch('/api/discord/config')
-      .set('Cookie', admin)
-      .send({ reminderTimesOfDay: [] });
-    expect(res.status).toBe(204);
   });
 });
 

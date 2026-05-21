@@ -20,6 +20,7 @@ const net: NetWithRepeater = {
   theme: null,
   scriptMd: 'Welcome to the net.',
   scriptCategory: 'weekly',
+  reminderMinutes: [240, 30],
   active: true,
   repeater: repeaters[0] as never,
   links: [],
@@ -121,5 +122,96 @@ describe('NetEditModal', () => {
     expect((patched[0] as { scriptMd: string }).scriptMd).toBe(
       'Updated script body.',
     );
+  });
+
+  it('shows the existing reminderMinutes as chips for a weekly net', async () => {
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const section = (await screen.findByText('Reminders'))
+      .closest('.hna-field')! as HTMLElement;
+    // Active preset chips (24h/4h/1h/30m/15m) reflect [240, 30].
+    expect(section.textContent).toContain('4h');
+    expect(section.textContent).toContain('30m');
+  });
+
+  it('hides the reminders section for impromptu nets', async () => {
+    const impromptu = { ...net, kind: 'impromptu' as const };
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(impromptu as never)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByText('Edit net');
+    expect(screen.queryByText('Reminders')).not.toBeInTheDocument();
+  });
+
+  it('PATCHes with the updated reminderMinutes when a preset chip is toggled off', async () => {
+    const patched: unknown[] = [];
+    vi.stubGlobal('fetch', mockFetch((b) => patched.push(b)));
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const section = (await screen.findByText('Reminders'))
+      .closest('.hna-field')! as HTMLElement;
+    // Click the "4h" preset chip to toggle it off (net starts with [240,30]).
+    const chip = Array.from(section.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === '4h',
+    );
+    expect(chip).toBeDefined();
+    await userEvent.click(chip!);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patched.length).toBeGreaterThan(0));
+    expect((patched[0] as { reminderMinutes: number[] }).reminderMinutes).toEqual([30]);
+  });
+
+  it('PATCHes with an additional reminder when a custom value is added', async () => {
+    const patched: unknown[] = [];
+    vi.stubGlobal('fetch', mockFetch((b) => patched.push(b)));
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const section = (await screen.findByText('Reminders'))
+      .closest('.hna-field')! as HTMLElement;
+    const customInput = section.querySelector(
+      'input[aria-label="Custom reminder minutes"]',
+    ) as HTMLInputElement;
+    expect(customInput).toBeTruthy();
+    await userEvent.type(customInput, '5');
+    const addBtn = Array.from(section.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Add',
+    )!;
+    await userEvent.click(addBtn);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patched.length).toBeGreaterThan(0));
+    expect((patched[0] as { reminderMinutes: number[] }).reminderMinutes).toEqual([
+      240, 30, 5,
+    ]);
   });
 });

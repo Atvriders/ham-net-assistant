@@ -13,6 +13,7 @@ import {
 } from '../components/NetEditModal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, formatStartLocal12h } from '../lib/time.js';
+import { formatReminderMinutes } from '../lib/reminders.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -162,9 +163,14 @@ export function NetsPage() {
                 {n.kind === 'impromptu' ? (
                   <div style={{ color: 'var(--color-text-muted)' }}>Ad-hoc — no fixed schedule</div>
                 ) : (
-                  <div>
-                    {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
-                  </div>
+                  <>
+                    <div>
+                      {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                      Reminders: {formatReminderMinutes(n.reminderMinutes)}
+                    </div>
+                  </>
                 )}
                 <div>Repeater: {n.repeater.name}</div>
                 {n.links && n.links.length > 0 && (

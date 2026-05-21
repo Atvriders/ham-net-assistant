@@ -1,34 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
+import { parseReminderMinutes } from '@hna/shared';
 import { postToDiscord } from './client.js';
-import { getSetting } from '../lib/settings.js';
-
-function defaultTimes(): string[] {
-  return ['16:00', '19:30'];
-}
-
-async function getReminderTimes(prisma: PrismaClient): Promise<string[]> {
-  try {
-    const raw = await getSetting(prisma, 'discord.reminderTimesOfDay');
-    if (!raw) return defaultTimes();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return defaultTimes();
-    const valid = parsed
-      .map((s: unknown) => String(s))
-      .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
-    return valid.length > 0 ? valid : defaultTimes();
-  } catch {
-    return defaultTimes();
-  }
-}
-
-function format12h(hhmm: string): string {
-  const [hStr, mStr] = hhmm.split(':');
-  const h24 = Number(hStr);
-  const m = Number(mStr);
-  const meridiem = h24 >= 12 ? 'PM' : 'AM';
-  const h12 = ((h24 + 11) % 12) + 1;
-  return `${h12}:${String(m).padStart(2, '0')} ${meridiem}`;
-}
 
 /**
  * Return the wall-clock components (year, month, day, hour, minute, weekday)
@@ -113,6 +85,28 @@ export function nextOccurrence(
   return utc;
 }
 
+/**
+ * Format a lead-time-in-minutes for human-readable Discord messages.
+ * 60 -> "1 hour", 90 -> "1.5 hours", 30 -> "30 minutes", 240 -> "4 hours".
+ */
+function formatLeadMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  const hours = minutes / 60;
+  if (Number.isInteger(hours)) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  return `${hours.toFixed(1)} hours`;
+}
+
+function formatStartLocal12h(hhmm: string): string {
+  const [hStr, mStr] = hhmm.split(':');
+  const h24 = Number(hStr);
+  const m = Number(mStr);
+  const meridiem = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = ((h24 + 11) % 12) + 1;
+  return `${h12}:${String(m).padStart(2, '0')} ${meridiem}`;
+}
+
 export function startReminderScheduler(prisma: PrismaClient): () => void {
   const handle = setInterval(() => { void tick(prisma); }, 60 * 1000);
   // tick once immediately at startup
@@ -122,8 +116,6 @@ export function startReminderScheduler(prisma: PrismaClient): () => void {
 
 async function tick(prisma: PrismaClient): Promise<void> {
   try {
-    const times = await getReminderTimes(prisma);
-    if (times.length === 0) return;
     // Impromptu nets have no meaningful schedule, so the reminder scheduler
     // must skip them — only weekly nets get reminder pings.
     const nets = await prisma.net.findMany({
@@ -132,41 +124,41 @@ async function tick(prisma: PrismaClient): Promise<void> {
     });
     const now = Date.now();
     for (const net of nets) {
+      // Per-net reminder lead times, in minutes-before-net-start.
+      // `null` / `[]` means "no reminders for this net".
+      const leadMinutes = parseReminderMinutes(net.reminderMinutes);
+      if (leadMinutes.length === 0) continue;
+
       const tz = net.timezone || 'UTC';
       if (!net.timezone) {
         // eslint-disable-next-line no-console
         console.warn(`[discord] net ${net.id} has no timezone; defaulting to UTC`);
       }
       const occurs = nextOccurrence(net.dayOfWeek, net.startLocal, tz, now);
-      // Compute reminder times on the same calendar day as `occurs` in the net's tz
-      const occursWall = wallClockIn(tz, occurs);
-      for (const t of times) {
-        const [hh, mm] = t.split(':').map(Number);
-        const reminderAt = instantFromWallClock(
-          tz,
-          occursWall.year, occursWall.month, occursWall.day,
-          hh!, mm!,
-        );
-        // Skip if reminder is at or after the net's actual start
+
+      for (const minutes of leadMinutes) {
+        const reminderAt = new Date(occurs.getTime() - minutes * 60_000);
+        // Skip if reminder is at or after the net's actual start. (positive
+        // lead times always satisfy this, but guard defensively.)
         if (reminderAt.getTime() >= occurs.getTime()) continue;
         // Fire window: ±60s of reminderAt
         if (reminderAt.getTime() < now - 60_000 || reminderAt.getTime() > now + 60_000) continue;
         const occurrenceKey = new Date(occurs);
         occurrenceKey.setSeconds(0, 0);
+        const kind = `m${minutes}`;
         const dedupe = await prisma.netReminder.findUnique({
-          where: { netId_occursAt_kind: { netId: net.id, occursAt: occurrenceKey, kind: t } },
+          where: { netId_occursAt_kind: { netId: net.id, occursAt: occurrenceKey, kind } },
         }).catch(() => null);
         if (dedupe) continue;
-        const human = format12h(t);
         const freq = net.repeater?.frequency != null ? ` on ${net.repeater.frequency.toFixed(3)} MHz` : '';
         const repeaterName = net.repeater?.name ? ` (${net.repeater.name})` : '';
-        const minutesUntil = Math.round((occurs.getTime() - reminderAt.getTime()) / 60000);
-        const lead = minutesUntil <= 60 ? 'Heads up' : 'Reminder';
-        const content = `**${lead}:** *${net.name}* starts at ${format12h(net.startLocal)}${freq}${repeaterName}. (${human} reminder)`;
+        const lead = minutes <= 60 ? 'Heads up' : 'Reminder';
+        const human = formatLeadMinutes(minutes);
+        const content = `**${lead}:** *${net.name}* starts at ${formatStartLocal12h(net.startLocal)}${freq}${repeaterName}. (${human} reminder)`;
         const result = await postToDiscord(prisma, content);
         if (result.ok) {
           await prisma.netReminder.create({
-            data: { netId: net.id, occursAt: occurrenceKey, kind: t },
+            data: { netId: net.id, occursAt: occurrenceKey, kind },
           }).catch(() => {/* ignore unique conflicts */});
         }
       }

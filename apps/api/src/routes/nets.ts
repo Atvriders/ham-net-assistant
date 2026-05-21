@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { NetInput } from '@hna/shared';
+import {
+  NetInput,
+  DEFAULT_REMINDER_MINUTES,
+  parseReminderMinutes,
+} from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
@@ -11,6 +15,35 @@ const netInclude = {
   repeater: true,
   links: { include: { repeater: true } },
 } as const;
+
+/**
+ * Hydrate the JSON-encoded `reminderMinutes` column on a net (or list of
+ * nets) into a `number[]` before returning to the client.
+ */
+function hydrateReminderMinutes<T extends { reminderMinutes?: string | null }>(
+  row: T,
+): Omit<T, 'reminderMinutes'> & { reminderMinutes: number[] } {
+  const { reminderMinutes, ...rest } = row;
+  return {
+    ...rest,
+    reminderMinutes: parseReminderMinutes(reminderMinutes),
+  } as Omit<T, 'reminderMinutes'> & { reminderMinutes: number[] };
+}
+
+function hydrateMany<T extends { reminderMinutes?: string | null }>(rows: T[]) {
+  return rows.map(hydrateReminderMinutes);
+}
+
+/**
+ * Serialize a parsed/zod-cleaned reminderMinutes value for storage. Returns
+ * the canonical JSON string, or `null` if the caller passed nothing (which
+ * the API translates to "leave default"; the DB column already has a default
+ * for fresh inserts via Prisma).
+ */
+function serializeReminderMinutes(value: number[] | undefined): string {
+  const arr = value ?? [...DEFAULT_REMINDER_MINUTES];
+  return JSON.stringify(arr);
+}
 
 function normalizeLinkedIds(
   linkedRepeaterIds: string[] | undefined,
@@ -69,7 +102,7 @@ export function netsRouter(prisma: PrismaClient): Router {
       include: netInclude,
     });
     redactScriptsForRole(list, req.user?.role);
-    res.json(list);
+    res.json(hydrateMany(list));
   }));
 
   // Must be registered before `/:id`-style routes.
@@ -83,7 +116,12 @@ export function netsRouter(prisma: PrismaClient): Router {
       orderBy: { startedAt: 'desc' },
     });
     redactScriptsForRole(sessions, req.user?.role);
-    res.json(sessions);
+    // Hydrate the embedded net's reminderMinutes for each session.
+    const out = sessions.map((s) => ({
+      ...s,
+      net: hydrateReminderMinutes(s.net),
+    }));
+    res.json(out);
   }));
 
   router.get('/:netId/active-session', requireAuth, asyncHandler(async (req, res) => {
@@ -98,7 +136,7 @@ export function netsRouter(prisma: PrismaClient): Router {
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'No active session for this net');
     redactScriptsForRole(s, req.user?.role);
-    res.json(s);
+    res.json({ ...s, net: hydrateReminderMinutes(s.net) });
   }));
 
   router.post('/', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
@@ -114,6 +152,7 @@ export function netsRouter(prisma: PrismaClient): Router {
           dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
           timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
           scriptCategory: body.scriptCategory ?? 'general',
+          reminderMinutes: serializeReminderMinutes(body.reminderMinutes),
           active: body.active ?? true,
         },
       });
@@ -124,7 +163,7 @@ export function netsRouter(prisma: PrismaClient): Router {
       }
       return tx.net.findUniqueOrThrow({ where: { id: net.id }, include: netInclude });
     });
-    res.status(201).json(created);
+    res.status(201).json(hydrateReminderMinutes(created));
   }));
 
   router.patch('/:id', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
@@ -140,6 +179,12 @@ export function netsRouter(prisma: PrismaClient): Router {
     const sched = schedulingFields(body);
     try {
       const updated = await prisma.$transaction(async (tx) => {
+        // Only touch reminderMinutes when the caller actually supplied it,
+        // so a PATCH that omits it leaves the stored value alone.
+        const reminderUpdate =
+          body.reminderMinutes !== undefined
+            ? { reminderMinutes: JSON.stringify(body.reminderMinutes) }
+            : {};
         await tx.net.update({
           where: { id: netId },
           data: {
@@ -148,6 +193,7 @@ export function netsRouter(prisma: PrismaClient): Router {
             dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
             timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
             scriptCategory: body.scriptCategory ?? 'general',
+            ...reminderUpdate,
             active: body.active ?? true,
           },
         });
@@ -161,7 +207,7 @@ export function netsRouter(prisma: PrismaClient): Router {
         }
         return tx.net.findUniqueOrThrow({ where: { id: netId }, include: netInclude });
       });
-      res.json(updated);
+      res.json(hydrateReminderMinutes(updated));
     } catch {
       throw new HttpError(404, 'NOT_FOUND', 'Net not found');
     }

@@ -9,7 +9,7 @@ import {
   applyDiscordConfig,
   sendTestMessage,
 } from '../discord/client.js';
-import { getSetting, setSetting } from '../lib/settings.js';
+import { setSetting } from '../lib/settings.js';
 
 const ConfigUpdateInput = z
   .object({
@@ -18,11 +18,6 @@ const ConfigUpdateInput = z
     // Token: sending null clears it. Sending a non-empty string sets it.
     // Omitting the field leaves it unchanged.
     token: z.string().max(200).nullable().optional(),
-    // Reminder times of day as 24h "HH:mm" strings; max 5 entries.
-    reminderTimesOfDay: z
-      .array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/))
-      .max(5)
-      .optional(),
   })
   .strict();
 
@@ -39,21 +34,6 @@ export function discordRouter(prisma: PrismaClient): Router {
   // Admin-only: read full config (token redacted to a marker if set).
   router.get('/config', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
     const cfg = await loadDiscordConfig(prisma);
-    const timesRaw = await getSetting(prisma, 'discord.reminderTimesOfDay');
-    let reminderTimesOfDay: string[] = ['16:00', '19:30'];
-    try {
-      if (timesRaw) {
-        const parsed = JSON.parse(timesRaw);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed
-            .map(String)
-            .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
-          if (filtered.length > 0) reminderTimesOfDay = filtered;
-        }
-      }
-    } catch {
-      /* fall through to defaults */
-    }
     res.json({
       enabled: cfg.enabled,
       channelId: cfg.channelId ?? '',
@@ -63,7 +43,6 @@ export function discordRouter(prisma: PrismaClient): Router {
       enabledFromEnv:
         process.env.DISCORD_ENABLED === 'true' ||
         process.env.DISCORD_ENABLED === 'false',
-      reminderTimesOfDay,
     });
   }));
 
@@ -85,16 +64,6 @@ export function discordRouter(prisma: PrismaClient): Router {
         } else {
           await setSetting(prisma, 'discord.token', body.token);
         }
-      }
-      if (body.reminderTimesOfDay !== undefined) {
-        // Sort ascending, dedupe.
-        const sorted = [...body.reminderTimesOfDay].sort();
-        const unique = Array.from(new Set(sorted));
-        await setSetting(
-          prisma,
-          'discord.reminderTimesOfDay',
-          JSON.stringify(unique),
-        );
       }
       // Re-apply config so token/channel changes take effect immediately.
       await applyDiscordConfig(prisma).catch(() => {

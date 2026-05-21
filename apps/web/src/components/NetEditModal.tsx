@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { Net, NetInput, Repeater, ScriptCategory } from '@hna/shared';
+import { DEFAULT_REMINDER_MINUTES } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
@@ -29,6 +30,9 @@ export function netToInput(n: NetWithRepeater): NetInput {
     theme: n.theme ?? null,
     scriptMd: n.scriptMd ?? null,
     scriptCategory: n.scriptCategory ?? 'general',
+    reminderMinutes: Array.isArray(n.reminderMinutes)
+      ? [...n.reminderMinutes]
+      : [...DEFAULT_REMINDER_MINUTES],
     active: n.active,
     linkedRepeaterIds: (n.links ?? []).map((l) => l.repeaterId),
   };
@@ -44,9 +48,19 @@ export const emptyNetInput: NetInput = {
   theme: '',
   scriptMd: '',
   scriptCategory: 'general',
+  reminderMinutes: [...DEFAULT_REMINDER_MINUTES],
   active: true,
   linkedRepeaterIds: [],
 };
+
+// Common preset reminder lead times offered as one-click chips.
+const REMINDER_PRESETS: { label: string; minutes: number }[] = [
+  { label: '24h', minutes: 1440 },
+  { label: '4h', minutes: 240 },
+  { label: '1h', minutes: 60 },
+  { label: '30m', minutes: 30 },
+  { label: '15m', minutes: 15 },
+];
 
 interface Props {
   /** Whether the modal is open. */
@@ -326,6 +340,22 @@ export function NetEditModal({
               </div>
             )}
 
+            {(data.kind ?? 'weekly') === 'weekly' && (
+              <div className="hna-field">
+                <label>Reminders</label>
+                <ReminderMinutesEditor
+                  value={data.reminderMinutes ?? []}
+                  onChange={(next) =>
+                    setData({ ...data, reminderMinutes: next })
+                  }
+                />
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+                  Discord pings to fire before the net starts. Leave empty for
+                  no reminders on this net.
+                </div>
+              </div>
+            )}
+
             <div className="hna-field">
               <label>Theme (this week&rsquo;s topic cue)</label>
               <Input
@@ -421,4 +451,155 @@ export function NetEditModal({
       />
     </>
   );
+}
+
+interface ReminderEditorProps {
+  value: readonly number[];
+  onChange: (next: number[]) => void;
+}
+
+/**
+ * Compact editor for a net's reminder lead times (minutes-before-start).
+ * Renders the current chips, lets the user toggle preset chips on/off, and
+ * provides a custom-minutes input for one-off values.
+ */
+function ReminderMinutesEditor({ value, onChange }: ReminderEditorProps) {
+  const [custom, setCustom] = useState('');
+  const sorted = [...value].sort((a, b) => b - a);
+
+  function remove(min: number): void {
+    onChange(value.filter((m) => m !== min));
+  }
+  function add(min: number): void {
+    if (!Number.isFinite(min) || min <= 0) return;
+    const floored = Math.floor(min);
+    if (value.includes(floored)) return;
+    if (value.length >= 10) return;
+    const next = [...value, floored].sort((a, b) => b - a);
+    onChange(next);
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div
+        aria-label="Current reminders"
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}
+      >
+        {sorted.length === 0 && (
+          <span style={{ fontSize: 12, opacity: 0.7, fontStyle: 'italic' }}>
+            No reminders for this net.
+          </span>
+        )}
+        {sorted.map((m) => (
+          <span
+            key={m}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 8px',
+              borderRadius: 12,
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg-elev)',
+              fontSize: 13,
+            }}
+          >
+            {formatReminderLead(m)}
+            <button
+              type="button"
+              aria-label={`Remove ${formatReminderLead(m)} reminder`}
+              onClick={() => remove(m)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-danger)',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {REMINDER_PRESETS.map((p) => {
+          const active = value.includes(p.minutes);
+          return (
+            <button
+              key={p.minutes}
+              type="button"
+              onClick={() => (active ? remove(p.minutes) : add(p.minutes))}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 4,
+                border: '1px solid var(--color-border)',
+                background: active
+                  ? 'var(--color-accent, #5b8def)'
+                  : 'transparent',
+                color: active ? '#fff' : 'inherit',
+                cursor: 'pointer',
+                fontSize: 12,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+              }}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="Custom minutes"
+          aria-label="Custom reminder minutes"
+          style={{ maxWidth: 160 }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const n = Number(custom);
+              if (Number.isFinite(n) && n > 0) {
+                add(n);
+                setCustom('');
+              }
+            }
+          }}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            const n = Number(custom);
+            if (Number.isFinite(n) && n > 0) {
+              add(n);
+              setCustom('');
+            }
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function formatReminderLead(minutes: number): string {
+  if (minutes <= 0) return '0m';
+  if (minutes % (24 * 60) === 0) {
+    const days = minutes / (24 * 60);
+    return `${days}d`;
+  }
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins === 0 ? `${hours}h` : `${hours}h${mins}m`;
+  }
+  return `${minutes}m`;
 }

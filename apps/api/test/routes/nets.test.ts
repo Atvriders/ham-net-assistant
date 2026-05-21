@@ -202,6 +202,47 @@ describe('nets CRUD', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
+  it('applies the default reminderMinutes ([240,30]) when omitted on create', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    expect(c.status).toBe(201);
+    expect(c.body.reminderMinutes).toEqual([240, 30]);
+  });
+  it('persists and round-trips a custom reminderMinutes', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [1440, 60] });
+    expect(c.status).toBe(201);
+    expect(c.body.reminderMinutes).toEqual([1440, 60]);
+    const list = await request(app).get('/api/nets');
+    expect(list.body[0].reminderMinutes).toEqual([1440, 60]);
+  });
+  it('persists an empty reminderMinutes array (= no reminders)', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [] });
+    expect(c.status).toBe(201);
+    expect(c.body.reminderMinutes).toEqual([]);
+    const list = await request(app).get('/api/nets');
+    expect(list.body[0].reminderMinutes).toEqual([]);
+  });
+  it('updates reminderMinutes via PATCH', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [240, 30] });
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [10] });
+    expect(u.status).toBe(200);
+    expect(u.body.reminderMinutes).toEqual([10]);
+  });
+  it('rejects non-integer reminderMinutes', async () => {
+    const res = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [30.5] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+  it('rejects negative reminderMinutes', async () => {
+    const res = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), reminderMinutes: [-5] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });

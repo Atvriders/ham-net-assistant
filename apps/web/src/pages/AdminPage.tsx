@@ -7,7 +7,6 @@ import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
-import { to12h, to24h } from '../lib/time.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { usePresence } from '../lib/usePresence.js';
 import { OnlineDot } from '../components/OnlineDot.js';
@@ -64,13 +63,6 @@ interface DiscordConfig {
   tokenFromEnv: boolean;
   channelIdFromEnv: boolean;
   enabledFromEnv: boolean;
-  reminderTimesOfDay: string[];
-}
-
-interface ReminderRow {
-  hour: number;        // 1..12
-  minute: number;      // 0..55 (5-min steps)
-  meridiem: 'AM' | 'PM';
 }
 
 function formatWhen(iso: string | null): string {
@@ -103,7 +95,6 @@ export function AdminPage() {
   const [discordTokenInput, setDiscordTokenInput] = useState('');
   const [discordChannelInput, setDiscordChannelInput] = useState('');
   const [discordEnabledInput, setDiscordEnabledInput] = useState(false);
-  const [discordLeadsRows, setDiscordLeadsRows] = useState<ReminderRow[]>([]);
   const [discordSaving, setDiscordSaving] = useState(false);
   const [discordSaved, setDiscordSaved] = useState(false);
   const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
@@ -126,11 +117,6 @@ export function AdminPage() {
       setDiscordCfg(cfg);
       setDiscordChannelInput(cfg.channelId);
       setDiscordEnabledInput(cfg.enabled);
-      setDiscordLeadsRows(
-        (cfg.reminderTimesOfDay ?? []).length > 0
-          ? cfg.reminderTimesOfDay.map((s: string) => to12h(s))
-          : [to12h('16:00'), to12h('19:30')]
-      );
     } catch {
       /* ignore */
     }
@@ -151,10 +137,6 @@ export function AdminPage() {
       if (!discordCfg.tokenFromEnv && discordTokenInput.trim()) {
         body.token = discordTokenInput.trim();
       }
-      const times = discordLeadsRows
-        .map((r) => to24h({ hour: r.hour, minute: r.minute, meridiem: r.meridiem }))
-        .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
-      if (times.length > 0) body.reminderTimesOfDay = times;
       await apiFetch('/discord/config', {
         method: 'PATCH',
         body: JSON.stringify(body),
@@ -417,85 +399,9 @@ export function AdminPage() {
                 placeholder="123456789012345678"
               />
             </div>
-            <div className="hna-field">
-              <label>Reminder times</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {discordLeadsRows.map((row, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <select
-                      className="hna-input"
-                      value={row.hour}
-                      onChange={(e) => {
-                        const next = [...discordLeadsRows];
-                        next[i] = { ...next[i]!, hour: Number(e.target.value) };
-                        setDiscordLeadsRows(next);
-                      }}
-                      style={{ width: 70 }}
-                    >
-                      {Array.from({ length: 12 }, (_, k) => k + 1).map((h) => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                    </select>
-                    <span style={{ fontSize: 14 }}>:</span>
-                    <select
-                      className="hna-input"
-                      value={row.minute - (row.minute % 5)}
-                      onChange={(e) => {
-                        const next = [...discordLeadsRows];
-                        next[i] = { ...next[i]!, minute: Number(e.target.value) };
-                        setDiscordLeadsRows(next);
-                      }}
-                      style={{ width: 70 }}
-                    >
-                      {Array.from({ length: 12 }, (_, k) => k * 5).map((m) => (
-                        <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="hna-input"
-                      value={row.meridiem}
-                      onChange={(e) => {
-                        const next = [...discordLeadsRows];
-                        next[i] = { ...next[i]!, meridiem: e.target.value as 'AM' | 'PM' };
-                        setDiscordLeadsRows(next);
-                      }}
-                      style={{ width: 70 }}
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setDiscordLeadsRows(discordLeadsRows.filter((_, j) => j !== i))}
-                      aria-label="Remove"
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-danger)',
-                        fontSize: 18,
-                        padding: 4,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                {discordLeadsRows.length < 5 && (
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={() => setDiscordLeadsRows([...discordLeadsRows, { hour: 4, minute: 0, meridiem: 'PM' }])}
-                    style={{ alignSelf: 'flex-start', fontSize: 13, padding: '4px 12px' }}
-                  >
-                    + Add reminder
-                  </Button>
-                )}
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-                Pick the time(s) of day to ping Discord on the day of a net.
-                Reminders set after the net's start time are skipped.
-              </div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              Reminder lead times are now configured per-net on the{' '}
+              <strong>Nets</strong> page.
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Button onClick={saveDiscord} disabled={discordSaving}>Save</Button>

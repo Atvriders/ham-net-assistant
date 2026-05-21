@@ -10,6 +10,7 @@ interface NetRow {
   name: string;
   kind: string;
   scriptCategory: string;
+  reminderMinutes?: number[];
 }
 
 const officer = {
@@ -25,6 +26,7 @@ function netRow(over: Partial<NetRow>): NetRow & Record<string, unknown> {
     id: 'n1', name: 'Weekly Net', kind: 'weekly', scriptCategory: 'general',
     repeaterId: 'r1', dayOfWeek: 3, startLocal: '20:00', timezone: 'UTC',
     theme: null, scriptMd: null, active: true,
+    reminderMinutes: [240, 30],
     repeater: repeaters[0], links: [],
     ...over,
   };
@@ -105,6 +107,20 @@ describe('NetsPage script category', () => {
     });
     const nameInput = screen.getByDisplayValue('General Net');
     expect(nameInput).toBeInTheDocument();
+  });
+
+  it('shows the configured reminder lead times on each weekly net card', async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('fetch', mockFetch([
+      netRow({ id: 'n1', name: 'Quad Net', reminderMinutes: [1440, 60] }),
+      netRow({ id: 'n2', name: 'Silent Net', reminderMinutes: [] }),
+    ]));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Quad Net')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Reminders:\s*1d, 1h/)).toBeInTheDocument();
+    expect(screen.getByText(/Reminders:\s*off/)).toBeInTheDocument();
   });
 
   it('offers a script category selector in the net form', async () => {

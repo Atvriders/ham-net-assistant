@@ -77,6 +77,11 @@ model Net {
   scriptMd   String?
   /// Category of this net's script: "weekly" | "general" | "impromptu".
   scriptCategory String   @default("general")
+  /// JSON-encoded array of minutes-before-start at which to fire reminders
+  /// (e.g. "[240,30]" = ping 4h and 30m before the net). Null or "[]" means
+  /// "no reminders for this net". SQLite has no native array type, so this
+  /// is stored as a JSON string and parsed by the API/scheduler.
+  reminderMinutes String?  @default("[240,30]")
   active     Boolean      @default(true)
   sessions   NetSession[]
   links      NetLink[]
@@ -92,7 +97,9 @@ model NetReminder {
   net       Net      @relation(fields: [netId], references: [id], onDelete: Cascade)
   /// Scheduled start moment, normalized to the minute
   occursAt  DateTime
-  /// Which reminder fired: "4h" or "30m"
+  /// Which reminder fired, encoded as "m<N>" where N is the lead time in
+  /// minutes (e.g. "m240" for 4 hours, "m30" for 30 minutes). Per-net
+  /// reminder lead times are configured on `Net.reminderMinutes`.
   kind      String
   sentAt    DateTime @default(now())
 

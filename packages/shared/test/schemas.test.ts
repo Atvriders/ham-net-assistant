@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   Callsign, RegisterInput, RepeaterInput, NetInput, CheckInInput,
+  ReminderMinutes, parseReminderMinutes, DEFAULT_REMINDER_MINUTES,
 } from '../src/index.js';
 
 describe('Callsign', () => {
@@ -114,5 +115,59 @@ describe('NetInput', () => {
 describe('CheckInInput', () => {
   it('uppercases callsign', () => {
     expect(CheckInInput.parse({ callsign: 'w1aw', nameAtCheckIn: 'Alice' }).callsign).toBe('W1AW');
+  });
+});
+
+describe('ReminderMinutes', () => {
+  it('accepts a normal lead-time array and dedupes + sorts descending', () => {
+    expect(ReminderMinutes.parse([30, 240, 30])).toEqual([240, 30]);
+  });
+  it('accepts an empty array (= no reminders)', () => {
+    expect(ReminderMinutes.parse([])).toEqual([]);
+  });
+  it('rejects zero', () => {
+    expect(() => ReminderMinutes.parse([0])).toThrow();
+  });
+  it('rejects negative values', () => {
+    expect(() => ReminderMinutes.parse([-1])).toThrow();
+  });
+  it('rejects non-integer values', () => {
+    expect(() => ReminderMinutes.parse([30.5])).toThrow();
+  });
+  it('rejects values above one week (10080)', () => {
+    expect(() => ReminderMinutes.parse([10081])).toThrow();
+  });
+  it('rejects more than 10 entries', () => {
+    expect(() =>
+      ReminderMinutes.parse([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+    ).toThrow();
+  });
+  it('round-trips through NetInput', () => {
+    const parsed = NetInput.parse({
+      name: 'Wed Net', repeaterId: 'x', dayOfWeek: 3, startLocal: '20:00',
+      timezone: 'UTC', reminderMinutes: [60, 1440],
+    });
+    expect(parsed.reminderMinutes).toEqual([1440, 60]);
+  });
+});
+
+describe('parseReminderMinutes', () => {
+  it('parses a stored JSON-encoded array', () => {
+    expect(parseReminderMinutes('[240,30]')).toEqual([240, 30]);
+  });
+  it('treats null as an empty array', () => {
+    expect(parseReminderMinutes(null)).toEqual([]);
+  });
+  it('treats undefined as an empty array', () => {
+    expect(parseReminderMinutes(undefined)).toEqual([]);
+  });
+  it('treats malformed JSON as an empty array', () => {
+    expect(parseReminderMinutes('not json')).toEqual([]);
+  });
+  it('drops non-array JSON shapes', () => {
+    expect(parseReminderMinutes('{"x":1}')).toEqual([]);
+  });
+  it('matches the legacy 4h+30m default', () => {
+    expect([...DEFAULT_REMINDER_MINUTES]).toEqual([240, 30]);
   });
 });
