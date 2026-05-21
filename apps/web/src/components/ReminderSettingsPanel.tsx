@@ -62,9 +62,14 @@ export function ReminderSettingsPanel() {
   async function setReminderMinutesForNet(net: NetRow, next: number[]) {
     setPendingId(net.id);
     try {
+      // PATCH /nets/:id validates against the full NetInput schema (name,
+      // repeaterId, dayOfWeek, startLocal, timezone, …), so a partial body
+      // with just reminderMinutes is rejected as 400. Send the existing net's
+      // full input with the new reminderMinutes merged in.
+      const input = netToInput(net as NetWithRepeater);
       await apiFetch(`/nets/${net.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ reminderMinutes: next }),
+        body: JSON.stringify({ ...input, reminderMinutes: next }),
       });
       await refreshNets();
     } finally {

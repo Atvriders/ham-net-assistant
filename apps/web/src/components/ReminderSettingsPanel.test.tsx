@@ -169,7 +169,17 @@ describe('ReminderSettingsPanel', () => {
       expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
     });
     const patch = calls.find((c) => c.method === 'PATCH')!;
-    expect((patch.body as { reminderMinutes: number[] }).reminderMinutes).toEqual([]);
+    const body = patch.body as Record<string, unknown>;
+    expect(body.reminderMinutes).toEqual([]);
+    // Must send the full NetInput body so the API's validateBody(NetInput)
+    // doesn't 400 — `reminderMinutes`-only PATCHes are rejected.
+    expect(body).toMatchObject({
+      name: 'Toggle Net',
+      repeaterId: 'r1',
+      dayOfWeek: 2,
+      startLocal: '20:00',
+      timezone: 'UTC',
+    });
     await waitFor(() => {
       expect(screen.getByText(/^off$/)).toBeInTheDocument();
     });
@@ -195,9 +205,15 @@ describe('ReminderSettingsPanel', () => {
       expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
     });
     const patch = calls.find((c) => c.method === 'PATCH')!;
-    expect((patch.body as { reminderMinutes: number[] }).reminderMinutes).toEqual([
-      240, 30,
-    ]);
+    const body = patch.body as Record<string, unknown>;
+    expect(body.reminderMinutes).toEqual([240, 30]);
+    expect(body).toMatchObject({
+      name: 'Silent Net',
+      repeaterId: 'r1',
+      dayOfWeek: 2,
+      startLocal: '20:00',
+      timezone: 'UTC',
+    });
   });
 
   it('does not render anything for non-officer users', async () => {
