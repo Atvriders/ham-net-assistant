@@ -103,9 +103,10 @@ describe('RunNetPage script tab edit', () => {
       expect(screen.getByText('Edit net', { selector: 'h2' })).toBeInTheDocument();
     });
     expect(screen.getByDisplayValue('Tuesday Net')).toBeInTheDocument();
-    const scriptBox = screen.getByText('Script (markdown)')
-      .closest('.hna-field')!
-      .querySelector('textarea')!;
+    // The script editor defaults to WYSIWYG; switch to raw markdown so the
+    // test can drive a textarea directly.
+    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    const scriptBox = screen.getByTestId('script-raw') as HTMLTextAreaElement;
     await userEvent.clear(scriptBox);
     await userEvent.type(scriptBox, 'Revised script.');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));

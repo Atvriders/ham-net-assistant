@@ -52,7 +52,7 @@ describe('NetEditModal', () => {
     vi.stubGlobal('fetch', mockFetch(() => {}));
   });
 
-  it('seeds the form with the existing net script for editing', async () => {
+  it('seeds the form with the existing net script for editing (WYSIWYG default)', async () => {
     render(
       <NetEditModal
         open
@@ -64,10 +64,68 @@ describe('NetEditModal', () => {
       />,
     );
     expect(await screen.findByText('Edit net')).toBeInTheDocument();
-    const scriptBox = screen.getByText('Script (markdown)')
-      .closest('.hna-field')!
-      .querySelector('textarea')!;
+    // Human readable (WYSIWYG) mode is the default.
+    const humanTab = screen.getByRole('tab', { name: 'Human readable' });
+    expect(humanTab).toHaveAttribute('aria-selected', 'true');
+    // Switch to Raw markdown to inspect the underlying value verbatim.
+    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    const scriptBox = screen.getByTestId('script-raw') as HTMLTextAreaElement;
     expect(scriptBox).toHaveValue('Welcome to the net.');
+  });
+
+  it('exposes a mode toggle defaulting to human readable and switches to raw', async () => {
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByText('Edit net');
+    const human = screen.getByRole('tab', { name: 'Human readable' });
+    const raw = screen.getByRole('tab', { name: 'Raw markdown' });
+    expect(human).toHaveAttribute('aria-selected', 'true');
+    expect(raw).toHaveAttribute('aria-selected', 'false');
+    // No raw textarea until we switch.
+    expect(screen.queryByTestId('script-raw')).toBeNull();
+    await userEvent.click(raw);
+    expect(raw).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('script-raw')).toHaveValue('Welcome to the net.');
+  });
+
+  it('round-trips existing markdown content through the WYSIWYG editor', async () => {
+    const fixtureNet: NetWithRepeater = {
+      ...net,
+      scriptMd: '# Hello\n\n**world**',
+    } as never;
+    const patched: unknown[] = [];
+    vi.stubGlobal('fetch', mockFetch((b) => patched.push(b)));
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(fixtureNet)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByText('Edit net');
+    // The WYSIWYG should have rendered the heading + bold without garbling.
+    await waitFor(() => {
+      const wysiwyg = screen.getByTestId('script-wysiwyg');
+      expect(wysiwyg.querySelector('h1')?.textContent).toBe('Hello');
+      expect(wysiwyg.querySelector('strong')?.textContent).toBe('world');
+    });
+    // Save and confirm the markdown round-trips back to storage unchanged.
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patched.length).toBeGreaterThan(0));
+    const saved = (patched[0] as { scriptMd: string }).scriptMd.trim();
+    expect(saved).toContain('# Hello');
+    expect(saved).toContain('**world**');
   });
 
   it('groups the primary and linked repeaters under a Repeaters section', async () => {
@@ -111,9 +169,10 @@ describe('NetEditModal', () => {
         onSaved={onSaved}
       />,
     );
-    const scriptBox = (await screen.findByText('Script (markdown)'))
-      .closest('.hna-field')!
-      .querySelector('textarea')!;
+    await screen.findByText('Edit net');
+    // Switch to Raw markdown to drive the textarea deterministically.
+    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    const scriptBox = screen.getByTestId('script-raw') as HTMLTextAreaElement;
     await userEvent.clear(scriptBox);
     await userEvent.type(scriptBox, 'Updated script body.');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -122,6 +181,34 @@ describe('NetEditModal', () => {
     expect((patched[0] as { scriptMd: string }).scriptMd).toBe(
       'Updated script body.',
     );
+  });
+
+  it('writes markdown back to scriptMd when typing in the WYSIWYG', async () => {
+    const empty: NetWithRepeater = { ...net, scriptMd: '' } as never;
+    const patched: unknown[] = [];
+    vi.stubGlobal('fetch', mockFetch((b) => patched.push(b)));
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(empty)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByText('Edit net');
+    const wysiwyg = screen.getByTestId('script-wysiwyg');
+    // TipTap renders an editable contenteditable; type into it then bold it.
+    (wysiwyg as HTMLElement).focus();
+    await userEvent.type(wysiwyg as HTMLElement, 'hello');
+    // Select all and apply bold via toolbar.
+    await userEvent.keyboard('{Control>}a{/Control}');
+    await userEvent.click(screen.getByRole('button', { name: /Bold/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patched.length).toBeGreaterThan(0));
+    const saved = (patched[0] as { scriptMd: string }).scriptMd;
+    expect(saved).toContain('**hello**');
   });
 
   it('shows the existing reminderMinutes as chips for a weekly net', async () => {

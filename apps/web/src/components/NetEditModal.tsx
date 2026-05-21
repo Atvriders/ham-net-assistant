@@ -6,6 +6,7 @@ import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
 import { ScriptImportModal } from './ScriptImportModal.js';
+import { ScriptEditor } from './ScriptEditor.js';
 import { dayName, to12h, to24h } from '../lib/time.js';
 
 interface NetLinkWithRepeater {
@@ -390,7 +391,7 @@ export function NetEditModal({
                   alignItems: 'baseline',
                 }}
               >
-                <label>Script (markdown)</label>
+                <label>Script</label>
                 <button
                   type="button"
                   onClick={() => setScriptImportOpen(true)}
@@ -410,18 +411,9 @@ export function NetEditModal({
                   Import…
                 </button>
               </div>
-              <textarea
-                rows={10}
-                className="hna-input"
+              <ScriptEditor
                 value={data.scriptMd ?? ''}
-                onChange={(e) => setData({ ...data, scriptMd: e.target.value })}
-                style={{
-                  minHeight: 180,
-                  fontFamily: 'ui-monospace, Menlo, monospace',
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  resize: 'vertical',
-                }}
+                onChange={(md) => setData({ ...data, scriptMd: md })}
               />
             </div>
           </div>
