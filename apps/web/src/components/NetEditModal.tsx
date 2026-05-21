@@ -141,7 +141,7 @@ export function NetEditModal({
 
   return (
     <>
-      <Modal open={open} onClose={onClose}>
+      <Modal open={open} onClose={onClose} size="wide">
         <div>
           <h2 style={{ marginTop: 0 }}>{netId ? 'Edit net' : 'New net'}</h2>
           <div className="hna-form">
