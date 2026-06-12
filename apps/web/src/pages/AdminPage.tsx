@@ -11,8 +11,6 @@ import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { usePresence } from '../lib/usePresence.js';
 import { OnlineDot } from '../components/OnlineDot.js';
 import { LogImportModal } from '../components/LogImportModal.js';
-import { ReminderSettingsPanel } from '../components/ReminderSettingsPanel.js';
-import { ScriptLibraryPanel } from '../components/ScriptLibraryPanel.js';
 
 interface TrashSession {
   id: string;
@@ -314,10 +312,6 @@ export function AdminPage() {
           )}
         </div>
       </Card>
-      <div style={{ height: 16 }} />
-      <ReminderSettingsPanel />
-      <div style={{ height: 16 }} />
-      <ScriptLibraryPanel />
       <div style={{ height: 16 }} />
       <Card>
         <h3>Tools</h3>

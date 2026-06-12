@@ -140,6 +140,29 @@ describe('check-ins', () => {
     expect(p.body.userId).not.toBeNull();
   });
 
+  it('PATCH that omits comment preserves existing comment', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor', comment: 'first time on the net' });
+    expect(c.body.comment).toBe('first time on the net');
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor Updated' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Visitor Updated');
+    expect(p.body.comment).toBe('first time on the net');
+  });
+
+  it('PATCH with explicit null comment clears the comment', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor', comment: 'to be cleared' });
+    expect(c.body.comment).toBe('to be cleared');
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor', comment: null });
+    expect(p.status).toBe(200);
+    expect(p.body.comment).toBeNull();
+  });
+
   it('PATCH with non-member callsign clears userId', async () => {
     const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
       .set('Cookie', officer).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });

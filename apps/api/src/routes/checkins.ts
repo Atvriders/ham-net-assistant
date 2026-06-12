@@ -69,7 +69,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       data: {
         callsign: body.callsign,
         nameAtCheckIn: body.nameAtCheckIn,
-        comment: body.comment ?? null,
+        comment: body.comment === undefined ? undefined : body.comment,
         userId: matched?.id ?? null,
       },
     });

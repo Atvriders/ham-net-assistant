@@ -127,7 +127,12 @@ export function TopicsPage() {
       </Card>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-        {topics.length === 0 && <p>No topics suggested yet.</p>}
+        {topics.length === 0 && (
+          <Card>
+            <h2 style={{ marginTop: 0 }}>No topic suggestions yet</h2>
+            <p>Propose one with the form above.</p>
+          </Card>
+        )}
         {topics.map((t) => {
           const mine = user && t.createdById === user.id;
           const canDelete = isOfficer || (mine && t.status === 'OPEN');

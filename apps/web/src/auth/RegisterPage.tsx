@@ -124,38 +124,74 @@ export function RegisterPage() {
 
   if (step === 1) {
     return (
-      <div className="hna-container" style={{ maxWidth: 420, width: '100%', margin: '24px auto' }}>
+      <div className="hna-container" style={{ maxWidth: 720, width: '100%', margin: '24px auto' }}>
         <Card>
           <h1>Create account</h1>
-          <p>Start with your amateur radio callsign. We will look it up in the FCC database to prefill your info.</p>
-          <form onSubmit={doLookup}>
-            <label>
-              Callsign
-              <CallsignInput value={form.callsign} onChange={update('callsign')} />
-            </label>
-            {err && (
-              <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 12 }}>
-                {err}
+          <p>Two ways to get started — pick whichever describes you.</p>
+          <div
+            className="hna-flex-wrap"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 16,
+              marginTop: 16,
+            }}
+          >
+            <Card>
+              <h3 style={{ marginTop: 0 }}>I have a callsign</h3>
+              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                Enter your amateur radio callsign and we will look it up in the
+                FCC database to prefill your info.
+              </p>
+              <form onSubmit={doLookup}>
+                <label>
+                  Callsign
+                  <CallsignInput
+                    value={form.callsign}
+                    onChange={update('callsign')}
+                  />
+                </label>
+                {err && (
+                  <div
+                    role="alert"
+                    style={{ color: 'var(--color-danger)', marginTop: 12 }}
+                  >
+                    {err}
+                  </div>
+                )}
+                <div style={{ marginTop: 12 }}>
+                  <Button type="submit" disabled={lookingUp}>
+                    {lookingUp ? 'Looking up…' : 'Continue with callsign'}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+            <Card>
+              <h3 style={{ marginTop: 0 }}>I'm not licensed yet</h3>
+              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                Join with the NØCALL placeholder. You can listen along and chat
+                with the club while you study for your FCC license.
+              </p>
+              <div style={{ marginTop: 12 }}>
+                <Button type="button" onClick={startUnlicensed}>
+                  Continue without callsign
+                </Button>
               </div>
-            )}
-            <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
-              <Button type="submit" disabled={lookingUp}>
-                {lookingUp ? 'Looking up…' : 'Look up'}
-              </Button>
-              <Link className="hna-nav-link" to="/login">Sign in</Link>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  startUnlicensed();
-                }}
-              >
-                I don't have a callsign yet
-              </a>
-            </div>
-          </form>
+            </Card>
+          </div>
+          <div
+            className="hna-flex-wrap"
+            style={{
+              marginTop: 16,
+              display: 'flex',
+              gap: 12,
+              alignItems: 'center',
+            }}
+          >
+            <Link className="hna-nav-link" to="/login">
+              Already have an account? Sign in
+            </Link>
+          </div>
         </Card>
       </div>
     );

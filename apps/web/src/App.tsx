@@ -16,6 +16,7 @@ import { SessionSummaryPage } from './pages/SessionSummaryPage.js';
 import { StatsPage } from './pages/StatsPage.js';
 import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
+import { OfficerToolsPage } from './pages/OfficerToolsPage.js';
 import { Button } from './components/ui/Button.js';
 import { displayCallsign } from './lib/format.js';
 
@@ -51,8 +52,13 @@ function NavBar() {
           <Link to="/" className="hna-nav-link">Dashboard</Link>
           <Link to="/nets" className="hna-nav-link">Nets</Link>
           <Link to="/topics" className="hna-nav-link">Topics</Link>
-          <Link to="/stats" className="hna-nav-link">Stats</Link>
+          {(user.role === 'OFFICER' || user.role === 'ADMIN') && (
+            <Link to="/stats" className="hna-nav-link">Stats</Link>
+          )}
           <Link to="/settings" className="hna-nav-link">Settings</Link>
+          {(user.role === 'OFFICER' || user.role === 'ADMIN') && (
+            <Link to="/officer-tools" className="hna-nav-link">Officer tools</Link>
+          )}
           {user.role === 'ADMIN' && <Link to="/admin" className="hna-nav-link">Admin</Link>}
           <span
             style={{
@@ -99,6 +105,7 @@ export function App() {
               <Route path="/stats" element={<RequireRole min="OFFICER"><StatsPage /></RequireRole>} />
               <Route path="/topics" element={<RequireRole><TopicsPage /></RequireRole>} />
               <Route path="/settings" element={<RequireRole><SettingsPage /></RequireRole>} />
+              <Route path="/officer-tools" element={<RequireRole min="OFFICER"><OfficerToolsPage /></RequireRole>} />
               <Route path="/admin" element={<RequireRole min="ADMIN"><AdminPage /></RequireRole>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

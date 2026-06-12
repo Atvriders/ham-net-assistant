@@ -364,7 +364,36 @@ export function RepeatersPage() {
       )}
 
       <div className="hna-repeater-grid" style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-        {list.length === 0 && <p>No repeaters yet.</p>}
+        {list.length === 0 && (
+          <Card>
+            {isOfficer ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>No repeaters yet</h2>
+                <p>
+                  Add your club's repeaters to start — try{' '}
+                  <strong>Discover local repeaters</strong> if your callsign has
+                  an FCC grid square, or <strong>Add repeater</strong> manually.
+                </p>
+                <div
+                  className="hna-flex-wrap"
+                  style={{ display: 'flex', gap: 8 }}
+                >
+                  <Button onClick={discoverLocal} disabled={suggesting}>
+                    {suggesting ? 'Discovering…' : 'Discover local repeaters'}
+                  </Button>
+                  <Button variant="secondary" onClick={openCreate}>
+                    Add repeater
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 0 }}>No repeaters listed yet</h2>
+                <p>No repeaters listed yet.</p>
+              </>
+            )}
+          </Card>
+        )}
         {list.map((r) => (
           <Card key={r.id}>
             <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>

@@ -60,6 +60,25 @@ export function NetsPage() {
   const [starting, setStarting] = useState<{ id: string; name: string } | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<ScriptCategory | 'all'>('all');
 
+  function openAddNet() {
+    setEditing({
+      data: {
+        ...emptyNetInput,
+        repeaterId: repeaters[0]?.id ?? '',
+      },
+    });
+  }
+
+  const visibleByKind = (['weekly', 'impromptu'] as const).map((kind) =>
+    nets.filter(
+      (n) =>
+        (n.kind ?? 'weekly') === kind &&
+        (categoryFilter === 'all' ||
+          (n.scriptCategory ?? 'general') === categoryFilter),
+    ),
+  );
+  const allEmpty = visibleByKind.every((g) => g.length === 0);
+
   async function takeControl(sessionId: string) {
     await apiFetch(`/sessions/${sessionId}`, {
       method: 'PATCH',
@@ -83,18 +102,7 @@ export function NetsPage() {
             </Button>
           )}
           {canEdit && (
-            <Button
-              onClick={() =>
-                setEditing({
-                  data: {
-                    ...emptyNetInput,
-                    repeaterId: repeaters[0]?.id ?? '',
-                  },
-                })
-              }
-            >
-              Add net
-            </Button>
+            <Button onClick={openAddNet}>Add net</Button>
           )}
         </div>
       </div>
@@ -111,13 +119,31 @@ export function NetsPage() {
           <option value="impromptu">Impromptu</option>
         </select>
       </div>
-      {(['weekly', 'impromptu'] as const).map((kind) => {
-        const group = nets.filter(
-          (n) =>
-            (n.kind ?? 'weekly') === kind &&
-            (categoryFilter === 'all' ||
-              (n.scriptCategory ?? 'general') === categoryFilter),
-        );
+      {allEmpty && (
+        <div style={{ marginTop: 16 }}>
+          <Card>
+            {canEdit ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>No nets yet</h2>
+                <p>
+                  Create your club's first weekly net — pick a repeater, a day,
+                  and a time.
+                </p>
+                <Button onClick={openAddNet}>Add your first net</Button>
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 0 }}>No nets scheduled</h2>
+                <p>
+                  No nets are scheduled yet. Ask a club officer to add one.
+                </p>
+              </>
+            )}
+          </Card>
+        </div>
+      )}
+      {(['weekly', 'impromptu'] as const).map((kind, idx) => {
+        const group = visibleByKind[idx]!;
         if (group.length === 0) return null;
         return (
           <div key={kind}>

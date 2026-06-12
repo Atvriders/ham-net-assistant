@@ -123,6 +123,66 @@ describe('NetsPage script category', () => {
     expect(screen.getByText(/Reminders:\s*off/)).toBeInTheDocument();
   });
 
+  it('renders an officer empty-state Card when there are no nets', async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('fetch', mockFetch([]));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('No nets yet')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('button', { name: 'Add your first net' }),
+    ).toBeInTheDocument();
+  });
+
+  it('replaces the empty state with the list once nets arrive', async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([netRow({ id: 'n1', name: 'Real Net' })]),
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Real Net')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('No nets yet')).not.toBeInTheDocument();
+  });
+
+  it('shows a softer member message when the user is not an officer', async () => {
+    vi.unstubAllGlobals();
+    const memberUser = {
+      id: 'u2',
+      callsign: 'KA1ABC',
+      name: 'Mem',
+      email: 'm@x.co',
+      role: 'MEMBER',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const json = (body: unknown) =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        if (url.endsWith('/auth/me')) return json(memberUser);
+        if (url.endsWith('/presence/heartbeat')) return json({});
+        if (url.endsWith('/nets/active')) return json([]);
+        if (url.endsWith('/repeaters')) return json(repeaters);
+        if (url.endsWith('/nets')) return json([]);
+        return json([]);
+      }),
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Ask a club officer to add one/),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText('No nets yet')).not.toBeInTheDocument();
+  });
+
   it('offers a script category selector in the net form', async () => {
     renderPage();
     const addBtn = await screen.findByRole('button', { name: 'Add net' });
