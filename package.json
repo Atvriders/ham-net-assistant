@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": ["packages/*", "apps/*"],
+  "overrides": {
+    "vite": "^6.0.0"
+  },
   "scripts": {
     "dev:api": "npm -w @hna/api run dev",
     "dev:web": "npm -w @hna/web run dev",

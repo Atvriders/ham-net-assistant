@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # --- base: debian slim instead of alpine ---
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 WORKDIR /app
 # build tools for native deps (argon2) — debian package names
 RUN apt-get update \
@@ -29,11 +29,11 @@ RUN npm -w @hna/api run build
 RUN npm -w @hna/web run build
 
 # --- runtime: slim image with only what api needs ---
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# libssl3 is in node:20-slim already; add ca-certs, wget for healthcheck, gosu for step-down
+# libssl3 is in node:22-slim already; add ca-certs, wget for healthcheck, gosu for step-down
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl ca-certificates wget gosu \
     && rm -rf /var/lib/apt/lists/*
