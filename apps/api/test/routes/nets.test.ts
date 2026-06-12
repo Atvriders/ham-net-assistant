@@ -243,6 +243,32 @@ describe('nets CRUD', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
+  it('PATCH accepts a partial body with only reminderMinutes', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ reminderMinutes: [] });
+    expect(u.status).toBe(200);
+    expect(u.body.reminderMinutes).toEqual([]);
+    // Other fields are untouched.
+    expect(u.body.name).toBe(c.body.name);
+    expect(u.body.dayOfWeek).toBe(c.body.dayOfWeek);
+    expect(u.body.startLocal).toBe(c.body.startLocal);
+    expect(u.body.timezone).toBe(c.body.timezone);
+    expect(u.body.theme).toBe(c.body.theme);
+    expect(u.body.scriptMd).toBe(c.body.scriptMd);
+    expect(u.body.active).toBe(c.body.active);
+  });
+  it('PATCH accepts a partial body with only active=false', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    expect(c.body.active).toBe(true);
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ active: false });
+    expect(u.status).toBe(200);
+    expect(u.body.active).toBe(false);
+    // Schedule fields untouched.
+    expect(u.body.dayOfWeek).toBe(c.body.dayOfWeek);
+    expect(u.body.startLocal).toBe(c.body.startLocal);
+  });
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });

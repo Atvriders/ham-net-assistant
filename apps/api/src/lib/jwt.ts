@@ -10,11 +10,14 @@ export interface JwtClaims {
 const DAYS = 60 * 60 * 24;
 
 export function signToken(claims: JwtClaims): string {
-  return jwt.sign(claims, env.JWT_SECRET, { expiresIn: 7 * DAYS });
+  return jwt.sign(claims, env.JWT_SECRET, {
+    expiresIn: 7 * DAYS,
+    algorithm: 'HS256',
+  });
 }
 
 export function verifyToken(token: string): JwtClaims {
-  const decoded = jwt.verify(token, env.JWT_SECRET);
+  const decoded = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] });
   if (typeof decoded === 'string') throw new Error('Invalid token');
   const parsed = Role.safeParse((decoded as { role?: unknown }).role);
   if (!parsed.success) throw new Error('Invalid role claim');

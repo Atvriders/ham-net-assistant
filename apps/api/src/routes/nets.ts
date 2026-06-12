@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import {
   NetInput,
+  NetUpdate,
   DEFAULT_REMINDER_MINUTES,
   parseReminderMinutes,
 } from '@hna/shared';
@@ -166,37 +167,42 @@ export function netsRouter(prisma: PrismaClient): Router {
     res.status(201).json(hydrateReminderMinutes(created));
   }));
 
-  router.patch('/:id', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
-    const body = req.body as typeof NetInput._type;
+  router.patch('/:id', requireRole('OFFICER'), validateBody(NetUpdate), asyncHandler(async (req, res) => {
+    const body = req.body as typeof NetUpdate._type;
     const netId = req.params.id as string;
     const existing = await prisma.net.findUnique({ where: { id: netId } });
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
     const touchLinks = body.linkedRepeaterIds !== undefined;
+    // For link normalization use the new primaryRepeaterId if the caller
+    // supplied one, otherwise fall back to the existing row's repeaterId so
+    // the primary is correctly excluded from the link set.
+    const primaryRepeaterId = body.repeaterId ?? existing.repeaterId;
     const linkIds = touchLinks
-      ? normalizeLinkedIds(body.linkedRepeaterIds, body.repeaterId)
+      ? normalizeLinkedIds(body.linkedRepeaterIds, primaryRepeaterId)
       : [];
     if (touchLinks) await assertRepeatersExist(prisma, linkIds);
-    const sched = schedulingFields(body);
     try {
       const updated = await prisma.$transaction(async (tx) => {
-        // Only touch reminderMinutes when the caller actually supplied it,
-        // so a PATCH that omits it leaves the stored value alone.
-        const reminderUpdate =
-          body.reminderMinutes !== undefined
+        // Build a sparse update so columns the caller did not supply are
+        // left untouched (matches typical PATCH semantics).
+        const data: Record<string, unknown> = {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.repeaterId !== undefined ? { repeaterId: body.repeaterId } : {}),
+          ...(body.kind !== undefined ? { kind: body.kind } : {}),
+          ...(body.dayOfWeek !== undefined ? { dayOfWeek: body.dayOfWeek } : {}),
+          ...(body.startLocal !== undefined ? { startLocal: body.startLocal } : {}),
+          ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+          ...(body.theme !== undefined ? { theme: body.theme } : {}),
+          ...(body.scriptMd !== undefined ? { scriptMd: body.scriptMd } : {}),
+          ...(body.scriptCategory !== undefined ? { scriptCategory: body.scriptCategory } : {}),
+          ...(body.reminderMinutes !== undefined
             ? { reminderMinutes: JSON.stringify(body.reminderMinutes) }
-            : {};
-        await tx.net.update({
-          where: { id: netId },
-          data: {
-            name: body.name, repeaterId: body.repeaterId,
-            kind: sched.kind,
-            dayOfWeek: sched.dayOfWeek, startLocal: sched.startLocal,
-            timezone: sched.timezone, theme: body.theme ?? null, scriptMd: body.scriptMd ?? null,
-            scriptCategory: body.scriptCategory ?? 'general',
-            ...reminderUpdate,
-            active: body.active ?? true,
-          },
-        });
+            : {}),
+          ...(body.active !== undefined ? { active: body.active } : {}),
+        };
+        if (Object.keys(data).length > 0) {
+          await tx.net.update({ where: { id: netId }, data });
+        }
         if (touchLinks) {
           await tx.netLink.deleteMany({ where: { netId: netId } });
           if (linkIds.length) {

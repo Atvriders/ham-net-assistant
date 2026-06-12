@@ -75,6 +75,20 @@ describe('POST /api/auth/register', () => {
     expect(r3.body.callsign).toBe('N0CALL');
   });
 
+  it('rejects duplicate non-N0CALL callsign with 409', async () => {
+    const r1 = await request(app).post('/api/auth/register').send({
+      email: 'dupcall1@example.com', password: 'hunter2hunter2',
+      name: 'Dup1', callsign: 'KD0DUP',
+    });
+    expect(r1.status).toBe(201);
+    const r2 = await request(app).post('/api/auth/register').send({
+      email: 'dupcall2@example.com', password: 'hunter2hunter2',
+      name: 'Dup2', callsign: 'KD0DUP',
+    });
+    expect(r2.status).toBe(409);
+    expect(r2.body.error.code).toBe('CONFLICT');
+  });
+
   it('rejects invalid callsign', async () => {
     const res = await request(app).post('/api/auth/register').send({
       email: 'charlie@example.com', password: 'hunter2hunter2',

@@ -26,27 +26,43 @@ export function authRouter(prisma: PrismaClient): Router {
       if (env.REGISTRATION_CODE && input.inviteCode !== env.REGISTRATION_CODE) {
         throw new HttpError(403, 'FORBIDDEN', 'Invalid invite code');
       }
-      const count = await prisma.user.count();
-      const role = count === 0 ? 'ADMIN' : 'MEMBER';
       const passwordHash = await hashPassword(input.password);
       let finalCallsign = input.callsign;
       if (finalCallsign === 'N0CALL' || /^N0CALL\d+$/.test(finalCallsign)) {
         finalCallsign = 'N0CALL';
+      } else {
+        // Reject duplicate non-N0CALL callsigns up front. (N0CALL is the
+        // shared placeholder for unlicensed members and is allowed to repeat.)
+        // `RegisterInput.callsign` is already trimmed + uppercased by the
+        // shared `Callsign` zod schema, so this match is canonical.
+        const existing = await prisma.user.findFirst({
+          where: { callsign: finalCallsign },
+        });
+        if (existing) {
+          throw new HttpError(409, 'CONFLICT', 'Callsign already registered');
+        }
       }
-      let initialCollegeSlug: string | null = null;
-      if (role === 'MEMBER') {
-        initialCollegeSlug = await getSetting(prisma, DEFAULT_THEME_SETTING_KEY);
-      }
+      // First-admin determination + create are wrapped in a transaction so two
+      // concurrent first registrations can't both observe count=0 and both
+      // become ADMIN.
       try {
-        const user = await prisma.user.create({
-          data: {
-            email: input.email,
-            name: input.name,
-            callsign: finalCallsign,
-            passwordHash,
-            role,
-            collegeSlug: initialCollegeSlug,
-          },
+        const user = await prisma.$transaction(async (tx) => {
+          const count = await tx.user.count();
+          const role = count === 0 ? 'ADMIN' : 'MEMBER';
+          let initialCollegeSlug: string | null = null;
+          if (role === 'MEMBER') {
+            initialCollegeSlug = await getSetting(prisma, DEFAULT_THEME_SETTING_KEY);
+          }
+          return tx.user.create({
+            data: {
+              email: input.email,
+              name: input.name,
+              callsign: finalCallsign,
+              passwordHash,
+              role,
+              collegeSlug: initialCollegeSlug,
+            },
+          });
         });
         const token = signToken({
           sub: user.id,
@@ -56,7 +72,7 @@ export function authRouter(prisma: PrismaClient): Router {
         res.status(201).json(PublicUser.parse(toPublic(user)));
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-          throw new HttpError(409, 'CONFLICT', 'Email or callsign already in use');
+          throw new HttpError(409, 'CONFLICT', 'Email already in use');
         }
         throw e;
       }

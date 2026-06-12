@@ -64,40 +64,48 @@ const startLocal = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:mm');
  * Net create/update payload. Weekly nets require dayOfWeek/startLocal/timezone;
  * impromptu nets may omit them (the API substitutes scheduling sentinels).
  */
-export const NetInput = z
-  .object({
-    ...baseNetFields,
-    kind: NetKind.optional(),
-    dayOfWeek: dayOfWeek.optional(),
-    startLocal: startLocal.optional(),
-    timezone: z.string().min(1).optional(),
-  })
-  .superRefine((val, ctx) => {
-    if ((val.kind ?? 'weekly') === 'weekly') {
-      if (val.dayOfWeek === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['dayOfWeek'],
-          message: 'Required for weekly nets',
-        });
-      }
-      if (val.startLocal === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['startLocal'],
-          message: 'Required for weekly nets',
-        });
-      }
-      if (val.timezone === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['timezone'],
-          message: 'Required for weekly nets',
-        });
-      }
+const netInputObject = z.object({
+  ...baseNetFields,
+  kind: NetKind.optional(),
+  dayOfWeek: dayOfWeek.optional(),
+  startLocal: startLocal.optional(),
+  timezone: z.string().min(1).optional(),
+});
+
+export const NetInput = netInputObject.superRefine((val, ctx) => {
+  if ((val.kind ?? 'weekly') === 'weekly') {
+    if (val.dayOfWeek === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dayOfWeek'],
+        message: 'Required for weekly nets',
+      });
     }
-  });
+    if (val.startLocal === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startLocal'],
+        message: 'Required for weekly nets',
+      });
+    }
+    if (val.timezone === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['timezone'],
+        message: 'Required for weekly nets',
+      });
+    }
+  }
+});
 export type NetInput = z.infer<typeof NetInput>;
+
+/**
+ * Partial update shape for PATCH /api/nets/:id. Every field is optional and
+ * the weekly-required superRefine is intentionally dropped — callers can send
+ * just the columns they want to change without re-fetching the whole net.
+ */
+export const NetUpdate = netInputObject.partial();
+export type NetUpdate = z.infer<typeof NetUpdate>;
 
 export const Net = z.object({
   ...baseNetFields,
