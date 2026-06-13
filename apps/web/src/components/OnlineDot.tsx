@@ -1,24 +1,22 @@
 import React from 'react';
+import './ui/ui.css';
 
 /**
- * Small status dot shown next to a member's name. Green when the member is
- * online (recent presence heartbeat), a muted hollow dot otherwise.
+ * Presence indicator next to a member's name.
+ *
+ *   - Online: small filled dot in `--color-success`, breathing pulse.
+ *   - Offline: a small hollow circle outlined with `--color-border-strong`.
+ *
+ * Accessibility: always carries an `aria-label` of "Online" / "Offline" so
+ * color is not the only signal. Respects `prefers-reduced-motion`.
  */
 export function OnlineDot({ online, title }: { online: boolean; title?: string }) {
   return (
     <span
+      role="img"
       aria-label={online ? 'Online' : 'Offline'}
       title={title ?? (online ? 'Online' : 'Offline')}
-      style={{
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        flexShrink: 0,
-        background: online ? 'var(--color-success)' : 'transparent',
-        border: online ? 'none' : '1px solid var(--color-border)',
-        boxShadow: online ? '0 0 4px var(--color-success)' : 'none',
-      }}
+      className={`hna-onlinedot ${online ? 'hna-onlinedot--on' : 'hna-onlinedot--off'}`}
     />
   );
 }

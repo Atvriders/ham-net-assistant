@@ -1,8 +1,13 @@
-/* Mobile-first base */
+/*
+ * Responsive layout helpers. Aesthetic lives in ui.css — this file just
+ * handles breakpoints. Tap targets stay at 44px on touch devices.
+ */
+
+/* Mobile-first base container */
 .hna-container {
   width: 100%;
   max-width: 100%;
-  padding: 16px;
+  padding: var(--space-4);
   box-sizing: border-box;
 }
 
@@ -25,32 +30,52 @@
 }
 
 /* Tap-friendly buttons & inputs on touch devices */
-.hna-btn, .hna-input, select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="password"] {
-  min-height: 44px;
+.hna-btn,
+.hna-input,
+select,
+textarea,
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"] {
+  min-height: 40px;
 }
-
-/* Nav bar mobile: horizontal scroll if needed */
-@media (max-width: 768px) {
-  nav {
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-    padding: 10px 12px !important;
+@media (pointer: coarse) {
+  .hna-btn,
+  .hna-input,
+  select,
+  textarea,
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"] {
+    min-height: 44px;
   }
-  nav strong { flex: 1 1 auto; }
 }
 
-/* Modal: full-width on small screens */
+/* Shell nav mobile: wrap nicely */
+@media (max-width: 768px) {
+  .hna-shell__nav-inner {
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+  .hna-shell__tail { margin-left: 0; }
+}
+
+/* Modal: full-bleed on small screens */
 @media (max-width: 639px) {
+  .hna-modal-backdrop {
+    align-items: stretch !important;
+    padding: 0;
+  }
   .hna-modal {
     width: 100% !important;
     max-width: 100% !important;
     max-height: 100vh !important;
     border-radius: 0 !important;
-    padding: 16px !important;
+    padding: var(--space-4) !important;
+    padding-top: calc(var(--space-4) + 36px) !important;
     overflow-y: auto;
-  }
-  .hna-modal-backdrop {
-    align-items: stretch !important;
   }
 }
 
@@ -65,24 +90,7 @@
   .hna-runnet-grid { grid-template-columns: 1fr !important; }
 }
 
-/* Repeaters grid: already responsive via auto-fill but explicit */
+/* Repeaters grid */
 @media (max-width: 480px) {
   .hna-repeater-grid { grid-template-columns: 1fr !important; }
-}
-
-body {
-  background-color: var(--color-bg);
-  background-image:
-    radial-gradient(
-      circle at 50% 0%,
-      color-mix(in srgb, var(--color-primary) 8%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      circle at 1px 1px,
-      color-mix(in srgb, var(--color-fg) 8%, transparent) 1px,
-      transparent 0
-    );
-  background-size: auto, 24px 24px;
-  background-attachment: fixed, fixed;
 }

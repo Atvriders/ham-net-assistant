@@ -1,14 +1,98 @@
+/*
+ * Ham-Net-Assistant design tokens — "Calibrated radio console" identity.
+ *
+ * Two complete palettes (dark default, light = logbook paper). Per-college
+ * theme.json supplies an extra `--color-primary` override only — the rest of
+ * the chrome lives here. Old token names from previous design are aliased at
+ * the bottom so existing pages keep rendering without code changes.
+ */
 :root {
-  --color-primary: #6BA3D9;
-  --color-primary-fg: #0A1220;
-  --color-accent: #F2A900;
-  --color-bg: #0E1116;
-  --color-bg-muted: #161B22;
-  --color-fg: #E6EDF3;
-  --color-border: #30363D;
-  --color-success: #3FB950;
-  --color-danger: #F85149;
-  --font-display: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  /* --- Type stack ----------------------------------------------------- */
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'Sora', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* --- Spacing scale ------------------------------------------------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* --- Radii (deliberately sharp) ------------------------------------ */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  /* --- Border weights ------------------------------------------------ */
+  --border-w: 1px;
+  --border-w-strong: 2px;
+
+  /* --- Motion -------------------------------------------------------- */
+  --ease-instrument: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 380ms;
+
+  /* --- Layout -------------------------------------------------------- */
+  --max-content: 1280px;
+
+  /* --- DARK palette (default) --------------------------------------- */
+  --color-bg: #0B0C10;
+  --color-surface: #15171D;
+  --color-surface-2: #1D2028;
+  --color-border: #2A2E38;
+  --color-border-strong: #3E4452;
+  --color-fg: #E8E6E1;
+  --color-fg-muted: #A6A39B;
+  --color-fg-subtle: #6E6B65;
+  --color-primary: #FFB454;
+  --color-primary-fg: #0B0C10;
+  --color-success: #5CE0B3;
+  --color-danger: #FF5F56;
+  --color-warning: #FFC857;
+  --color-info: #7AB8FF;
+  --color-focus: #FFB454;
+  --color-grid: #1B1E26;
+
+  /* --- Legacy aliases (kept so existing pages render unchanged) ------ */
+  --color-bg-muted: var(--color-surface);
+  --color-bg-elev: var(--color-surface-2);
+  --color-text-muted: var(--color-fg-muted);
+  --color-accent: var(--color-primary);
+
+  /* Legacy font aliases */
+  --font-body: var(--font-sans);
+}
+
+/* LIGHT palette — logbook paper */
+html[data-color-mode='light'] {
+  --color-bg: #F4EFE2;
+  --color-surface: #FFFBF0;
+  --color-surface-2: #FFFFFF;
+  --color-border: #C8BFA8;
+  --color-border-strong: #8A8170;
+  --color-fg: #1A1410;
+  --color-fg-muted: #5B554A;
+  --color-fg-subtle: #867F71;
+  /* Deepened from spec's #C76A14 to clear AA on cream (5.12:1 cream→primary,
+     4.61:1 primary→bg); same burnt-amber temperament. */
+  --color-primary: #A85508;
+  --color-primary-fg: #FFFBF0;
+  --color-success: #1F7A57;
+  --color-danger: #C8312A;
+  /* Deepened from spec's #A66B00 to AA-normal (5.11:1) on cream. */
+  --color-warning: #8C5A00;
+  --color-info: #1E5DAB;
+  --color-focus: #A85508;
+  --color-grid: #E6DFCC;
+
+  --color-bg-muted: var(--color-surface);
+  --color-bg-elev: var(--color-surface-2);
+  --color-text-muted: var(--color-fg-muted);
+  --color-accent: var(--color-primary);
 }
