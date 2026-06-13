@@ -99,7 +99,6 @@ export async function handleDiscordReactionAdd(
       },
     });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] reaction add failed', e);
   }
 }
@@ -127,7 +126,6 @@ export async function handleDiscordReactionRemove(
       where: { messageId: localId, emoji, source: 'discord', authorTag },
     });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] reaction remove failed', e);
   }
 }

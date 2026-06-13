@@ -261,7 +261,6 @@ export function NetEditModal({
       return;
     }
     const defaultTitle = `${(data.name || 'Untitled').trim()} script`;
-    // eslint-disable-next-line no-alert
     const titleRaw = window.prompt('Save this script as…', defaultTitle);
     if (titleRaw === null) return;
     const title = titleRaw.trim();

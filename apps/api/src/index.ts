@@ -7,7 +7,6 @@ import { startReminderScheduler } from './discord/reminders.js';
 
 const app = buildApp(prisma);
 app.listen(env.PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`Ham-Net-Assistant API listening on :${env.PORT}`);
 });
 
@@ -28,7 +27,6 @@ void (async () => {
       void handleInboundDiscordMessage(prisma, cfg.channelId, m);
     });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] startup failed', e);
   }
 })();

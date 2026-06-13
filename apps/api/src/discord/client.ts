@@ -110,7 +110,6 @@ export async function reconcileDiscord(
     },
   );
   client.on(Events.Error, (e) => {
-    // eslint-disable-next-line no-console
     console.warn('[discord] error', e);
   });
   await client.login(cfg.token);
@@ -183,7 +182,6 @@ export async function postToDiscord(prisma: PrismaClient, content: string): Prom
     const messageId = await postToDiscordStrict(prisma, content);
     return { ok: true, messageId };
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] post failed', e);
     return { ok: false, reason: `Discord error: ${(e as Error).message}` };
   }
@@ -303,7 +301,6 @@ export async function sendTestMessage(
   try {
     await applyDiscordConfig(prisma);
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] login failed', e);
     const m = (e as Error).message ?? String(e);
     throw new HttpError(

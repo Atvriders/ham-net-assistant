@@ -17,7 +17,6 @@ export function initDb(): Promise<void> {
       await prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000');
       await prisma.$executeRawUnsafe('PRAGMA synchronous=NORMAL');
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn('[db] failed to apply SQLite pragmas', e);
     }
   })();

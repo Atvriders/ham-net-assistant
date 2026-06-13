@@ -37,7 +37,6 @@ async function forwardReactionToDiscord(
       }
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] forward reaction failed', e);
   }
 }

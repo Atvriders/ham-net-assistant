@@ -156,7 +156,6 @@ function Toolbar({ editor }: { editor: Editor }) {
         active={editor.isActive('link')}
         onClick={() => {
           const previous = (editor.getAttributes('link').href as string | undefined) ?? '';
-          // eslint-disable-next-line no-alert
           const url = window.prompt('Link URL', previous);
           if (url === null) return; // cancel
           if (url === '') {

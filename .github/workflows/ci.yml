@@ -21,7 +21,7 @@ jobs:
       - run: npm -w @hna/shared run build
       - run: npx -w @hna/api prisma generate
       - run: npm run typecheck
-      - run: npx eslint . --ext .ts,.tsx --max-warnings=0
+      - run: npx eslint . --max-warnings=0
       - run: npm test
         env:
           JWT_SECRET: ci-secret-long-enough-for-validation

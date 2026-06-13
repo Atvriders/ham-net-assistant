@@ -26,7 +26,6 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     });
     return;
   }
-  // eslint-disable-next-line no-console
   console.error(err);
   res.status(500).json({ error: { code: 'INTERNAL', message: 'Internal error' } });
 };

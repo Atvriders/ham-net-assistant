@@ -131,7 +131,6 @@ async function tick(prisma: PrismaClient): Promise<void> {
 
       const tz = net.timezone || 'UTC';
       if (!net.timezone) {
-        // eslint-disable-next-line no-console
         console.warn(`[discord] net ${net.id} has no timezone; defaulting to UTC`);
       }
       const occurs = nextOccurrence(net.dayOfWeek, net.startLocal, tz, now);
@@ -164,7 +163,6 @@ async function tick(prisma: PrismaClient): Promise<void> {
       }
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn('[discord] reminder tick failed', e);
   }
 }
