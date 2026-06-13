@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useId, useMemo, useState } from 'react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from 'recharts';
 import type { ParticipationStats } from '@hna/shared';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { Input } from '../components/ui/Input.js';
+import { ConfirmModal } from '../components/ui/ConfirmModal.js';
+import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { buildSessionLogText } from '../lib/sessionLog.js';
@@ -10,188 +21,566 @@ import { useAuth } from '../auth/AuthProvider.js';
 import { apiFetch } from '../api/client.js';
 import { EditSessionModal } from '../components/EditSessionModal.js';
 
-export function StatsPage() {
-  const { data: stats, refresh } = useAutoFetch<ParticipationStats>(
-    '/stats/participation',
-    { intervalMs: 15000 },
+type SessionRow = ParticipationStats['sessions'][number];
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function isoToDateInput(iso: string): string {
+  // YYYY-MM-DD slice from a full ISO string
+  return iso.slice(0, 10);
+}
+
+/**
+ * Themed recharts tooltip — mono mini-card built from theme tokens so the
+ * chart matches the console vocabulary instead of recharts' default white
+ * box. We render a small Card-like surface inline because the recharts
+ * tooltip needs a synchronous component for each hovered point.
+ */
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ value?: number | string; name?: string }>;
+  label?: string | number;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const value = payload[0]?.value ?? 0;
+  return (
+    <div
+      style={{
+        background: 'var(--color-surface-2)',
+        border: '2px solid var(--color-border-strong)',
+        borderRadius: 'var(--radius-sm)',
+        padding: '6px 10px',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 12,
+        letterSpacing: '0.06em',
+        color: 'var(--color-fg)',
+      }}
+    >
+      <div style={{ color: 'var(--color-fg-muted)', fontSize: 10, letterSpacing: '0.12em' }}>
+        {String(label ?? '')}
+      </div>
+      <div style={{ color: 'var(--color-primary)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+        {value} check-ins
+      </div>
+    </div>
   );
-  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<
-    ParticipationStats['sessions'][number] | null
-  >(null);
+}
+
+export function StatsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const isOfficer = user?.role === 'OFFICER' || isAdmin;
+  const fromId = useId();
+  const toId = useId();
 
-  function download(url: string, filename: string) {
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+
+  // Build query string when the user has picked a custom range; otherwise use
+  // the API default (~6 months back).
+  const statsUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from', `${fromDate}T00:00:00.000Z`);
+    if (toDate) params.set('to', `${toDate}T23:59:59.999Z`);
+    const qs = params.toString();
+    return qs ? `/stats/participation?${qs}` : '/stats/participation';
+  }, [fromDate, toDate]);
+
+  const { data: stats, refresh } = useAutoFetch<ParticipationStats>(statsUrl, {
+    intervalMs: 15000,
+  });
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<SessionRow | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SessionRow | null>(null);
+  const [memberSort, setMemberSort] = useState<'count' | 'callsign' | 'name'>('count');
+
+  function exportCsv() {
     const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
+    a.href = '/api/stats/export.csv';
+    a.download = 'checkins.csv';
     a.click();
   }
 
-  async function copySessionLog(
-    sessionId: string,
-    s: ParticipationStats['sessions'][number],
-  ) {
+  async function copySessionLog(s: SessionRow) {
     try {
       await navigator.clipboard.writeText(buildSessionLogText(s));
-      setCopiedSessionId(sessionId);
-      setTimeout(() => setCopiedSessionId(null), 1500);
+      setCopiedSessionId(s.id);
+      window.setTimeout(() => setCopiedSessionId(null), 1500);
     } catch {
       /* ignore — older browsers */
     }
   }
 
-  async function deleteSession(id: string, label: string) {
-    if (
-      !confirm(
-        `Delete session "${label}"? This soft-deletes the session and all its check-ins. An admin can restore it from the Recently deleted card on the Admin page.`,
-      )
-    ) {
-      return;
-    }
+  async function performDelete() {
+    if (!confirmDelete) return;
+    const id = confirmDelete.id;
+    setConfirmDelete(null);
     try {
       await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
       await refresh();
     } catch (e) {
-      alert((e as Error).message);
+      window.alert((e as Error).message);
     }
   }
 
-  if (!stats) return <div style={{ padding: 24 }}>Loading…</div>;
+  const sortedMembers = useMemo(() => {
+    if (!stats) return [];
+    const list = [...stats.perMember];
+    if (memberSort === 'count') list.sort((a, b) => b.count - a.count);
+    else if (memberSort === 'callsign')
+      list.sort((a, b) => a.callsign.localeCompare(b.callsign));
+    else list.sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  }, [stats, memberSort]);
+
+  const sortedNets = useMemo(() => {
+    if (!stats) return [];
+    return [...stats.perNet].sort((a, b) => b.checkIns - a.checkIns);
+  }, [stats]);
+
+  if (!stats) {
+    return (
+      <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+        <header className="hna-page-header">
+          <p className="hna-page-marker">// 06 — STATS</p>
+          <h1 className="hna-page-title">Stats</h1>
+          <p className="hna-page-sub">Participation across nets and members.</p>
+        </header>
+        <Card>
+          <p className="hna-mono" style={{ margin: 0, color: 'var(--color-fg-muted)' }}>
+            LOADING…
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const uniqueMembers = stats.perMember.length;
 
   return (
-    <div className="hna-container" style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 16 }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+      <header className="hna-page-header">
+        <p className="hna-page-marker">// 06 — STATS</p>
+        <h1 className="hna-page-title">Stats</h1>
+        <p className="hna-page-sub">Participation across nets and members.</p>
+      </header>
+
+      {/* Toolbar Card — range filter + export */}
       <Card>
-        <h2>Participation</h2>
-        <div>
-          Range: {stats.range.from.slice(0, 10)} to {stats.range.to.slice(0, 10)}
-        </div>
-        <div>
-          Total sessions: {stats.totalSessions} · Total check-ins: {stats.totalCheckIns}
-        </div>
-        <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          <Button onClick={() => download('/api/stats/export.csv', 'checkins.csv')}>
-            Download CSV
-          </Button>
-          <Button onClick={() => download('/api/stats/export.pdf', 'participation.pdf')}>
-            Download PDF
-          </Button>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 'var(--space-3)',
+            alignItems: 'end',
+          }}
+        >
+          <div className="hna-field">
+            <label htmlFor={fromId}>From</label>
+            <Input
+              id={fromId}
+              type="date"
+              value={fromDate}
+              max={toDate || today}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+          </div>
+          <div className="hna-field">
+            <label htmlFor={toId}>To</label>
+            <Input
+              id={toId}
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              max={today}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 'var(--space-2)',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+            }}
+          >
+            <span
+              className="hna-mono"
+              style={{
+                fontSize: 11,
+                letterSpacing: '0.1em',
+                color: 'var(--color-fg-muted)',
+              }}
+            >
+              {isoToDateInput(stats.range.from)} → {isoToDateInput(stats.range.to)}
+            </span>
+            <Button onClick={exportCsv}>Export CSV</Button>
+            {isOfficer && (
+              <Button variant="ghost" onClick={() => void refresh()}>
+                Refresh
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
+
+      <SectionDivider>OVERVIEW</SectionDivider>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 'var(--space-4)',
+        }}
+      >
+        {/* Totals */}
+        <Card>
+          <p className="hna-cap hna-cap--accent">[ TOTALS ]</p>
+          <dl
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr',
+              gap: 'var(--space-3)',
+              margin: 0,
+            }}
+          >
+            <Stat label="Sessions" value={stats.totalSessions} />
+            <Stat label="Check-ins" value={stats.totalCheckIns} />
+            <Stat label="Unique members" value={uniqueMembers} />
+          </dl>
+        </Card>
+
+        {/* Per member */}
+        <Card>
+          <p className="hna-cap hna-cap--accent">[ PER MEMBER ]</p>
+          {sortedMembers.length === 0 ? (
+            <p
+              className="hna-mono"
+              style={{ margin: 0, color: 'var(--color-fg-muted)', fontSize: 12 }}
+            >
+              No participation data yet.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="hna-log-table" style={{ minWidth: 320 }}>
+                <thead>
+                  <tr>
+                    <SortHeader
+                      label="Callsign"
+                      active={memberSort === 'callsign'}
+                      onClick={() => setMemberSort('callsign')}
+                    />
+                    <SortHeader
+                      label="Name"
+                      active={memberSort === 'name'}
+                      onClick={() => setMemberSort('name')}
+                    />
+                    <SortHeader
+                      label="Check-ins"
+                      active={memberSort === 'count'}
+                      onClick={() => setMemberSort('count')}
+                      align="right"
+                    />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedMembers.slice(0, 12).map((m) => (
+                    <tr key={m.callsign}>
+                      <td className="hna-log-table__cs">{displayCallsign(m.callsign)}</td>
+                      <td>{m.name}</td>
+                      <td
+                        className="hna-mono"
+                        style={{
+                          textAlign: 'right',
+                          fontVariantNumeric: 'tabular-nums',
+                          color: 'var(--color-fg)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {m.count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        {/* Per net */}
+        <Card>
+          <p className="hna-cap hna-cap--accent">[ PER NET ]</p>
+          {sortedNets.length === 0 ? (
+            <p
+              className="hna-mono"
+              style={{ margin: 0, color: 'var(--color-fg-muted)', fontSize: 12 }}
+            >
+              No participation data yet.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="hna-log-table" style={{ minWidth: 320 }}>
+                <thead>
+                  <tr>
+                    <th align="left">Net</th>
+                    <th
+                      align="right"
+                      style={{ textAlign: 'right' }}
+                    >
+                      Sessions
+                    </th>
+                    <th
+                      align="right"
+                      style={{ textAlign: 'right' }}
+                    >
+                      Avg attendance
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedNets.map((n) => {
+                    const avg =
+                      n.sessions > 0 ? Math.round((n.checkIns / n.sessions) * 10) / 10 : 0;
+                    return (
+                      <tr key={n.netId}>
+                        <td
+                          className="hna-display"
+                          style={{ fontSize: 13, color: 'var(--color-fg)' }}
+                        >
+                          {n.netName}
+                        </td>
+                        <td
+                          className="hna-mono"
+                          style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                        >
+                          {n.sessions}
+                        </td>
+                        <td
+                          className="hna-mono"
+                          style={{
+                            textAlign: 'right',
+                            fontVariantNumeric: 'tabular-nums',
+                            color: 'var(--color-primary)',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {avg}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Chart */}
+      <SectionDivider>CHECK-INS PER NET</SectionDivider>
       <Card>
-        <h3>Check-ins per net</h3>
-        {stats.perNet.length === 0 ? (
-          <p>No participation data yet.</p>
+        {sortedNets.length === 0 ? (
+          <p
+            className="hna-mono"
+            style={{ margin: 0, color: 'var(--color-fg-muted)', fontSize: 12 }}
+          >
+            No participation data yet.
+          </p>
         ) : (
           <div style={{ height: 280 }}>
             <ResponsiveContainer>
-              <BarChart data={stats.perNet}>
-                <XAxis dataKey="netName" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
+              <BarChart data={sortedNets}>
+                <CartesianGrid
+                  strokeDasharray="2 4"
+                  stroke="var(--color-border)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="netName"
+                  tick={{
+                    fill: 'var(--color-fg-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                  }}
+                  stroke="var(--color-border-strong)"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{
+                    fill: 'var(--color-fg-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                  }}
+                  stroke="var(--color-border-strong)"
+                />
+                <Tooltip
+                  content={<ChartTooltip />}
+                  cursor={{ fill: 'color-mix(in srgb, var(--color-primary) 8%, transparent)' }}
+                />
                 <Bar dataKey="checkIns" fill="var(--color-primary)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         )}
       </Card>
-      <Card>
-        <h3>Top members</h3>
-        {stats.perMember.length === 0 ? (
-          <p>No participation data yet.</p>
-        ) : (
-          <ol>
-            {stats.perMember.slice(0, 10).map((m) => (
-              <li key={m.callsign}>
-                <span className="hna-callsign">{displayCallsign(m.callsign)}</span> — {m.name}: {m.count}
-              </li>
-            ))}
-          </ol>
+
+      {/* Sessions */}
+      <SectionDivider>SESSIONS</SectionDivider>
+      <div className="hna-stack">
+        {stats.sessions.length === 0 && (
+          <Card>
+            <p
+              className="hna-mono"
+              style={{ margin: 0, color: 'var(--color-fg-muted)', fontSize: 12 }}
+            >
+              No sessions in range.
+            </p>
+          </Card>
         )}
-      </Card>
-      <Card>
-        <h3>Sessions</h3>
-        {stats.sessions.length === 0 && <p>No sessions in range.</p>}
         {stats.sessions.map((s) => (
-          <div
-            key={s.id}
-            style={{
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: '1px solid var(--color-border)',
-            }}
-          >
+          <Card key={s.id}>
             <div
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 8,
-                alignItems: 'center',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                gap: 'var(--space-3)',
+                alignItems: 'start',
               }}
             >
-              <strong>{s.netName}</strong>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ opacity: 0.7, fontSize: 13 }}>
-                  {new Date(s.startedAt).toLocaleString(undefined, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                    hour12: true,
-                  })}
-                </span>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'baseline',
+                    gap: 'var(--space-3)',
+                  }}
+                >
+                  <span
+                    className="hna-mono"
+                    style={{
+                      fontSize: 12,
+                      letterSpacing: '0.1em',
+                      color: 'var(--color-fg-muted)',
+                    }}
+                  >
+                    {formatDate(s.startedAt)}
+                  </span>
+                  <h3
+                    className="hna-display"
+                    style={{ margin: 0, fontSize: 18, fontWeight: 700, lineHeight: 1.1 }}
+                  >
+                    {s.netName}
+                  </h3>
+                  <span className="hna-chip">{s.checkIns.length} check-ins</span>
+                </div>
+                {s.topic && (
+                  <p style={{ margin: '6px 0 0', fontSize: 14 }}>Topic: {s.topic}</p>
+                )}
+                {s.controlOp && (
+                  <p
+                    className="hna-mono"
+                    style={{
+                      margin: '4px 0 0',
+                      fontSize: 12,
+                      letterSpacing: '0.06em',
+                      color: 'var(--color-fg-muted)',
+                    }}
+                  >
+                    CONTROL ·{' '}
+                    <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>
+                      {displayCallsign(s.controlOp.callsign)}
+                    </span>{' '}
+                    · {s.controlOp.name}
+                  </p>
+                )}
+                {s.checkIns.length > 0 && (
+                  <details style={{ marginTop: 'var(--space-3)' }}>
+                    <summary
+                      className="hna-mono"
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: '0.14em',
+                        color: 'var(--color-fg-muted)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      SHOW CHECK-INS ({s.checkIns.length})
+                    </summary>
+                    <ol style={{ marginTop: 8, paddingLeft: 22 }}>
+                      {s.checkIns.map((c) => (
+                        <li
+                          key={c.id}
+                          style={{ fontSize: 13, padding: '2px 0' }}
+                        >
+                          <span
+                            className="hna-mono"
+                            style={{
+                              color: 'var(--color-primary)',
+                              fontWeight: 700,
+                              marginRight: 6,
+                            }}
+                          >
+                            {displayCallsign(c.callsign)}
+                          </span>
+                          {c.name}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 'var(--space-2)',
+                  alignItems: 'stretch',
+                }}
+              >
                 <Button
                   variant="secondary"
-                  onClick={() => copySessionLog(s.id, s)}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
+                  size="sm"
+                  onClick={() => void copySessionLog(s)}
                 >
                   {copiedSessionId === s.id ? 'Copied ✓' : 'Copy log'}
                 </Button>
                 {isAdmin && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditing(s)}
-                    style={{ padding: '4px 10px', fontSize: 12 }}
-                  >
+                  <Button variant="secondary" size="sm" onClick={() => setEditing(s)}>
                     Edit
                   </Button>
                 )}
                 {isAdmin && (
                   <Button
                     variant="danger"
-                    onClick={() =>
-                      deleteSession(
-                        s.id,
-                        `${s.netName} — ${new Date(s.startedAt).toLocaleDateString()}`,
-                      )
-                    }
-                    style={{ padding: '4px 10px', fontSize: 12 }}
+                    size="sm"
+                    onClick={() => setConfirmDelete(s)}
                   >
                     Delete
                   </Button>
                 )}
-              </span>
-            </div>
-            {s.topic && <div>Topic: {s.topic}</div>}
-            {s.controlOp && (
-              <div>
-                Control: <strong className="hna-callsign">{displayCallsign(s.controlOp.callsign)}</strong> —{' '}
-                {s.controlOp.name}
               </div>
-            )}
-            <div style={{ marginTop: 6 }}>
-              Check-ins ({s.checkIns.length}):
-              <ol style={{ margin: '4px 0 0 20px', padding: 0 }}>
-                {s.checkIns.map((c, i) => (
-                  <li key={i} style={{ fontSize: 13 }}>
-                    <strong className="hna-callsign">{displayCallsign(c.callsign)}</strong> — {c.name}
-                  </li>
-                ))}
-              </ol>
             </div>
-          </div>
+          </Card>
         ))}
-      </Card>
+      </div>
+
       <EditSessionModal
         open={editing !== null}
         session={editing}
@@ -200,6 +589,66 @@ export function StatsPage() {
           void refresh();
         }}
       />
+      <ConfirmModal
+        open={confirmDelete !== null}
+        title="Delete session"
+        message={
+          confirmDelete
+            ? `Delete session "${confirmDelete.netName} — ${new Date(confirmDelete.startedAt).toLocaleDateString()}"? This soft-deletes the session and all its check-ins. An admin can restore it from the Recently deleted card on the Admin page.`
+            : ''
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          void performDelete();
+        }}
+        onClose={() => setConfirmDelete(null)}
+      />
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="hna-summary-stat">
+      <span className="hna-summary-stat__label">{label}</span>
+      <span className="hna-summary-stat__value hna-summary-stat__value--accent">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  active,
+  onClick,
+  align = 'left',
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  align?: 'left' | 'right';
+}) {
+  return (
+    <th align={align} style={{ textAlign: align }}>
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          background: 'transparent',
+          border: 0,
+          padding: 0,
+          font: 'inherit',
+          color: active ? 'var(--color-primary)' : 'var(--color-fg-muted)',
+          cursor: 'pointer',
+          letterSpacing: 'inherit',
+          textTransform: 'inherit',
+          fontFamily: 'inherit',
+        }}
+      >
+        {label}
+        {active ? ' ▾' : ''}
+      </button>
+    </th>
   );
 }
