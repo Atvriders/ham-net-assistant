@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NetEditModal, netToInput } from './NetEditModal.js';
 import type { NetWithRepeater } from './NetEditModal.js';
@@ -121,8 +121,11 @@ describe('NetEditModal saved-script library', () => {
     await waitFor(() => {
       expect(screen.getByText('Use a saved script')).toBeInTheDocument();
     });
-    // Switch the filter to "all" so both scripts show
-    const select = screen.getByLabelText(/Category/i) as HTMLSelectElement;
+    // Switch the filter to "all" so both scripts show. Scope to the picker
+    // dialog so the NetEditModal's own "Script category" select (now
+    // programmatically labelled via htmlFor) isn't ambiguous.
+    const pickerDialog = screen.getByRole('dialog', { name: /Use a saved script/i });
+    const select = within(pickerDialog).getByLabelText(/Category/i) as HTMLSelectElement;
     await userEvent.selectOptions(select, 'all');
     await waitFor(() => {
       expect(screen.getByText('Opening boilerplate')).toBeInTheDocument();

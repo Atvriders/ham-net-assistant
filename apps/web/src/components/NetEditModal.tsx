@@ -694,17 +694,15 @@ export function NetEditModal({
 
             <div className="hna-field">
               {/*
-                Visible "Script category" caption is styled as a label but is
-                not programmatically associated via htmlFor. The select's
-                accessible name comes from aria-label below — intentionally
-                worded as "Script template type" so it does not collide with
-                the saved-script picker's "Category" filter when both modals
-                are open (the picker's filter is queried by tests via
-                `getByLabelText(/Category/i)`). Sighted users still see
-                "Script category" with the required asterisk; assistive tech
-                hears "Script template type, required".
+                "Script category" is now fully associated with the select via
+                htmlFor/id (scriptCategoryId already exists from useId above).
+                The saved-script picker's own "Category" filter is still
+                reachable by `getByLabelText(/Category/i)` from tests when
+                scoped to the picker dialog via `within(pickerDialog)` —
+                see ScriptLibraryPicker.test.tsx.
               */}
-              <span
+              <label
+                htmlFor={scriptCategoryId}
                 className="hna-field-caption"
                 style={{
                   fontFamily: 'var(--font-mono)',
@@ -719,12 +717,11 @@ export function NetEditModal({
                 <span className="hna-required" aria-hidden="true">
                   *
                 </span>
-              </span>
+              </label>
               <select
                 id={scriptCategoryId}
                 className="hna-input"
                 value={data.scriptCategory ?? 'general'}
-                aria-label="Script template type"
                 aria-required="true"
                 aria-invalid={errors.scriptCategory ? true : undefined}
                 aria-describedby={
