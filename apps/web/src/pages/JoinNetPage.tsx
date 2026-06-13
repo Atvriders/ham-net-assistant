@@ -4,12 +4,16 @@ import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { ConfirmModal } from '../components/ui/ConfirmModal.js';
+import { LiveDot } from '../components/ui/LiveDot.js';
+import { OnlineDot } from '../components/OnlineDot.js';
+import { SectionDivider } from '../components/ui/SectionDivider.js';
+import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { usePresence } from '../lib/usePresence.js';
 import {
   capitalizeFirst,
-  formatOffset,
-  formatTone,
   displayCallsign,
 } from '../lib/format.js';
 import { looksLikeHtml } from '../lib/scriptFormat.js';
@@ -26,11 +30,13 @@ interface ActiveSessionResponse extends NetSession {
   net?: NetFull;
   topicTitle?: string | null;
   topic?: { id: string; title: string } | null;
+  controlOp?: { callsign: string; name: string } | null;
 }
 
 export function JoinNetPage() {
   const { netId } = useParams<{ netId: string }>();
   const { user } = useAuth();
+  const { isOnlineByCallsign } = usePresence();
   const {
     data: session,
     loading,
@@ -44,21 +50,25 @@ export function JoinNetPage() {
   const [checkedInAt, setCheckedInAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
+  const [comment, setComment] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const canModify = (ci: CheckIn): boolean => {
     if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
     const recent = Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
     return ci.createdById === user?.id && recent;
   };
+  const ownsRow = (ci: CheckIn): boolean => ci.createdById === user?.id;
 
-  async function deleteCheckIn(id: string) {
-    if (!confirm('Delete this check-in?')) return;
+  async function performDelete(id: string) {
     try {
       await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
       setCheckedInAt(null);
       await refresh();
     } catch (e) {
       console.warn('delete failed', e);
+    } finally {
+      setConfirmDeleteId(null);
     }
   }
 
@@ -73,16 +83,20 @@ export function JoinNetPage() {
   async function checkMeIn() {
     if (!session || !user) return;
     setSubmitting(true);
+    setErrMsg(null);
     try {
       const capitalizedName = user.name ? capitalizeFirst(user.name) : '';
+      const trimmedComment = comment.trim();
       await apiFetch(`/sessions/${session.id}/checkins`, {
         method: 'POST',
         body: JSON.stringify({
           callsign: user.callsign,
           nameAtCheckIn: capitalizedName,
+          ...(trimmedComment ? { comment: trimmedComment } : {}),
         }),
       });
       setCheckedInAt(new Date().toISOString());
+      setComment('');
       await refresh();
     } catch (e) {
       setErrMsg((e as Error).message);
@@ -101,17 +115,30 @@ export function JoinNetPage() {
     error !== null && /\b(not found|no active)/i.test(error);
   if (error && !is404) {
     return (
-      <div style={{ padding: 24, color: 'var(--color-danger)' }}>
+      <div style={{ padding: 24, color: 'var(--color-danger)' }} role="alert">
         {error}
       </div>
     );
   }
+
+  // No active session view — empty state with next-occurrence hint when available.
   if (!session || is404) {
     return (
-      <div className="hna-container" style={{ maxWidth: 700, margin: '0 auto' }}>
+      <div>
+        <header className="hna-page-header">
+          <p className="hna-page-marker">// 02 — JOIN NET</p>
+          <h1 className="hna-page-title">Join net</h1>
+          <p className="hna-page-sub">Check in to the current session.</p>
+        </header>
+        <SectionDivider>NO SESSION</SectionDivider>
         <Card>
-          <h2 style={{ marginTop: 0 }}>No net currently running</h2>
-          <p>There is no active net on this repeater right now.</p>
+          <div className="hna-empty">
+            <p className="hna-empty__title">No session running.</p>
+            <p className="hna-empty__body">
+              The control op will start the net at its scheduled time. Watch
+              the dashboard for upcoming and live nets.
+            </p>
+          </div>
         </Card>
       </div>
     );
@@ -119,204 +146,325 @@ export function JoinNetPage() {
 
   const net = session.net;
   const topic = session.topicTitle ?? session.topic?.title ?? null;
+  const repeaterFreq = net?.repeater
+    ? `${net.repeater.frequency.toFixed(3)} MHz`
+    : null;
+  const myRow = user
+    ? session.checkIns.find((c) => c.callsign === user.callsign)
+    : null;
+  const alreadyCheckedIn = Boolean(checkedInAt || myRow);
+  const canStillEditOwn =
+    !!myRow &&
+    Date.now() - new Date(myRow.checkedInAt).getTime() < 5 * 60 * 1000;
 
   return (
-    <div
-      className="hna-container"
-      style={{
-        maxWidth: 700,
-        margin: '0 auto',
-        display: 'grid',
-        gap: 16,
-      }}
-    >
+    <div>
+      <header className="hna-page-header">
+        <p className="hna-page-marker">// 02 — JOIN NET</p>
+        <h1 className="hna-page-title">Join net</h1>
+        <p className="hna-page-sub">Check in to the current session.</p>
+      </header>
+
+      {/* ===== Net summary card ===== */}
       <Card>
-        <h2 style={{ marginTop: 0 }}>
-          {net?.name ?? 'Net in progress'}
-          <span
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-3) var(--space-5)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'grid', gap: 4 }}>
+            <span
+              className="hna-net-row__name"
+              style={{ fontSize: 24, lineHeight: 1 }}
+            >
+              {net?.name ?? 'Net in progress'}
+            </span>
+            {topic && (
+              <span
+                className="hna-mono"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--color-fg-muted)',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                TOPIC · {topic}
+              </span>
+            )}
+          </div>
+          <span className="hna-runnet-status__live">
+            <LiveDot />
+            <span>LIVE</span>
+          </span>
+        </div>
+        {net?.repeater && (
+          <div
             style={{
-              fontSize: 11,
-              color: 'var(--color-success)',
-              marginLeft: 8,
+              marginTop: 'var(--space-4)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 'var(--space-3) var(--space-5)',
             }}
           >
-            ● live
-          </span>
-        </h2>
-        {net?.repeater && (
-          <div className={`hna-repeater-grid ${!net.links || net.links.length === 0 ? 'one-col' : ''}`}>
-            {/* Primary repeater */}
-            <div>
-              <div className="hna-label">Primary</div>
-              <h3 style={{ fontFamily: 'var(--font-mono)', marginTop: 2 }}>{net.repeater.name}</h3>
-              <div className="hna-freq" style={{ fontSize: 18, marginTop: 4 }}>
-                {net.repeater.frequency.toFixed(3)} <span style={{ fontSize: 11, opacity: 0.6 }}>MHz</span>
+            <span className="hna-runnet-status__cell">
+              <strong>{net.repeater.name}</strong>
+              <span style={{ opacity: 0.7 }}>·</span>
+              <strong>{repeaterFreq}</strong>
+            </span>
+            {session.controlOp && (
+              <span className="hna-runnet-status__cell" title="Net control operator">
+                NCS{' '}
+                <OnlineDot
+                  online={isOnlineByCallsign(session.controlOp.callsign)}
+                />{' '}
+                <strong>{displayCallsign(session.controlOp.callsign)}</strong>
+              </span>
+            )}
+            <span className="hna-runnet-status__cell">
+              <span>CHECK-INS</span>
+              <strong>{session.checkIns.length}</strong>
+            </span>
+          </div>
+        )}
+      </Card>
+
+      {/* ===== Check-in form ===== */}
+      <SectionDivider>YOU</SectionDivider>
+      <Card>
+        {alreadyCheckedIn ? (
+          <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+            <span className="hna-checkedin">
+              ✓ YOU'RE CHECKED IN
+              {checkedInAt && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {new Date(checkedInAt).toLocaleTimeString(undefined, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </span>
+                </>
+              )}
+            </span>
+            {myRow && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: 14,
+                }}
+              >
+                <strong
+                  className="hna-mono"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  {displayCallsign(myRow.callsign)}
+                </strong>
+                <span>— {myRow.nameAtCheckIn}</span>
+                {myRow.comment && (
+                  <span style={{ color: 'var(--color-fg-muted)' }}>
+                    · {myRow.comment}
+                  </span>
+                )}
+                {canStillEditOwn && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setEditingCheckIn(myRow)}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    Edit
+                  </Button>
+                )}
               </div>
-              <div className="hna-dot-leader" style={{ marginTop: 8, fontSize: 13 }}>
-                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Offset</span>
-                <span className="hna-mono">{formatOffset(net.repeater.offsetKhz)}</span>
-              </div>
-              <div className="hna-dot-leader" style={{ fontSize: 13 }}>
-                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Tone</span>
-                <span className="hna-mono">{formatTone(net.repeater.toneHz)}</span>
-              </div>
-              <div className="hna-dot-leader" style={{ fontSize: 13 }}>
-                <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Mode</span>
-                <span className="hna-mono">{net.repeater.mode}</span>
-              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+            <div className="hna-field">
+              <label htmlFor="join-comment-input">Comment (optional)</label>
+              <Input
+                id="join-comment-input"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                maxLength={500}
+                placeholder="e.g. mobile, short-time"
+              />
             </div>
-            {/* Linked repeaters */}
-            {net.links && net.links.length > 0 && (
-              <div>
-                <div className="hna-label">Linked</div>
-                {net.links.map((l) => (
-                  <div key={l.id} style={{ marginBottom: 12 }}>
-                    <h3 style={{ fontFamily: 'var(--font-mono)', marginTop: 2 }}>{l.repeater.name}</h3>
-                    <div className="hna-freq" style={{ fontSize: 18, marginTop: 4 }}>
-                      {l.repeater.frequency.toFixed(3)} <span style={{ fontSize: 11, opacity: 0.6 }}>MHz</span>
-                    </div>
-                    <div className="hna-dot-leader" style={{ marginTop: 8, fontSize: 13 }}>
-                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Offset</span>
-                      <span className="hna-mono">{formatOffset(l.repeater.offsetKhz)}</span>
-                    </div>
-                    <div className="hna-dot-leader" style={{ fontSize: 13 }}>
-                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Tone</span>
-                      <span className="hna-mono">{formatTone(l.repeater.toneHz)}</span>
-                    </div>
-                    <div className="hna-dot-leader" style={{ fontSize: 13 }}>
-                      <span className="hna-label" style={{ letterSpacing: '0.1em' }}>Mode</span>
-                      <span className="hna-mono">{l.repeater.mode}</span>
-                    </div>
-                  </div>
-                ))}
+            <Button onClick={checkMeIn} disabled={submitting || !user}>
+              {submitting ? 'Checking in…' : 'Check in'}
+            </Button>
+            {errMsg && (
+              <div className="hna-input-error" role="alert">
+                {errMsg}
               </div>
             )}
           </div>
         )}
-        {topic && (
-          <div style={{ marginTop: 8 }}>
-            <strong>Topic:</strong> {topic}
-          </div>
-        )}
-        <div style={{ marginTop: 8 }}>Check-ins: {session.checkIns.length}</div>
       </Card>
-      <Card>
-        {checkedInAt ? (
-          <Button disabled>
-            ✓ Checked in at{' '}
-            {new Date(checkedInAt).toLocaleTimeString(undefined, {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-            })}
-          </Button>
-        ) : (
-          <Button onClick={checkMeIn} disabled={submitting || !user}>
-            {submitting ? 'Checking in…' : 'Check me in'}
-          </Button>
-        )}
-        {errMsg && (
-          <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{errMsg}</div>
-        )}
-      </Card>
+
+      {/* ===== Script ===== */}
       {session.net?.scriptMd && (
-        <Card>
-          <h3 style={{ marginTop: 0 }}>Script</h3>
-          {looksLikeHtml(session.net.scriptMd) ? (
-            <SanitizedHtml
-              className="hna-script-html"
-              html={session.net.scriptMd}
-              style={{
-                fontFamily: 'var(--font-body)',
-                fontSize: 15,
-                lineHeight: 1.65,
-              }}
-            />
-          ) : (
-            <pre
-              style={{
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'ui-monospace, Menlo, monospace',
-                fontSize: 14,
-                lineHeight: 1.5,
-                margin: 0,
-              }}
+        <>
+          <SectionDivider>SCRIPT</SectionDivider>
+          <Card>
+            <h3
+              className="hna-section-caption__title"
+              style={{ marginTop: 0 }}
             >
-              {session.net.scriptMd}
-            </pre>
-          )}
-        </Card>
-      )}
-      <Card>
-        <h3 style={{ marginTop: 0 }}>Check-ins ({session.checkIns.length})</h3>
-        {session.checkIns.length === 0 && <p>No check-ins yet.</p>}
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {session.checkIns.map((ci) => (
-            <li
-              key={ci.id}
-              style={{
-                borderBottom: '1px solid var(--color-border)',
-                padding: '6px 0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <span>
-                <strong className="hna-callsign">{displayCallsign(ci.callsign)}</strong> — {ci.nameAtCheckIn}
+              <span className="hna-cap hna-cap--accent" style={{ margin: 0 }}>
+                [ SCRIPT ]
               </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: 'var(--color-muted)' }}>
+            </h3>
+            {looksLikeHtml(session.net.scriptMd) ? (
+              <SanitizedHtml
+                className="hna-script-html hna-script-panel"
+                html={session.net.scriptMd}
+              />
+            ) : (
+              <pre
+                className="hna-script-panel"
+                style={{ whiteSpace: 'pre-wrap', margin: 0 }}
+              >
+                {session.net.scriptMd}
+              </pre>
+            )}
+          </Card>
+        </>
+      )}
+
+      {/* ===== Roster ===== */}
+      <SectionDivider>ROSTER</SectionDivider>
+      <Card>
+        <header className="hna-section-caption">
+          <h3 className="hna-section-caption__title">
+            <span className="hna-cap hna-cap--accent" style={{ margin: 0 }}>
+              [ ROSTER ]
+            </span>
+          </h3>
+          <span className="hna-section-caption__count">
+            [ {session.checkIns.length} CHECKED IN ]
+          </span>
+        </header>
+        <ul
+          className="hna-roster"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Check-in log"
+        >
+          {session.checkIns.length === 0 && (
+            <li
+              className="hna-empty"
+              style={{ padding: 'var(--space-4) 0' }}
+            >
+              <p className="hna-empty__title">No check-ins yet.</p>
+              <p className="hna-empty__body">Be the first — check in above.</p>
+            </li>
+          )}
+          {session.checkIns.map((ci, displayIdx) => {
+            const ord = session.checkIns.length - displayIdx;
+            const recent =
+              Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
+            const canEdit = canModify(ci);
+            const showDisabledHint = !canEdit && ownsRow(ci) && !recent;
+            return (
+              <li key={ci.id} className="hna-roster__row">
+                <span className="hna-roster__idx">
+                  #{String(ord).padStart(2, '0')}
+                </span>
+                <span className="hna-roster__cs">
+                  <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
+                  {displayCallsign(ci.callsign)}
+                </span>
+                <span className="hna-roster__name">
+                  {ci.nameAtCheckIn}
+                  {ci.comment && <small>{ci.comment}</small>}
+                </span>
+                <span className="hna-roster__time">
                   {new Date(ci.checkedInAt).toLocaleTimeString(undefined, {
                     hour: 'numeric',
                     minute: '2-digit',
                     hour12: true,
                   })}
                 </span>
-                {canModify(ci) && (
-                  <>
-                    <button
-                      onClick={() => setEditingCheckIn(ci)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-fg)',
-                        opacity: 0.7,
-                        fontSize: 14,
-                      }}
-                      aria-label="Edit"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      onClick={() => deleteCheckIn(ci.id)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-danger)',
-                        opacity: 0.7,
-                        fontSize: 14,
-                      }}
-                      aria-label="Delete"
-                    >
-                      ×
-                    </button>
-                  </>
-                )}
-              </span>
-            </li>
-          ))}
+                <span className="hna-roster__actions">
+                  <button
+                    type="button"
+                    onClick={() => canEdit && setEditingCheckIn(ci)}
+                    className="hna-roster__btn"
+                    disabled={!canEdit}
+                    aria-label={
+                      canEdit
+                        ? 'Edit check-in'
+                        : 'Editable for 5 minutes — ask an officer for changes after that'
+                    }
+                    title={
+                      canEdit
+                        ? 'Edit'
+                        : showDisabledHint
+                          ? 'Editable for 5 minutes — ask an officer for changes after that'
+                          : 'Editing requires officer role'
+                    }
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => canEdit && setConfirmDeleteId(ci.id)}
+                    className="hna-roster__btn"
+                    data-variant="danger"
+                    disabled={!canEdit}
+                    aria-label={
+                      canEdit
+                        ? 'Delete check-in'
+                        : 'Editable for 5 minutes — ask an officer for changes after that'
+                    }
+                    title={
+                      canEdit
+                        ? 'Delete'
+                        : showDisabledHint
+                          ? 'Editable for 5 minutes — ask an officer for changes after that'
+                          : 'Deleting requires officer role'
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </Card>
+
+      {/* ===== Chat ===== */}
+      <SectionDivider>CHAT</SectionDivider>
       <ChatBox sessionId={session.id} />
+
       <EditCheckInModal
         open={editingCheckIn !== null}
         checkIn={editingCheckIn}
         onClose={() => setEditingCheckIn(null)}
         onSaved={refresh}
+      />
+      <ConfirmModal
+        open={confirmDeleteId !== null}
+        title="Delete check-in"
+        message="Delete this check-in?"
+        confirmLabel="Delete"
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          if (confirmDeleteId) void performDelete(confirmDeleteId);
+        }}
       />
     </div>
   );

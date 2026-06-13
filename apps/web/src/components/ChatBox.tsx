@@ -5,6 +5,8 @@ import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { Button } from './ui/Button.js';
 import { Card } from './ui/Card.js';
+import { ConfirmModal } from './ui/ConfirmModal.js';
+import { LiveDot } from './ui/LiveDot.js';
 import { displayCallsign } from '../lib/format.js';
 
 interface Props {
@@ -34,6 +36,7 @@ export function ChatBox({ sessionId }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [discordBridged, setDiscordBridged] = useState(false);
   const [pickerForId, setPickerForId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const messages = data ?? [];
 
@@ -55,10 +58,10 @@ export function ChatBox({ sessionId }: Props) {
   }, [messages.length, sessionId]);
 
   // Identify where the backfill (other sessions, last 24h) ends and the
-  // current session begins, so we can render a subtle "— net started —"
-  // divider between them. If the current session has no messages yet,
-  // `firstCurrentIdx` is -1 — treat that as "all loaded rows are backfill"
-  // and render the divider at the end of the list.
+  // current session begins, so we can render a subtle divider between them.
+  // If the current session has no messages yet, `firstCurrentIdx` is -1 —
+  // treat that as "all loaded rows are backfill" and render the divider at
+  // the end of the list.
   const firstCurrentIdxRaw = messages.findIndex((m) => m.sessionId === sessionId);
   const backfillCount = firstCurrentIdxRaw < 0
     ? messages.filter((m) => m.sessionId !== sessionId).length
@@ -86,13 +89,14 @@ export function ChatBox({ sessionId }: Props) {
     }
   }
 
-  async function deleteMsg(id: string) {
-    if (!confirm('Delete this message?')) return;
+  async function performDelete(id: string) {
     try {
       await apiFetch(`/messages/${id}`, { method: 'DELETE' });
       await refresh();
     } catch (e) {
       if (e instanceof ApiErrorException) setErr(e.payload.message);
+    } finally {
+      setConfirmDeleteId(null);
     }
   }
 
@@ -129,56 +133,42 @@ export function ChatBox({ sessionId }: Props) {
 
   return (
     <Card>
-      <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        Chat
-        <span style={{ fontSize: 11, color: 'var(--color-success)' }}>● live</span>
+      <header
+        className="hna-section-caption"
+        style={{ alignItems: 'center' }}
+      >
+        <h3 className="hna-section-caption__title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span className="hna-cap hna-cap--accent" style={{ margin: 0 }}>[ CHAT ]</span>
+          <span aria-hidden="true" style={{ width: 1 }} />
+          <LiveDot />
+        </h3>
         {discordBridged && (
           <span
-            style={{
-              fontSize: 11,
-              padding: '2px 6px',
-              borderRadius: 10,
-              background: 'var(--color-bg-muted)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-fg)',
-              opacity: 0.85,
-            }}
+            className="hna-chip"
             title="In-app chat mirrors to a Discord channel during this net"
           >
-            Bridged with Discord
+            Bridged · Discord
           </span>
         )}
-      </h3>
+      </header>
       <div
         ref={listRef}
-        style={{
-          height: 320,
-          overflowY: 'auto',
-          background: 'var(--color-bg-muted)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6,
-          padding: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-        }}
+        className="hna-chat__list"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Session chat"
       >
         {messages.length === 0 && (
-          <div style={{ color: 'var(--color-fg)', opacity: 0.6, fontStyle: 'italic' }}>
-            No messages yet.
-          </div>
+          <div className="hna-chat__empty">No messages yet.</div>
         )}
         {hasBackfill && (
           <div
-            style={{
-              fontSize: 11,
-              opacity: 0.65,
-              textAlign: 'center',
-              padding: '2px 0',
-              alignSelf: 'stretch',
-            }}
+            className="hna-section-divider"
+            style={{ margin: '0 0 var(--space-2)' }}
+            role="separator"
           >
-            Recent (last 24h)
+            <span>— PRE-NET CONTEXT —</span>
           </div>
         )}
         {messages.map((m, idx) => {
@@ -196,168 +186,107 @@ export function ChatBox({ sessionId }: Props) {
               {dividerHere && (
                 <div
                   data-testid="net-started-divider"
-                  style={{
-                    fontSize: 11,
-                    opacity: 0.7,
-                    textAlign: 'center',
-                    padding: '4px 0',
-                    margin: '4px 0',
-                    borderTop: '1px solid var(--color-border)',
-                    color: 'var(--color-fg)',
-                    alignSelf: 'stretch',
-                  }}
+                  className="hna-section-divider"
+                  style={{ margin: 'var(--space-2) 0', color: 'var(--color-primary)' }}
+                  role="separator"
                 >
-                  — net started —
+                  <span>— NET STARTED —</span>
                 </div>
               )}
-            <div
-              style={{
-                alignSelf: mine ? 'flex-end' : 'flex-start',
-                maxWidth: '85%',
-                background: mine ? 'var(--color-primary)' : 'var(--color-bg)',
-                color: mine ? 'var(--color-primary-fg)' : 'var(--color-fg)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 8,
-                padding: '6px 10px',
-                opacity: isBackfill ? 0.75 : 1,
-              }}
-            >
-              <div style={{ fontSize: 11, opacity: 0.8 }}>
-                <span className="hna-callsign">{displayCallsign(m.callsign)}</span> · {m.nameAtMessage} ·{' '}
-                {new Date(m.createdAt).toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
-                {canDelete && (
-                  <button
-                    onClick={() => deleteMsg(m.id)}
-                    style={{
-                      marginLeft: 8,
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      opacity: 0.6,
-                    }}
-                    aria-label="Delete message"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {m.body}
-              </div>
-              <div style={{ marginTop: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
-                {Object.entries(grouped).map(([emoji, group]) => {
-                  const myRow = user ? group.some((r) => r.userId === user.id) : false;
-                  return (
+              <div
+                className={[
+                  'hna-chat__bubble',
+                  mine ? 'hna-chat__bubble--mine' : '',
+                  isBackfill ? 'hna-chat__bubble--backfill' : '',
+                ].filter(Boolean).join(' ')}
+              >
+                <div className="hna-chat__bubble-head">
+                  <strong>{displayCallsign(m.callsign)}</strong>
+                  <span style={{ opacity: 0.7 }}>· {m.nameAtMessage}</span>
+                  <span>·</span>
+                  <span>
+                    {new Date(m.createdAt).toLocaleTimeString(undefined, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </span>
+                  {canDelete && (
                     <button
-                      key={emoji}
-                      onClick={() =>
-                        myRow ? removeReaction(m.id, emoji) : addReaction(m.id, emoji)
-                      }
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        background: myRow ? 'var(--color-primary)' : 'var(--color-bg-muted)',
-                        color: myRow ? 'var(--color-primary-fg)' : 'var(--color-fg)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 12,
-                        padding: '1px 7px',
-                        fontSize: 12,
-                        cursor: 'pointer',
-                        marginRight: 4,
-                        marginTop: 4,
-                      }}
-                      aria-label={`${emoji} ${group.length}`}
-                      disabled={!user}
+                      type="button"
+                      onClick={() => setConfirmDeleteId(m.id)}
+                      className="hna-chat__bubble-del"
+                      aria-label="Delete message"
+                      title="Delete message"
                     >
-                      <span>{emoji}</span>
-                      <span style={{ opacity: 0.8 }}>{group.length}</span>
+                      ×
                     </button>
-                  );
-                })}
-                {user && (
-                  <button
-                    onClick={() => setPickerForId(pickerForId === m.id ? null : m.id)}
-                    style={{
-                      background: 'transparent',
-                      border: '1px dashed var(--color-border)',
-                      borderRadius: 12,
-                      padding: '1px 7px',
-                      fontSize: 11,
-                      cursor: 'pointer',
-                      marginRight: 4,
-                      marginTop: 4,
-                      color: 'inherit',
-                      opacity: 0.7,
-                    }}
-                    aria-label="Add reaction"
-                    title="Add reaction"
-                  >
-                    + 🙂
-                  </button>
-                )}
-                {pickerForId === m.id && (
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 2,
-                      marginLeft: 4,
-                      marginTop: 4,
-                      padding: '1px 4px',
-                      background: 'var(--color-bg)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 12,
-                    }}
-                  >
-                    {QUICK_EMOJI.map((e) => (
+                  )}
+                </div>
+                <div className="hna-chat__bubble-body">{m.body}</div>
+                {(Object.keys(grouped).length > 0 || user) && (
+                  <div className="hna-chat__reactions">
+                    {Object.entries(grouped).map(([emoji, group]) => {
+                      const myRow = user ? group.some((r) => r.userId === user.id) : false;
+                      return (
+                        <button
+                          type="button"
+                          key={emoji}
+                          onClick={() =>
+                            myRow ? removeReaction(m.id, emoji) : addReaction(m.id, emoji)
+                          }
+                          className={`hna-chat__react-chip ${myRow ? 'hna-chat__react-chip--mine' : ''}`}
+                          aria-label={`${emoji} ${group.length}`}
+                          disabled={!user}
+                        >
+                          <span>{emoji}</span>
+                          <span style={{ opacity: 0.8 }}>{group.length}</span>
+                        </button>
+                      );
+                    })}
+                    {user && (
                       <button
-                        key={e}
-                        onClick={() => addReaction(m.id, e)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: 14,
-                          padding: '0 3px',
-                          color: 'inherit',
-                        }}
-                        aria-label={`React with ${e}`}
+                        type="button"
+                        onClick={() => setPickerForId(pickerForId === m.id ? null : m.id)}
+                        className="hna-chat__react-add"
+                        aria-label="Add reaction"
+                        title="Add reaction"
                       >
-                        {e}
+                        + 🙂
                       </button>
-                    ))}
+                    )}
+                    {pickerForId === m.id && (
+                      <div className="hna-chat__react-picker">
+                        {QUICK_EMOJI.map((e) => (
+                          <button
+                            type="button"
+                            key={e}
+                            onClick={() => addReaction(m.id, e)}
+                            aria-label={`React with ${e}`}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
             </React.Fragment>
           );
         })}
         {hasBackfill && dividerAtIdx === messages.length && (
           <div
             data-testid="net-started-divider"
-            style={{
-              fontSize: 11,
-              opacity: 0.7,
-              textAlign: 'center',
-              padding: '4px 0',
-              margin: '4px 0',
-              borderTop: '1px solid var(--color-border)',
-              color: 'var(--color-fg)',
-              alignSelf: 'stretch',
-            }}
+            className="hna-section-divider"
+            style={{ margin: 'var(--space-2) 0', color: 'var(--color-primary)' }}
+            role="separator"
           >
-            — net started —
+            <span>— NET STARTED —</span>
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+      <div className="hna-chat__compose">
         <textarea
           className="hna-input"
           rows={2}
@@ -366,14 +295,32 @@ export function ChatBox({ sessionId }: Props) {
           onKeyDown={onKeyDown}
           placeholder="Type a message — Enter to send, Shift+Enter for newline"
           maxLength={500}
-          style={{ flex: 1, resize: 'vertical' }}
+          aria-label="New chat message"
           disabled={submitting || !user}
         />
         <Button onClick={send} disabled={submitting || !text.trim() || !user}>
           Send
         </Button>
       </div>
-      {err && <div style={{ color: 'var(--color-danger)', marginTop: 6 }}>{err}</div>}
+      {err && (
+        <div
+          className="hna-input-error"
+          role="alert"
+          style={{ marginTop: 6 }}
+        >
+          {err}
+        </div>
+      )}
+      <ConfirmModal
+        open={confirmDeleteId !== null}
+        title="Delete message"
+        message="Delete this message?"
+        confirmLabel="Delete"
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          if (confirmDeleteId) void performDelete(confirmDeleteId);
+        }}
+      />
     </Card>
   );
 }

@@ -1127,6 +1127,550 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 
 /* ============================================================== */
+/* RunNet — operator console layout                                 */
+/* ============================================================== */
+
+/* Status strip across the top of the live page. Sticks to the top of
+ * <main> so the operator always sees net + control op + elapsed time
+ * while scrolling the roster. The 56px offset clears the sticky shell
+ * nav (~52px) plus its 2px bottom border. */
+.hna-runnet-status {
+  position: sticky;
+  top: 56px;
+  z-index: 5;
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-4);
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.hna-runnet-status__facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+}
+.hna-runnet-status__name {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-fg);
+}
+.hna-runnet-status__cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+}
+.hna-runnet-status__cell strong {
+  color: var(--color-fg);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.hna-runnet-status__elapsed {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.hna-runnet-status__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-danger);
+  padding: 4px 8px;
+  border: var(--border-w) solid var(--color-danger);
+  border-radius: var(--radius-sm);
+}
+.hna-runnet-status__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Two-column desktop layout (roster | chat+script) */
+.hna-runnet-grid2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+.hna-runnet-grid2__col {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+@media (max-width: 1024px) {
+  .hna-runnet-grid2 { grid-template-columns: 1fr; }
+}
+
+/* Operator overflow menu (⋯) */
+.hna-overflow {
+  position: relative;
+  display: inline-block;
+}
+.hna-overflow__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-fg);
+  background: transparent;
+  border: var(--border-w-strong) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.hna-overflow__btn:hover,
+.hna-overflow__btn[aria-expanded="true"] {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.hna-overflow__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  background: var(--color-surface-2);
+  border: var(--border-w-strong) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Check-in form + roster list */
+.hna-checkin-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.hna-checkin-form__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-3);
+}
+@media (max-width: 640px) {
+  .hna-checkin-form__row { grid-template-columns: 1fr; }
+}
+.hna-checkin-form__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Sticky check-in form on mobile so officers can add a check-in
+ * with one thumb. Stacks above the roster list on small screens. */
+@media (max-width: 1024px) {
+  .hna-checkin-form {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    background: var(--color-surface);
+    border-top: var(--border-w) solid var(--color-border);
+    padding-top: var(--space-3);
+    margin-left: calc(-1 * var(--space-5));
+    margin-right: calc(-1 * var(--space-5));
+    margin-bottom: 0;
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
+  }
+}
+
+.hna-roster {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+.hna-roster__row {
+  display: grid;
+  grid-template-columns: 44px minmax(80px, auto) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--color-border);
+}
+.hna-roster__row:hover { background: color-mix(in srgb, var(--color-primary) 4%, transparent); }
+.hna-roster__idx {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.hna-roster__cs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-primary);
+}
+.hna-roster__name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hna-roster__name small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+}
+.hna-roster__time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hna-roster__actions {
+  display: inline-flex;
+  gap: 2px;
+}
+.hna-roster__btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.hna-roster__btn:hover:not(:disabled) {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+.hna-roster__btn[data-variant="danger"]:hover:not(:disabled) {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+.hna-roster__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+@media (max-width: 640px) {
+  .hna-roster__row {
+    grid-template-columns: 36px minmax(60px, auto) minmax(0, 1fr) auto;
+  }
+  .hna-roster__time { display: none; }
+}
+
+/* ============================================================== */
+/* Chat — calibrated bubble look                                    */
+/* ============================================================== */
+.hna-chat__list {
+  height: 360px;
+  overflow-y: auto;
+  background: var(--color-bg);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hna-chat__empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+  font-style: italic;
+  text-align: center;
+  padding: var(--space-4);
+}
+.hna-chat__bubble {
+  align-self: flex-start;
+  max-width: 85%;
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  display: grid;
+  gap: 2px;
+}
+.hna-chat__bubble--mine {
+  align-self: flex-end;
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+.hna-chat__bubble--backfill { opacity: 0.6; }
+.hna-chat__bubble-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+  flex-wrap: wrap;
+}
+.hna-chat__bubble-head strong {
+  color: var(--color-primary);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.hna-chat__bubble-body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+.hna-chat__bubble-del {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+}
+.hna-chat__bubble-del:hover { color: var(--color-danger); }
+.hna-chat__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.hna-chat__react-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: 12px;
+  padding: 1px 7px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.hna-chat__react-chip--mine {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-2));
+  border-color: var(--color-primary);
+}
+.hna-chat__react-add {
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  padding: 1px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.hna-chat__react-add:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.hna-chat__react-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  background: var(--color-surface-2);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: 12px;
+}
+.hna-chat__react-picker button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 3px;
+}
+.hna-chat__compose {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  align-items: flex-end;
+}
+.hna-chat__compose textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 44px;
+}
+
+/* Section caption inside a card */
+.hna-section-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  flex-wrap: wrap;
+}
+.hna-section-caption__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--color-fg);
+}
+.hna-section-caption__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+/* Script panel (read-only on RunNet) */
+.hna-script-panel {
+  background: var(--color-bg);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  max-height: 520px;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* ============================================================== */
+/* SessionSummary — log/transcript surfaces                         */
+/* ============================================================== */
+.hna-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.hna-summary-stat {
+  display: grid;
+  gap: 2px;
+}
+.hna-summary-stat__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+}
+.hna-summary-stat__value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+.hna-summary-stat__value--accent { color: var(--color-primary); }
+@media (max-width: 720px) {
+  .hna-summary-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.hna-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.hna-log-table thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-w-strong) solid var(--color-border);
+}
+.hna-log-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--color-border);
+  vertical-align: top;
+}
+.hna-log-table .hna-log-table__idx,
+.hna-log-table .hna-log-table__cs,
+.hna-log-table .hna-log-table__time {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.hna-log-table .hna-log-table__idx { color: var(--color-fg-subtle); width: 56px; }
+.hna-log-table .hna-log-table__cs { color: var(--color-primary); font-weight: 700; }
+.hna-log-table .hna-log-table__time { color: var(--color-fg-muted); width: 110px; }
+.hna-log-table tbody tr:last-child td { border-bottom: 0; }
+.hna-log-table__empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+  font-style: italic;
+  text-align: center;
+  padding: var(--space-5);
+}
+
+/* JoinNet — confirmation banner */
+.hna-checkedin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-success);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w-strong) solid var(--color-success);
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================== */
 /* Reduced motion                                                    */
 /* ============================================================== */
 @media (prefers-reduced-motion: reduce) {
