@@ -1,5 +1,4 @@
 import React, { useId, useState } from 'react';
-import mammoth from 'mammoth';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
@@ -28,6 +27,9 @@ async function parseFile(file: File): Promise<string> {
     return await file.text();
   }
   if (name.endsWith('.docx')) {
+    // Defer the ~150 KB mammoth bundle until a user actually picks a .docx;
+    // it stays out of the initial payload for everyone else.
+    const mammoth = (await import('mammoth')).default;
     const buf = await file.arrayBuffer();
     const result = await mammoth.convertToHtml(
       { arrayBuffer: buf },

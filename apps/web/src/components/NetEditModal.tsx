@@ -8,7 +8,7 @@ import { Modal } from './ui/Modal.js';
 import { ConfirmModal } from './ui/ConfirmModal.js';
 import { ScriptImportModal } from './ScriptImportModal.js';
 import { ScriptLibraryPicker } from './ScriptLibraryPicker.js';
-import { ScriptEditor } from './ScriptEditor.js';
+import { ScriptEditor } from './ScriptEditor.lazy.js';
 import { dayName, to12h, to24h } from '../lib/time.js';
 
 interface NetLinkWithRepeater {

@@ -139,8 +139,11 @@ describe('NetEditModal saved-script library', () => {
         'Closing remarks',
       );
     });
-    // Switch to raw markdown to inspect the editor body
-    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    // Switch to raw markdown to inspect the editor body. Wait for the
+    // lazy-loaded ScriptEditor chunk to mount its tabs.
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Raw markdown' }),
+    );
     expect(
       (screen.getByTestId('script-raw') as HTMLTextAreaElement).value,
     ).toBe('Thanks all');

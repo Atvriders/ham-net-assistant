@@ -64,8 +64,9 @@ describe('NetEditModal', () => {
       />,
     );
     expect(await screen.findByText('Edit net')).toBeInTheDocument();
-    // Human readable (WYSIWYG) mode is the default.
-    const humanTab = screen.getByRole('tab', { name: 'Human readable' });
+    // Human readable (WYSIWYG) mode is the default. Await the lazy
+    // ScriptEditor boundary before querying the tabs it owns.
+    const humanTab = await screen.findByRole('tab', { name: 'Human readable' });
     expect(humanTab).toHaveAttribute('aria-selected', 'true');
     // Switch to Raw markdown to inspect the underlying value verbatim.
     await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
@@ -85,7 +86,8 @@ describe('NetEditModal', () => {
       />,
     );
     await screen.findByText('Edit net');
-    const human = screen.getByRole('tab', { name: 'Human readable' });
+    // Wait for the lazy ScriptEditor chunk to load (its toolbar exposes the tabs).
+    const human = await screen.findByRole('tab', { name: 'Human readable' });
     const raw = screen.getByRole('tab', { name: 'Raw markdown' });
     expect(human).toHaveAttribute('aria-selected', 'true');
     expect(raw).toHaveAttribute('aria-selected', 'false');
@@ -114,6 +116,8 @@ describe('NetEditModal', () => {
       />,
     );
     await screen.findByText('Edit net');
+    // Wait for the lazy ScriptEditor chunk to load before its WYSIWYG renders.
+    await screen.findByTestId('script-wysiwyg');
     // The WYSIWYG should have rendered the heading + bold without garbling.
     await waitFor(() => {
       const wysiwyg = screen.getByTestId('script-wysiwyg');
@@ -171,7 +175,8 @@ describe('NetEditModal', () => {
     );
     await screen.findByText('Edit net');
     // Switch to Raw markdown to drive the textarea deterministically.
-    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    // The Raw markdown tab is owned by the lazy-loaded ScriptEditor; wait.
+    await userEvent.click(await screen.findByRole('tab', { name: 'Raw markdown' }));
     const scriptBox = screen.getByTestId('script-raw') as HTMLTextAreaElement;
     await userEvent.clear(scriptBox);
     await userEvent.type(scriptBox, 'Updated script body.');
@@ -198,7 +203,8 @@ describe('NetEditModal', () => {
       />,
     );
     await screen.findByText('Edit net');
-    const wysiwyg = screen.getByTestId('script-wysiwyg');
+    // Wait for the lazy ScriptEditor chunk before grabbing its contenteditable.
+    const wysiwyg = await screen.findByTestId('script-wysiwyg');
     // TipTap renders an editable contenteditable; type into it then bold it.
     (wysiwyg as HTMLElement).focus();
     await userEvent.type(wysiwyg as HTMLElement, 'hello');

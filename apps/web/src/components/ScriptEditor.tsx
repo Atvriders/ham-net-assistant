@@ -257,9 +257,14 @@ export function ScriptEditor({ value, onChange, id }: Props) {
   // resetting the user's cursor on every keystroke.
   useEffect(() => {
     if (!editor) return;
+    // The tiptap-markdown storage attaches asynchronously when extensions
+    // initialize. When the editor is itself lazy-loaded the parent can
+    // rerender (and trigger this effect) before the markdown extension has
+    // registered, so we guard against the missing storage slot.
     const storage = editor.storage as unknown as {
-      markdown: { getMarkdown: () => string };
+      markdown?: { getMarkdown: () => string };
     };
+    if (!storage.markdown) return;
     const current = storage.markdown.getMarkdown();
     const next = toMarkdown(value);
     if (current === next) return;

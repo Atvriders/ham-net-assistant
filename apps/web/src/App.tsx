@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, NavLink } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider.js';
@@ -13,11 +13,43 @@ import { NetsPage } from './pages/NetsPage.js';
 import { RunNetPage } from './pages/RunNetPage.js';
 import { JoinNetPage } from './pages/JoinNetPage.js';
 import { SessionSummaryPage } from './pages/SessionSummaryPage.js';
-import { StatsPage } from './pages/StatsPage.js';
 import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { OfficerToolsPage } from './pages/OfficerToolsPage.js';
 import { displayCallsign } from './lib/format.js';
+
+// Lazy-load the StatsPage so the recharts bundle (~300-400 KB) is only fetched
+// when an officer/admin actually navigates to /stats. Most users never hit
+// this route, so it stays out of the initial payload.
+const StatsPage = lazy(() =>
+  import('./pages/StatsPage.js').then((m) => ({ default: m.StatsPage })),
+);
+
+/**
+ * Fallback shown while the StatsPage chunk (recharts) is being fetched.
+ * Mirrors the calibrated Card + mono caption used elsewhere so the loading
+ * state looks intentional rather than blank.
+ */
+function StatsPageFallback() {
+  return (
+    <div className="hna-page">
+      <div className="hna-card" aria-busy="true" aria-live="polite">
+        <div
+          className="hna-mono"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            letterSpacing: '0.08em',
+            color: 'var(--color-fg-muted, #888)',
+            padding: 24,
+          }}
+        >
+          {'// LOADING STATS'}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Inline radio-mast glyph. Two arcs (signal) sweeping out of a vertical mast,
@@ -178,7 +210,16 @@ export function App() {
                 <Route path="/nets/:netId/join" element={<RequireRole><JoinNetPage /></RequireRole>} />
                 <Route path="/run/:sessionId" element={<RequireRole min="OFFICER"><RunNetPage /></RequireRole>} />
                 <Route path="/sessions/:sessionId/summary" element={<RequireRole min="OFFICER"><SessionSummaryPage /></RequireRole>} />
-                <Route path="/stats" element={<RequireRole min="OFFICER"><StatsPage /></RequireRole>} />
+                <Route
+                  path="/stats"
+                  element={
+                    <RequireRole min="OFFICER">
+                      <Suspense fallback={<StatsPageFallback />}>
+                        <StatsPage />
+                      </Suspense>
+                    </RequireRole>
+                  }
+                />
                 <Route path="/topics" element={<RequireRole><TopicsPage /></RequireRole>} />
                 <Route path="/settings" element={<RequireRole><SettingsPage /></RequireRole>} />
                 <Route path="/officer-tools" element={<RequireRole min="OFFICER"><OfficerToolsPage /></RequireRole>} />

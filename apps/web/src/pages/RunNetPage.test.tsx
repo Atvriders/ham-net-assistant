@@ -104,8 +104,11 @@ describe('RunNetPage script tab edit', () => {
     });
     expect(screen.getByDisplayValue('Tuesday Net')).toBeInTheDocument();
     // The script editor defaults to WYSIWYG; switch to raw markdown so the
-    // test can drive a textarea directly.
-    await userEvent.click(screen.getByRole('tab', { name: 'Raw markdown' }));
+    // test can drive a textarea directly. ScriptEditor is now lazy-loaded,
+    // so await its tabs before clicking.
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Raw markdown' }),
+    );
     const scriptBox = screen.getByTestId('script-raw') as HTMLTextAreaElement;
     await userEvent.clear(scriptBox);
     await userEvent.type(scriptBox, 'Revised script.');

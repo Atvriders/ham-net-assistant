@@ -7,7 +7,7 @@ import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
 import { ConfirmModal } from './ui/ConfirmModal.js';
-import { ScriptEditor } from './ScriptEditor.js';
+import { ScriptEditor } from './ScriptEditor.lazy.js';
 
 const CATEGORIES: ScriptCategory[] = ['weekly', 'general', 'impromptu'];
 
