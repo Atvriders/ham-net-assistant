@@ -33,32 +33,47 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# libssl3 is in node:22-slim already; add ca-certs, wget for healthcheck, gosu for step-down
+# libssl3 is in node:22-slim already; add ca-certs + gosu for step-down.
+# wget intentionally omitted — healthcheck uses node's built-in http to avoid
+# pulling an extra package into the final layer.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl ca-certificates wget gosu \
+    && apt-get install -y --no-install-recommends openssl ca-certificates gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Manifests — only api + shared, NOT web (dist is static)
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/packages/shared/package.json packages/shared/
-COPY --from=build /app/packages/shared/dist packages/shared/dist
-COPY --from=build /app/apps/api/package.json apps/api/
-COPY --from=build /app/apps/api/prisma apps/api/prisma
-
-# Install api prod deps + generate prisma client in a single layer
-RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false \
-    && npx -w @hna/api prisma generate \
-    && npm cache clean --force
-
-# Built artifacts
-COPY --from=build /app/apps/api/dist apps/api/dist
-COPY --from=build /app/apps/web/dist apps/web/dist
-COPY --from=build /app/themes themes
-
-# Non-root user created, but we START as root and let the entrypoint drop to hna.
+# Non-root user created FIRST (before any large COPY layers) so the later
+# chown -R doesn't have to rewrite every file from previous layers into this
+# layer's blob — that recursive rewrite was the layer-bloat culprit pushing
+# the image over the 100 MB Cloudflare proxy body cap on `git.waterburp.com`.
 RUN groupadd -r hna && useradd -r -g hna hna \
     && mkdir -p /data /data/logos \
-    && chown -R hna:hna /app /data
+    && chown hna:hna /data /data/logos
+
+# Manifests — only api + shared, NOT web (dist is static)
+COPY --from=build --chown=hna:hna /app/package.json /app/package-lock.json ./
+COPY --from=build --chown=hna:hna /app/packages/shared/package.json packages/shared/
+COPY --from=build --chown=hna:hna /app/packages/shared/dist packages/shared/dist
+COPY --from=build --chown=hna:hna /app/apps/api/package.json apps/api/
+COPY --from=build --chown=hna:hna /app/apps/api/prisma apps/api/prisma
+
+# Install api prod deps in its own layer. Scope the chown to node_modules
+# only (NOT a recursive `chown /app`) so this layer's blob is just the new
+# install — not a rewrite of every file from previous layers.
+RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false \
+    && npm cache clean --force \
+    && chown -R hna:hna /app/node_modules
+
+# Generate prisma client in a SEPARATE layer so the ~50 MB engine binaries
+# (Prisma client + engines from npm install) and the ~20 MB generated client
+# (.prisma/client) land in distinct blobs rather than concatenated — keeps
+# each blob comfortably under the Cloudflare 100 MB body cap on the
+# git.waterburp.com registry push.
+RUN npx -w @hna/api prisma generate \
+    && chown -R hna:hna /app/node_modules/.prisma 2>/dev/null || true
+
+# Built artifacts (small) in a tail layer
+COPY --from=build --chown=hna:hna /app/apps/api/dist apps/api/dist
+COPY --from=build --chown=hna:hna /app/apps/web/dist apps/web/dist
+COPY --from=build --chown=hna:hna /app/themes themes
 
 # Entrypoint: fix /data ownership (for pre-existing volumes) then step down
 COPY docker/entrypoint.sh /usr/local/bin/hna-entrypoint.sh
@@ -68,8 +83,9 @@ ENV STATIC_DIR=/app/apps/web/dist
 ENV DATABASE_URL=file:/data/ham.db
 EXPOSE 3000
 
+# Use node's built-in http to avoid bundling wget into the runtime layer.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/api/themes >/dev/null || exit 1
+  CMD node -e "require('http').get('http://127.0.0.1:3000/api/themes',r=>process.exit(r.statusCode>=200&&r.statusCode<500?0:1)).on('error',()=>process.exit(1))" || exit 1
 
 ENTRYPOINT ["/usr/local/bin/hna-entrypoint.sh"]
 CMD ["sh","-c","npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]

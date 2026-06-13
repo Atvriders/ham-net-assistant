@@ -21,9 +21,17 @@ export function makeTestDb(): { prisma: PrismaClient; dbFile: string } {
 }
 
 export async function cleanupTestDb(prisma: PrismaClient, dbFile: string): Promise<void> {
-  await prisma.$disconnect();
-  try { fs.unlinkSync(dbFile); } catch { /* ignore */ }
-  try { fs.unlinkSync(`${dbFile}-journal`); } catch { /* ignore */ }
+  // try/finally so a $disconnect failure (e.g. better-sqlite3 native handle
+  // already closed by a sibling fork) still removes the tempfile + WAL/SHM
+  // sidecars. The previous best-effort ordering left handles open long enough
+  // for Node 22's GC to race a libuv close, producing a SIGABRT (exit 134).
+  try {
+    await prisma.$disconnect();
+  } finally {
+    for (const suffix of ['', '-journal', '-wal', '-shm']) {
+      try { fs.rmSync(`${dbFile}${suffix}`, { force: true }); } catch { /* ignore */ }
+    }
+  }
 }
 
 export async function makeTestApp(): Promise<{
