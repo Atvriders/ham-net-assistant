@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Net, NetInput, NetSession, Repeater, ScriptCategory } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
+import { LiveDot } from '../components/ui/LiveDot.js';
+import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { StartNetModal } from '../components/StartNetModal.js';
 import {
   NetEditModal,
@@ -36,10 +38,114 @@ const SCRIPT_CATEGORY_LABELS: Record<ScriptCategory, string> = {
   impromptu: 'Impromptu',
 };
 
+function NetCard({
+  n,
+  active,
+  canEdit,
+  onStart,
+  onTake,
+  onEdit,
+  onJoin,
+}: {
+  n: NetWithRepeater;
+  active?: { id: string; controlOpId: string | null };
+  canEdit: boolean;
+  onStart: (id: string, name: string) => void;
+  onTake: (sessionId: string) => void;
+  onEdit: (n: NetWithRepeater) => void;
+  onJoin: (netId: string) => void;
+}) {
+  const reminderText = formatReminderMinutes(n.reminderMinutes);
+  return (
+    <Card>
+      <div className="hna-net-row">
+        <div className="hna-net-row__when">
+          {n.kind === 'impromptu' ? (
+            <span className="hna-net-row__schedule">AD-HOC</span>
+          ) : (
+            <span className="hna-net-row__schedule">
+              {dayName(n.dayOfWeek).toUpperCase()}{' '}
+              {formatStartLocal12h(n.startLocal)}
+            </span>
+          )}
+          <span className="hna-net-row__name">{n.name}</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            <span className="hna-chip">
+              {n.kind === 'impromptu' ? 'Impromptu' : 'Weekly'}
+            </span>
+            <span className="hna-chip">
+              Script: {SCRIPT_CATEGORY_LABELS[n.scriptCategory ?? 'general']}
+            </span>
+            {n.kind !== 'impromptu' && (
+              <span
+                className={`hna-chip ${reminderText === 'off' ? 'hna-chip--off' : ''}`}
+              >
+                RMD: {reminderText}
+              </span>
+            )}
+            {active && (
+              <span
+                className="hna-chip hna-chip--accent"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <LiveDot label="Live" /> LIVE
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="hna-net-row__meta">
+          <span className="hna-net-row__freq">
+            {n.repeater.frequency.toFixed(3)} MHz
+          </span>
+          <span className="hna-net-row__sub">{n.repeater.name}</span>
+          {n.links && n.links.length > 0 && (
+            <span className="hna-net-row__sub">
+              + {n.links.length} linked
+              {n.links.length > 1 ? ' repeaters' : ' repeater'}
+            </span>
+          )}
+          {n.kind !== 'impromptu' && (
+            <span className="hna-mono" style={{ fontSize: 11, color: 'var(--color-fg-muted)', letterSpacing: '0.06em' }}>
+              Reminders: {reminderText}
+              {` · ${n.timezone}`}
+            </span>
+          )}
+          {n.theme && (
+            <span className="hna-net-row__sub">Theme: {n.theme}</span>
+          )}
+        </div>
+        <div className="hna-net-row__actions">
+          {canEdit && !active && (
+            <Button variant="primary" onClick={() => onStart(n.id, n.name)}>
+              Start net
+            </Button>
+          )}
+          {canEdit && active && (
+            <Button variant="primary" onClick={() => onTake(active.id)}>
+              Take control
+            </Button>
+          )}
+          {active && (
+            <Button variant="secondary" onClick={() => onJoin(n.id)}>
+              Join net
+            </Button>
+          )}
+          {canEdit && (
+            <Button variant="secondary" onClick={() => onEdit(n)}>
+              Edit
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function NetsPage() {
   const { user } = useAuth();
   const nav = useNavigate();
   const canEdit = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  const filterId = useId();
   const { data: netsData, refresh: refreshNets } = useAutoFetch<
     NetWithRepeater[]
   >('/nets', { intervalMs: 15000 });
@@ -92,158 +198,109 @@ export function NetsPage() {
   }
 
   return (
-    <div className="hna-container" style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        <h1 style={{ margin: 0 }}>Nets</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+      <header className="hna-page-header">
+        <p className="hna-page-marker">// 02 — NETS</p>
+        <h1 className="hna-page-title">Nets</h1>
+        <p className="hna-page-sub">
+          Weekly schedule and impromptu nets. Operators with officer-level
+          permissions can start, edit, and add nets.
+        </p>
+      </header>
+
+      <div className="hna-toolbar">
+        <div className="hna-toolbar__filter">
+          <label htmlFor={filterId}>Filter by script category</label>
+          <select
+            id={filterId}
+            className="hna-input"
+            value={categoryFilter}
+            onChange={(e) =>
+              setCategoryFilter(e.target.value as ScriptCategory | 'all')
+            }
+          >
+            <option value="all">All categories</option>
+            <option value="weekly">Weekly</option>
+            <option value="general">General</option>
+            <option value="impromptu">Impromptu</option>
+          </select>
+        </div>
+        <div className="hna-toolbar__spacer" />
+        <div className="hna-toolbar__actions">
           {canEdit && (
             <Button variant="secondary" onClick={() => nav('/repeaters')}>
               Manage repeaters
             </Button>
           )}
           {canEdit && (
-            <Button onClick={openAddNet}>Add net</Button>
+            <Button variant="primary" onClick={openAddNet}>
+              Add net
+            </Button>
           )}
         </div>
       </div>
-      <div className="hna-field" style={{ marginTop: 16, maxWidth: 260 }}>
-        <label>Filter by script category</label>
-        <select
-          className="hna-input"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value as ScriptCategory | 'all')}
-        >
-          <option value="all">All categories</option>
-          <option value="weekly">Weekly</option>
-          <option value="general">General</option>
-          <option value="impromptu">Impromptu</option>
-        </select>
-      </div>
+
       {allEmpty && (
-        <div style={{ marginTop: 16 }}>
+        <section aria-label="No nets" style={{ marginBottom: 24 }}>
+          <p className="hna-cap">[ NO NETS ]</p>
           <Card>
             {canEdit ? (
-              <>
-                <h2 style={{ marginTop: 0 }}>No nets yet</h2>
-                <p>
-                  Create your club's first weekly net — pick a repeater, a day,
-                  and a time.
+              <div className="hna-empty">
+                <p className="hna-empty__title">No nets yet</p>
+                <p className="hna-empty__body">
+                  Create your club&apos;s first weekly net — pick a repeater, a
+                  day, and a time.
                 </p>
-                <Button onClick={openAddNet}>Add your first net</Button>
-              </>
+                <div className="hna-empty__actions">
+                  <Button variant="primary" onClick={openAddNet}>
+                    Add your first net
+                  </Button>
+                </div>
+              </div>
             ) : (
-              <>
-                <h2 style={{ marginTop: 0 }}>No nets scheduled</h2>
-                <p>
+              <div className="hna-empty">
+                <p className="hna-empty__title">No nets scheduled</p>
+                <p className="hna-empty__body">
                   No nets are scheduled yet. Ask a club officer to add one.
                 </p>
-              </>
+              </div>
             )}
           </Card>
-        </div>
+        </section>
       )}
+
       {(['weekly', 'impromptu'] as const).map((kind, idx) => {
         const group = visibleByKind[idx]!;
         if (group.length === 0) return null;
+        const isFirst = idx === 0;
+        const label = kind === 'weekly' ? 'WEEKLY' : 'IMPROMPTU';
         return (
-          <div key={kind}>
-            <h2 style={{ marginTop: 24, marginBottom: 0, fontSize: 16, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-              {kind === 'weekly' ? 'Weekly nets' : 'Impromptu nets'}
-            </h2>
-            <div style={{ display: 'grid', gap: 16, marginTop: 12 }}>
-        {group.map((n) => (
-          <Card key={n.id}>
-            <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <div>
-                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {n.name}
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    {n.kind === 'impromptu' ? 'Impromptu' : 'Weekly'}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    Script: {SCRIPT_CATEGORY_LABELS[n.scriptCategory ?? 'general']}
-                  </span>
-                </h3>
-                {n.kind === 'impromptu' ? (
-                  <div style={{ color: 'var(--color-text-muted)' }}>Ad-hoc — no fixed schedule</div>
-                ) : (
-                  <>
-                    <div>
-                      {dayName(n.dayOfWeek)} at {formatStartLocal12h(n.startLocal)} ({n.timezone})
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                      Reminders: {formatReminderMinutes(n.reminderMinutes)}
-                    </div>
-                  </>
-                )}
-                <div>Repeater: {n.repeater.name}</div>
-                {n.links && n.links.length > 0 && (
-                  <div>
-                    Links:{' '}
-                    {n.links
-                      .map((l) => `${l.repeater.name} ${l.repeater.frequency.toFixed(2)}`)
-                      .join(', ')}
-                  </div>
-                )}
-                {n.theme && <div>Theme: {n.theme}</div>}
-              </div>
-              <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
-                {(() => {
-                  const active = activeByNetId[n.id];
-                  return (
-                    <>
-                      {canEdit && !active && (
-                        <Button onClick={() => openStart(n.id, n.name)}>Start net</Button>
-                      )}
-                      {canEdit && active && (
-                        <Button onClick={() => takeControl(active.id)}>Take control</Button>
-                      )}
-                      {active && (
-                        <Button variant="secondary" onClick={() => nav(`/nets/${n.id}/join`)}>
-                          Join as member
-                        </Button>
-                      )}
-                    </>
-                  );
-                })()}
-                {canEdit && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditing({ id: n.id, data: netToInput(n) })}
-                  >
-                    Edit
-                  </Button>
-                )}
-              </div>
+          <section key={kind} aria-label={`${label} nets`}>
+            {isFirst ? (
+              <h2 className="hna-cap hna-cap--accent">[ {label} ]</h2>
+            ) : (
+              <SectionDivider>{label}</SectionDivider>
+            )}
+            <div className="hna-stack">
+              {group.map((n) => (
+                <NetCard
+                  key={n.id}
+                  n={n}
+                  active={activeByNetId[n.id]}
+                  canEdit={canEdit}
+                  onStart={openStart}
+                  onTake={takeControl}
+                  onEdit={(net) =>
+                    setEditing({ id: net.id, data: netToInput(net) })
+                  }
+                  onJoin={(netId) => nav(`/nets/${netId}/join`)}
+                />
+              ))}
             </div>
-          </Card>
-        ))}
-            </div>
-          </div>
+          </section>
         );
       })}
+
       {starting && (
         <StartNetModal
           open={starting !== null}

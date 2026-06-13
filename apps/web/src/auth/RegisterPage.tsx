@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -38,6 +38,13 @@ export function RegisterPage() {
     inviteCode: '',
   });
   const [err, setErr] = useState<string | null>(null);
+
+  const callsignId = useId();
+  const nameId = useId();
+  const emailId = useId();
+  const passwordId = useId();
+  const inviteId = useId();
+  const callsignDisplayId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -124,105 +131,132 @@ export function RegisterPage() {
 
   if (step === 1) {
     return (
-      <div className="hna-container" style={{ maxWidth: 720, width: '100%', margin: '24px auto' }}>
-        <Card>
-          <h1>Create account</h1>
-          <p>Two ways to get started — pick whichever describes you.</p>
-          <div
-            className="hna-flex-wrap"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: 16,
-              marginTop: 16,
-            }}
-          >
-            <Card>
-              <h3 style={{ marginTop: 0 }}>I have a callsign</h3>
-              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+      <div style={{ maxWidth: 880, width: '100%', margin: '24px auto' }}>
+        <header className="hna-page-header">
+          <p className="hna-page-marker">// SIGN-UP</p>
+          <h1 className="hna-page-title">Create account</h1>
+          <p className="hna-page-sub">
+            Two ways to get started — pick whichever describes you. Both paths
+            land in the same operator console.
+          </p>
+        </header>
+
+        <div className="hna-choice-grid">
+          {/* Choice A — licensed */}
+          <Card>
+            <div className="hna-choice-card">
+              <span className="hna-choice-card__num">// A — LICENSED</span>
+              {/* Heading text preserved verbatim for tests. */}
+              <h2 className="hna-choice-card__head">I have a callsign</h2>
+              <p className="hna-choice-card__body">
                 Enter your amateur radio callsign and we will look it up in the
                 FCC database to prefill your info.
               </p>
-              <form onSubmit={doLookup}>
-                <label>
-                  Callsign
+              <form onSubmit={doLookup} className="hna-form">
+                <div className="hna-field">
+                  <label htmlFor={callsignId}>Callsign</label>
                   <CallsignInput
+                    id={callsignId}
                     value={form.callsign}
                     onChange={update('callsign')}
                   />
-                </label>
-                {err && (
-                  <div
-                    role="alert"
-                    style={{ color: 'var(--color-danger)', marginTop: 12 }}
-                  >
-                    {err}
-                  </div>
-                )}
-                <div style={{ marginTop: 12 }}>
-                  <Button type="submit" disabled={lookingUp}>
+                  {err && (
+                    <p role="alert" className="hna-input-error">
+                      {err}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Button type="submit" variant="primary" disabled={lookingUp}>
                     {lookingUp ? 'Looking up…' : 'Continue with callsign'}
                   </Button>
                 </div>
               </form>
-            </Card>
-            <Card>
-              <h3 style={{ marginTop: 0 }}>I'm not licensed yet</h3>
-              <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            </div>
+          </Card>
+          {/* Choice B — unlicensed */}
+          <Card>
+            <div className="hna-choice-card">
+              <span className="hna-choice-card__num">// B — STUDYING</span>
+              <h2 className="hna-choice-card__head">I&apos;m not licensed yet</h2>
+              <p className="hna-choice-card__body">
                 Join with the NØCALL placeholder. You can listen along and chat
                 with the club while you study for your FCC license.
               </p>
-              <div style={{ marginTop: 12 }}>
-                <Button type="button" onClick={startUnlicensed}>
+              <div className="hna-choice-card__spacer" />
+              <div>
+                <Button type="button" variant="primary" onClick={startUnlicensed}>
                   Continue without callsign
                 </Button>
               </div>
-            </Card>
-          </div>
-          <div
-            className="hna-flex-wrap"
-            style={{
-              marginTop: 16,
-              display: 'flex',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
-            <Link className="hna-nav-link" to="/login">
-              Already have an account? Sign in
-            </Link>
-          </div>
-        </Card>
+            </div>
+          </Card>
+        </div>
+
+        <p className="hna-auth-helptext" style={{ marginTop: 24 }}>
+          Already have an account? <Link to="/login">Sign in</Link>
+        </p>
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '60px auto' }}>
+    <div className="hna-auth-shell">
+      <div className="hna-auth-mark">
+        <span className="hna-auth-mark__marker">// SIGN-UP · STEP 2</span>
+        <h1 className="hna-auth-mark__title">Create account</h1>
+        <p className="hna-auth-mark__sub">
+          One more screen and you&apos;re on the air.
+        </p>
+      </div>
       <Card>
-        <h1>Create account</h1>
         {mode === 'unlicensed' && (
-          <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>
-            You'll share the NØCALL placeholder with other unlicensed operators.
-            When you get your FCC license, register a new account with your real callsign.
-          </div>
+          <p
+            className="hna-mono"
+            style={{
+              fontSize: 12,
+              color: 'var(--color-primary)',
+              marginTop: 0,
+              marginBottom: 16,
+              letterSpacing: '0.08em',
+            }}
+          >
+            You will share the NØCALL placeholder with other unlicensed
+            operators. When you get your FCC license, register a new account
+            with your real callsign.
+          </p>
         )}
         {lookupNotice && (
-          <div style={{ color: 'var(--color-accent)', marginBottom: 12 }}>{lookupNotice}</div>
+          <p
+            className="hna-mono"
+            style={{
+              fontSize: 12,
+              color: 'var(--color-primary)',
+              marginTop: 0,
+              marginBottom: 16,
+              letterSpacing: '0.08em',
+            }}
+          >
+            {lookupNotice}
+          </p>
         )}
-        <form onSubmit={submit}>
-          <label>
-            Callsign
+        <form onSubmit={submit} className="hna-form" noValidate>
+          <div className="hna-field">
+            <label htmlFor={callsignDisplayId}>Callsign</label>
             <Input
-              value={mode === 'unlicensed' ? 'NØCALL (unlicensed operator placeholder)' : displayCallsign(form.callsign)}
+              id={callsignDisplayId}
+              value={
+                mode === 'unlicensed'
+                  ? 'NØCALL (unlicensed operator placeholder)'
+                  : displayCallsign(form.callsign)
+              }
               disabled
             />
-          </label>
-          <div style={{ marginTop: 4 }}>
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
+            <button
+              type="button"
+              className="hna-btn ghost size-sm"
+              style={{ justifySelf: 'start' }}
+              onClick={() => {
                 setMode('licensed');
                 setStep(1);
                 setLookupNotice(null);
@@ -230,53 +264,72 @@ export function RegisterPage() {
               }}
             >
               {mode === 'unlicensed' ? 'I do have a callsign' : 'Change callsign'}
-            </a>
+            </button>
           </div>
-          <label style={{ display: 'block', marginTop: 12 }}>
-            Name
+          <div className="hna-field">
+            <label htmlFor={nameId}>Name</label>
             <Input
+              id={nameId}
               value={form.name}
               onChange={(e) => update('name')(e.target.value)}
               required
             />
-          </label>
-          <label style={{ display: 'block', marginTop: 12 }}>
-            Email
+          </div>
+          <div className="hna-field">
+            <label htmlFor={emailId}>Email</label>
             <Input
+              id={emailId}
               type="email"
+              autoComplete="email"
               value={form.email}
               onChange={(e) => update('email')(e.target.value)}
               required
             />
-          </label>
-          <label style={{ display: 'block', marginTop: 12 }}>
-            Password
+          </div>
+          <div className="hna-field">
+            <label htmlFor={passwordId}>Password</label>
             <Input
+              id={passwordId}
               type="password"
+              autoComplete="new-password"
               value={form.password}
               minLength={8}
               onChange={(e) => update('password')(e.target.value)}
               required
             />
-          </label>
+          </div>
           {inviteCodeRequired === true && (
-            <label style={{ display: 'block', marginTop: 12 }}>
-              Invite code
+            <div className="hna-field">
+              <label htmlFor={inviteId}>Invite code</label>
               <Input
+                id={inviteId}
                 value={form.inviteCode}
                 onChange={(e) => update('inviteCode')(e.target.value)}
                 required
               />
-            </label>
-          )}
-          {err && (
-            <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 12 }}>
-              {err}
             </div>
           )}
-          <div className="hna-flex-wrap" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Button type="submit">Create account</Button>
-            <Link className="hna-nav-link" to="/login">Sign in</Link>
+          {err && (
+            <p role="alert" className="hna-input-error">
+              {err}
+            </p>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Link to="/login" className="hna-btn ghost" style={{ textDecoration: 'none' }}>
+              Sign in
+            </Link>
+            <Button type="submit" variant="primary">
+              Create account
+            </Button>
           </div>
         </form>
       </Card>

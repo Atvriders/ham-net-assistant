@@ -4,9 +4,12 @@ import type { Net, Repeater, NetSession } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { LiveDot } from '../components/ui/LiveDot.js';
+import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { displayCallsign } from '../lib/format.js';
 
 interface NetWithRepeater extends Net {
   repeater: Repeater;
@@ -15,10 +18,14 @@ interface NetWithRepeater extends Net {
 
 interface ActiveSessionRow extends NetSession {
   net: { id: string; name: string; repeater: Repeater };
+  controlOp?: { id: string; callsign: string; name: string | null } | null;
   topicTitle?: string | null;
   topic?: { id: string; title: string } | null;
 }
 
+/**
+ * Mono countdown: T-DD:HH:MM:SS — reads as a calibrated radio clock.
+ */
 function Countdown({ target }: { target: Date }) {
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -30,23 +37,35 @@ function Countdown({ target }: { target: Date }) {
   const hours = Math.floor((diff % 86400000) / 3600000);
   const minutes = Math.floor((diff % 3600000) / 60000);
   const seconds = Math.floor((diff % 60000) / 1000);
-  const blink = Math.floor(now / 500) % 2 === 0;
-  const sep = <span style={{ opacity: blink ? 1 : 0.25, transition: 'opacity 120ms' }}>:</span>;
+  const pad = (n: number) => String(n).padStart(2, '0');
   return (
-    <div style={{
-      fontFamily: 'var(--font-mono)',
-      fontWeight: 700,
-      fontSize: 32,
-      letterSpacing: '0.02em',
-      fontVariantNumeric: 'tabular-nums',
-    }}>
-      {days > 0 && <><span>{String(days).padStart(2, '0')}</span><span style={{ fontSize: 14, marginLeft: 4, marginRight: 8, opacity: 0.6 }}>d</span></>}
-      <span>{String(hours).padStart(2, '0')}</span>
-      {sep}
-      <span>{String(minutes).padStart(2, '0')}</span>
-      {sep}
-      <span>{String(seconds).padStart(2, '0')}</span>
-    </div>
+    <span className="hna-mono hna-countdown" aria-label="Time until net">
+      T-
+      {days > 0 ? `${pad(days)}:` : ''}
+      {pad(hours)}:{pad(minutes)}:{pad(seconds)}
+    </span>
+  );
+}
+
+/**
+ * Short countdown for the UPCOMING list — e.g. `T-04:23:11`.
+ */
+function ShortCountdown({ target }: { target: Date }) {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const diff = Math.max(0, target.getTime() - now);
+  const days = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  const minutes = Math.floor((diff % 3600000) / 60000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    <span className="hna-mono" aria-label="Time until next occurrence">
+      T-{days > 0 ? `${pad(days)}d ` : ''}
+      {pad(hours)}:{pad(minutes)}
+    </span>
   );
 }
 
@@ -87,7 +106,8 @@ export function Dashboard() {
     }
   }
 
-  const upcoming = [...nets]
+  const weeklyNets = nets.filter((n) => (n.kind ?? 'weekly') === 'weekly');
+  const upcoming = [...weeklyNets]
     .map((n) => ({ n, when: nextOccurrence(n.dayOfWeek, n.startLocal, n.timezone) }))
     .sort((a, b) => a.when.getTime() - b.when.getTime())
     .slice(0, 3);
@@ -96,137 +116,232 @@ export function Dashboard() {
   const followups = upcoming.slice(1);
 
   return (
-    <div className="hna-container" style={{ display: 'grid', gap: 16, maxWidth: 900, margin: '0 auto' }}>
-      {hero && (
-        <Card className="hna-card-featured">
-          <div className="hna-label">Next net</div>
-          <h2 style={{ fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em', marginTop: 4 }}>
-            {hero.n.name}
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 24, alignItems: 'end', marginTop: 12 }}>
-            <div>
-              <div className="hna-label" style={{ marginBottom: 4 }}>Starts in</div>
-              <Countdown target={hero.when} />
+    <div style={{ maxWidth: 960, margin: '0 auto' }}>
+      <header className="hna-page-header">
+        <p className="hna-page-marker">// 01 — DASHBOARD</p>
+        <h1 className="hna-page-title">Dashboard</h1>
+        <p className="hna-page-sub">
+          Quick view of the nets you operate or join.
+        </p>
+      </header>
+
+      {/* ===== ACTIVE NOW ===== */}
+      <section aria-labelledby="dash-active">
+        <h2 id="dash-active" className="hna-cap hna-cap--accent">
+          [ ACTIVE NOW ]
+        </h2>
+        {activeSessions.length === 0 ? (
+          <Card>
+            <div className="hna-empty">
+              <p className="hna-empty__title">No nets are live.</p>
+              <p className="hna-empty__body">
+                When a control operator starts a session it will show up here
+                in real time.
+              </p>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="hna-freq" style={{ fontSize: 20 }}>
-                {hero.n.repeater.frequency.toFixed(3)} MHz
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, opacity: 0.7 }}>
-                {hero.n.repeater.name}
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.75 }}>
-            {dayName(hero.when.getDay())}{' '}
-            {hero.when.toLocaleString(undefined, {
-              month: 'short', day: 'numeric',
-              hour: 'numeric', minute: '2-digit', hour12: true,
+          </Card>
+        ) : (
+          <div className="hna-stack">
+            {activeSessions.map((s) => {
+              const op = s.controlOp;
+              return (
+                <Card key={s.id}>
+                  <div className="hna-net-row">
+                    <div className="hna-net-row__when">
+                      <span className="hna-live-label">
+                        <LiveDot label="Live" /> &nbsp;LIVE
+                      </span>
+                      <span className="hna-net-row__name">{s.net.name}</span>
+                    </div>
+                    <div className="hna-net-row__meta">
+                      <span className="hna-net-row__freq">
+                        {s.net.repeater.frequency.toFixed(3)} MHz
+                      </span>
+                      <span className="hna-net-row__sub">
+                        {s.net.repeater.name}
+                        {op ? (
+                          <>
+                            {' '}· NCS{' '}
+                            <span className="hna-mono">
+                              {displayCallsign(op.callsign)}
+                            </span>
+                          </>
+                        ) : null}
+                        {s.topicTitle || s.topic ? (
+                          <> · {s.topicTitle ?? s.topic?.title}</>
+                        ) : null}
+                      </span>
+                    </div>
+                    <div className="hna-net-row__actions">
+                      {canControl && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => takeControl(s.id)}
+                        >
+                          Take control
+                        </Button>
+                      )}
+                      <Link to={`/nets/${s.net.id}/join`}>
+                        <Button variant="primary">Open net</Button>
+                      </Link>
+                    </div>
+                  </div>
+                </Card>
+              );
             })}
           </div>
-        </Card>
-      )}
-      {upcoming.length === 0 && (
-        <Card>
-          <h2>Next nets</h2>
-          <p>No nets scheduled yet.</p>
-        </Card>
-      )}
-      {followups.length > 0 && (
-        <Card>
-          <h3 style={{ marginTop: 0 }}>Following</h3>
-          {followups.map(({ n, when }) => (
-            <div
-              key={n.id}
-              className="hna-flex-wrap"
-              style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', gap: 8 }}
-            >
-              <span>
-                {n.name} — {n.repeater.name}
-                {n.links && n.links.length > 0 ? ` (+${n.links.length} linked)` : ''}
-              </span>
-              <span>
-                {dayName(when.getDay())}{' '}
-                {when.toLocaleString(undefined, {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
-              </span>
-            </div>
-          ))}
-        </Card>
-      )}
-      {activeSessions.length > 0 && (
-        <Card>
-          <h2>Currently running</h2>
-          {activeSessions.map((s) => (
-            <div
-              key={s.id}
-              className="hna-flex-wrap"
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '6px 0',
-                gap: 8,
-              }}
-            >
-              <span>
-                {s.net.name} — {s.net.repeater.name}
-                {(s.topicTitle || s.topic) && (
-                  <span style={{ color: 'var(--color-muted)' }}>
-                    {' '}
-                    · {s.topicTitle ?? s.topic?.title}
-                  </span>
-                )}
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {canControl && (
-                  <Button variant="secondary" onClick={() => takeControl(s.id)}>
-                    Take control
-                  </Button>
-                )}
-                <Link to={`/nets/${s.net.id}/join`}>
-                  <Button>Join {s.net.name}</Button>
+        )}
+      </section>
+
+      <SectionDivider>UPCOMING</SectionDivider>
+
+      {/* ===== UPCOMING ===== */}
+      <section aria-labelledby="dash-upcoming">
+        <h2 id="dash-upcoming" className="hna-cap">
+          [ UPCOMING ]
+        </h2>
+        {hero ? (
+          <Card>
+            <div className="hna-net-row">
+              <div className="hna-net-row__when">
+                <span className="hna-net-row__schedule">
+                  {dayName(hero.when.getDay()).toUpperCase()}{' '}
+                  {hero.when.toLocaleString(undefined, {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                </span>
+                <span className="hna-net-row__name">{hero.n.name}</span>
+              </div>
+              <div className="hna-net-row__meta">
+                <Countdown target={hero.when} />
+                <span className="hna-net-row__sub">
+                  <span className="hna-mono">
+                    {hero.n.repeater.frequency.toFixed(3)} MHz
+                  </span>{' '}
+                  · {hero.n.repeater.name}
+                </span>
+              </div>
+              <div className="hna-net-row__actions">
+                <Link to={`/nets`}>
+                  <Button variant="secondary">All nets</Button>
                 </Link>
               </div>
             </div>
-          ))}
-        </Card>
-      )}
-      <Card>
-        <h2>Recent sessions</h2>
-        {sessions.slice(0, 5).map((s) => (
-          <div
-            key={s.id}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-              padding: '4px 0',
-            }}
-          >
-            <span>
-              {new Date(s.startedAt).toLocaleString(undefined, { hour12: true })} —{' '}
-              {s.endedAt ? 'ended' : 'in progress'}
-            </span>
-            {isAdmin && (
-              <Button
-                variant="danger"
-                onClick={() => deleteSession(s.id)}
-                aria-label="Delete session"
-              >
-                Delete
-              </Button>
-            )}
+          </Card>
+        ) : (
+          <Card>
+            <div className="hna-empty">
+              <p className="hna-empty__title">No weekly nets scheduled.</p>
+              <p className="hna-empty__body">
+                Once a club officer adds a weekly net, the next three
+                occurrences will show up here with a live countdown.
+              </p>
+            </div>
+          </Card>
+        )}
+        {followups.length > 0 && (
+          <div className="hna-stack hna-stack--tight" style={{ marginTop: 16 }}>
+            {followups.map(({ n, when }) => (
+              <Card key={n.id}>
+                <div className="hna-net-row">
+                  <div className="hna-net-row__when">
+                    <span className="hna-net-row__schedule">
+                      {dayName(when.getDay()).toUpperCase()}{' '}
+                      {when.toLocaleString(undefined, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      })}
+                    </span>
+                    <span className="hna-net-row__name">{n.name}</span>
+                  </div>
+                  <div className="hna-net-row__meta">
+                    <ShortCountdown target={when} />
+                    <span className="hna-net-row__sub">
+                      <span className="hna-mono">
+                        {n.repeater.frequency.toFixed(3)} MHz
+                      </span>{' '}
+                      · {n.repeater.name}
+                      {n.links && n.links.length > 0
+                        ? ` · +${n.links.length} linked`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="hna-net-row__actions">
+                    <Link to={`/nets/${n.id}/join`}>
+                      <Button variant="secondary">Join net</Button>
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
-        ))}
-      </Card>
+        )}
+      </section>
+
+      <SectionDivider>RECENT</SectionDivider>
+
+      {/* ===== RECENT ===== */}
+      <section aria-labelledby="dash-recent">
+        <h2 id="dash-recent" className="hna-cap">
+          [ RECENT ]
+        </h2>
+        {sessions.length === 0 ? (
+          <Card>
+            <div className="hna-empty">
+              <p className="hna-empty__title">No sessions logged yet.</p>
+              <p className="hna-empty__body">
+                Net sessions appear here after they end. The most recent five
+                will be listed.
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <div className="hna-stack hna-stack--tight">
+            {sessions.slice(0, 5).map((s) => (
+              <Card key={s.id}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto',
+                    gap: 16,
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <div className="hna-mono" style={{ fontSize: 12, color: 'var(--color-fg-muted)' }}>
+                      {new Date(s.startedAt)
+                        .toLocaleString(undefined, {
+                          month: 'short',
+                          day: '2-digit',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true,
+                        })
+                        .toUpperCase()}
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-sans)', fontSize: 14 }}>
+                      {s.endedAt ? 'Ended' : 'In progress'}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => deleteSession(s.id)}
+                      aria-label="Delete session"
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

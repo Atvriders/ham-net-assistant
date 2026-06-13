@@ -712,6 +712,362 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 
 /* ============================================================== */
+/* Page header — calibrated radio-console identity                  */
+/* ============================================================== */
+.hna-page-header {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
+  border-bottom: var(--border-w) solid var(--color-border);
+}
+.hna-page-marker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin: 0;
+}
+.hna-page-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: clamp(34px, 4.6vw, 52px);
+  font-weight: 800;
+  line-height: 0.95;
+  margin: 0;
+  color: var(--color-fg);
+}
+.hna-page-sub {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-fg-muted);
+  margin: 0;
+  max-width: 640px;
+}
+.hna-page-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: var(--space-3);
+}
+.hna-page-actions--inline { margin-top: 0; }
+
+/* Mono caption above sections — `[ UPCOMING NETS ]` */
+.hna-cap {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.hna-cap--accent { color: var(--color-primary); }
+
+/* Stacked vertical list of cards w/ unified rhythm */
+.hna-stack { display: grid; gap: var(--space-4); }
+.hna-stack--tight { gap: var(--space-3); }
+
+/* Live indicator label */
+.hna-live-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-danger);
+}
+
+/* Chip — small mono tag (RMD: 4h, kind labels, etc.) */
+.hna-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: var(--border-w) solid var(--color-border);
+  color: var(--color-fg-muted);
+  background: transparent;
+}
+.hna-chip--off { opacity: 0.55; }
+.hna-chip--accent { color: var(--color-primary); border-color: var(--color-primary); }
+
+/* Net row layout — calibrated columns */
+.hna-net-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.9fr) minmax(220px, 1.3fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+}
+.hna-net-row__when {
+  display: grid;
+  gap: 2px;
+}
+.hna-net-row__schedule {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.hna-net-row__name {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-fg);
+  line-height: 1;
+}
+.hna-net-row__meta {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.hna-net-row__freq {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+.hna-net-row__sub {
+  font-family: var(--font-sans);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+.hna-net-row__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 720px) {
+  .hna-net-row {
+    grid-template-columns: 1fr;
+  }
+  .hna-net-row__actions { justify-content: flex-start; }
+}
+
+/* Repeater card body */
+.hna-rep-card { display: grid; gap: var(--space-3); }
+.hna-rep-card__name {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1;
+}
+.hna-rep-card__freq {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.hna-rep-card__meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+}
+.hna-rep-card__body {
+  font-size: 13px;
+  color: var(--color-fg);
+}
+.hna-rep-card__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: var(--border-w) solid var(--color-border);
+}
+
+/* Auth shell — centered narrow column */
+.hna-auth-shell {
+  max-width: 460px;
+  width: 100%;
+  margin: var(--space-6) auto;
+  display: grid;
+  gap: var(--space-5);
+}
+.hna-auth-mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+.hna-auth-mark__glyph {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.hna-auth-mark__title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  margin: 0;
+  color: var(--color-fg);
+}
+.hna-auth-mark__marker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+.hna-auth-mark__sub {
+  font-family: var(--font-sans);
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  margin: 0;
+}
+.hna-auth-helptext {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+  text-align: center;
+  margin: 0;
+}
+.hna-auth-helptext a { color: inherit; }
+
+/* Register choice grid */
+.hna-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+@media (max-width: 720px) {
+  .hna-choice-grid { grid-template-columns: 1fr; }
+}
+.hna-choice-card {
+  display: grid;
+  gap: var(--space-3);
+  min-height: 100%;
+}
+.hna-choice-card__head {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  margin: 0;
+  color: var(--color-fg);
+}
+.hna-choice-card__num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+.hna-choice-card__body {
+  font-family: var(--font-sans);
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+.hna-choice-card__spacer { flex: 1; }
+
+/* Dashboard hero countdown numerics */
+.hna-countdown {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+/* Inline error message below an input */
+.hna-input-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-danger);
+  margin: 0;
+}
+
+/* Empty-state inside a card */
+.hna-empty {
+  display: grid;
+  gap: var(--space-2);
+}
+.hna-empty__title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--color-fg);
+}
+.hna-empty__body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.hna-empty__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
+
+/* Top-bar action group (filter + add) */
+.hna-toolbar {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.hna-toolbar__filter {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 240px;
+  flex: 1 1 240px;
+  max-width: 320px;
+}
+.hna-toolbar__filter > label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  font-weight: 500;
+  margin: 0;
+}
+.hna-toolbar__spacer { flex: 1; }
+.hna-toolbar__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+/* ============================================================== */
 /* Section divider — used in pages                                  */
 /* ============================================================== */
 .hna-section-divider {

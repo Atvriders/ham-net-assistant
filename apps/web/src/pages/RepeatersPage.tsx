@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Repeater, RepeaterInput } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
@@ -10,6 +10,7 @@ import { Modal } from '../components/ui/Modal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { decodeGrid } from '../lib/grid.js';
 import { CsvImportModal } from '../components/CsvImportModal.js';
+import { formatOffset, formatTone } from '../lib/format.js';
 
 interface CallsignLookupResponse {
   gridSquare: string | null;
@@ -39,16 +40,24 @@ function sourceLabel(source: string): string {
   }
 }
 
-function RepeaterDetails({ r }: { r: RepeaterInput }) {
+function RepeaterDisplay({ r }: { r: RepeaterInput }) {
   return (
-    <div>
-      <div style={{ fontWeight: 600 }}>{r.name}</div>
-      <div style={{ fontSize: 13, color: 'var(--color-border)' }}>
-        {r.frequency.toFixed(3)} MHz · offset {r.offsetKhz} kHz
-        {r.toneHz ? ` · PL ${r.toneHz}` : ''} · {r.mode}
+    <div className="hna-rep-card">
+      <div>
+        <h3 className="hna-rep-card__name">{r.name}</h3>
+      </div>
+      <div className="hna-rep-card__freq">{r.frequency.toFixed(3)} MHz</div>
+      <div className="hna-rep-card__meta">
+        OFFSET {formatOffset(r.offsetKhz)} · TONE {formatTone(r.toneHz)} ·{' '}
+        {r.mode}
       </div>
       {r.coverage && (
-        <div style={{ fontSize: 12, color: 'var(--color-border)' }}>{r.coverage}</div>
+        <div className="hna-rep-card__body">{r.coverage}</div>
+      )}
+      {(r.latitude != null && r.longitude != null) && (
+        <div className="hna-mono" style={{ fontSize: 11, color: 'var(--color-fg-muted)', letterSpacing: '0.06em' }}>
+          {r.latitude.toFixed(4)}, {r.longitude.toFixed(4)}
+        </div>
       )}
     </div>
   );
@@ -57,6 +66,17 @@ function RepeaterDetails({ r }: { r: RepeaterInput }) {
 export function RepeatersPage() {
   const { user } = useAuth();
   const isOfficer = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+
+  const nameId = useId();
+  const freqId = useId();
+  const offsetId = useId();
+  const toneId = useId();
+  const modeId = useId();
+  const coverageId = useId();
+  const gridId = useId();
+  const latId = useId();
+  const lonId = useId();
+  const distId = useId();
 
   const {
     data: listData,
@@ -301,16 +321,35 @@ export function RepeatersPage() {
   }
 
   return (
-    <div className="hna-container" style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: 12 }}>
-        <Link to="/nets" style={{ color: 'var(--color-fg)', opacity: 0.7, fontSize: 13 }}>
-          ← Back to nets
+        <Link
+          to="/nets"
+          className="hna-mono"
+          style={{
+            color: 'var(--color-fg-muted)',
+            fontSize: 11,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            textDecoration: 'none',
+          }}
+        >
+          ← BACK TO NETS
         </Link>
       </div>
-      <div className="hna-flex-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ flex: 1 }}>Repeaters</h1>
+
+      <header className="hna-page-header">
+        <p className="hna-page-marker">// 03 — REPEATERS</p>
+        <h1 className="hna-page-title">Repeaters</h1>
+        <p className="hna-page-sub">
+          Linked frequencies and coverage. Officers can add, import, and
+          discover nearby repeaters from the FCC and ARD databases.
+        </p>
         {isOfficer && (
-          <>
+          <div className="hna-page-actions">
+            <Button variant="primary" onClick={openCreate}>
+              Add repeater
+            </Button>
             <Button variant="secondary" onClick={discoverLocal} disabled={suggesting}>
               {suggesting ? 'Discovering…' : 'Discover local repeaters'}
             </Button>
@@ -320,98 +359,96 @@ export function RepeatersPage() {
             <Button variant="secondary" onClick={() => setCsvOpen(true)}>
               Import from CSV
             </Button>
-            <Button onClick={openCreate}>Add repeater</Button>
-          </>
+          </div>
         )}
-      </div>
+      </header>
 
       {err && (
-        <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+        <p role="alert" className="hna-input-error" style={{ marginTop: 8 }}>
           {err}
-        </div>
+        </p>
       )}
 
       {topAlert && (
-        <div
-          role="alert"
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 6,
-            border: '1px solid var(--color-danger)',
-            color: 'var(--color-danger)',
-            background: 'rgba(220, 53, 69, 0.08)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
-          <span>{topAlert}</span>
-          <button
-            type="button"
-            onClick={() => setTopAlert(null)}
+        <Card>
+          <div
+            role="alert"
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              color: 'var(--color-danger)',
             }}
-            aria-label="Dismiss"
           >
-            ×
-          </button>
-        </div>
+            <span className="hna-mono" style={{ fontSize: 12, letterSpacing: '0.06em' }}>
+              {topAlert}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTopAlert(null)}
+              className="hna-btn ghost size-sm"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </Card>
       )}
 
-      <div className="hna-repeater-grid" style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-        {list.length === 0 && (
+      {list.length === 0 ? (
+        <section aria-label="No repeaters" style={{ marginTop: 16 }}>
+          <p className="hna-cap">[ NO REPEATERS ]</p>
           <Card>
             {isOfficer ? (
-              <>
-                <h2 style={{ marginTop: 0 }}>No repeaters yet</h2>
-                <p>
-                  Add your club's repeaters to start — try{' '}
+              <div className="hna-empty">
+                <p className="hna-empty__title">No repeaters yet</p>
+                <p className="hna-empty__body">
+                  Add your club&apos;s repeaters to start — try{' '}
                   <strong>Discover local repeaters</strong> if your callsign has
                   an FCC grid square, or <strong>Add repeater</strong> manually.
                 </p>
-                <div
-                  className="hna-flex-wrap"
-                  style={{ display: 'flex', gap: 8 }}
-                >
-                  <Button onClick={discoverLocal} disabled={suggesting}>
+                <div className="hna-empty__actions">
+                  <Button variant="primary" onClick={discoverLocal} disabled={suggesting}>
                     {suggesting ? 'Discovering…' : 'Discover local repeaters'}
                   </Button>
                   <Button variant="secondary" onClick={openCreate}>
                     Add repeater
                   </Button>
                 </div>
-              </>
+              </div>
             ) : (
-              <>
-                <h2 style={{ marginTop: 0 }}>No repeaters listed yet</h2>
-                <p>No repeaters listed yet.</p>
-              </>
+              <div className="hna-empty">
+                <p className="hna-empty__title">No repeaters listed yet</p>
+                <p className="hna-empty__body">
+                  No repeaters listed yet. Ask a club officer to add one.
+                </p>
+              </div>
             )}
           </Card>
-        )}
-        {list.map((r) => (
-          <Card key={r.id}>
-            <div className="hna-flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <RepeaterDetails r={r} />
-              {isOfficer && (
-                <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8 }}>
-                  <Button variant="secondary" onClick={() => openEdit(r)}>
-                    Edit
-                  </Button>
-                  <Button variant="danger" onClick={() => del(r.id)}>
-                    Delete
-                  </Button>
-                </div>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
+        </section>
+      ) : (
+        <section aria-label="Repeaters" style={{ marginTop: 16 }}>
+          <p className="hna-cap hna-cap--accent">[ ACTIVE REPEATERS ]</p>
+          <div className="hna-repeater-grid">
+            {list.map((r) => (
+              <Card key={r.id}>
+                <RepeaterDisplay r={r} />
+                {isOfficer && (
+                  <div className="hna-rep-card__actions">
+                    <Button variant="secondary" onClick={() => openEdit(r)}>
+                      Edit
+                    </Button>
+                    <Button variant="danger" onClick={() => del(r.id)}>
+                      Delete
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       <CsvImportModal
         open={csvOpen}
@@ -421,21 +458,26 @@ export function RepeatersPage() {
         }}
       />
 
-      <Modal open={showForm} onClose={() => setShowForm(false)}>
-        <h2 style={{ marginTop: 0 }}>{editing ? 'Edit repeater' : 'Add repeater'}</h2>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editing ? 'Edit repeater' : 'Add repeater'}
+      >
         <form onSubmit={submitForm}>
           <div className="hna-form">
             <div className="hna-field">
-              <label>Name</label>
+              <label htmlFor={nameId}>Name</label>
               <Input
+                id={nameId}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
               />
             </div>
             <div className="hna-field">
-              <label>Frequency (MHz)</label>
+              <label htmlFor={freqId}>Frequency (MHz)</label>
               <Input
+                id={freqId}
                 type="number"
                 step="0.001"
                 value={form.frequency}
@@ -444,8 +486,9 @@ export function RepeatersPage() {
               />
             </div>
             <div className="hna-field">
-              <label>Offset (kHz)</label>
+              <label htmlFor={offsetId}>Offset (kHz)</label>
               <Input
+                id={offsetId}
                 type="number"
                 value={form.offsetKhz}
                 onChange={(e) => setForm({ ...form, offsetKhz: Number(e.target.value) })}
@@ -453,8 +496,9 @@ export function RepeatersPage() {
               />
             </div>
             <div className="hna-field">
-              <label>Tone (Hz)</label>
+              <label htmlFor={toneId}>Tone (Hz)</label>
               <Input
+                id={toneId}
                 type="number"
                 step="0.1"
                 value={form.toneHz ?? ''}
@@ -467,8 +511,9 @@ export function RepeatersPage() {
               />
             </div>
             <div className="hna-field">
-              <label>Mode</label>
+              <label htmlFor={modeId}>Mode</label>
               <select
+                id={modeId}
                 className="hna-input"
                 value={form.mode}
                 onChange={(e) =>
@@ -482,8 +527,9 @@ export function RepeatersPage() {
               </select>
             </div>
             <div className="hna-field">
-              <label>Coverage</label>
+              <label htmlFor={coverageId}>Coverage</label>
               <Input
+                id={coverageId}
                 value={form.coverage ?? ''}
                 onChange={(e) =>
                   setForm({ ...form, coverage: e.target.value || null })
@@ -492,12 +538,12 @@ export function RepeatersPage() {
             </div>
           </div>
           {formErr && (
-            <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+            <p role="alert" className="hna-input-error" style={{ marginTop: 8 }}>
               {formErr}
-            </div>
+            </p>
           )}
           <div className="hna-modal-actions">
-            <Button type="submit" disabled={formBusy}>
+            <Button type="submit" variant="primary" disabled={formBusy}>
               {formBusy ? 'Saving…' : 'Save'}
             </Button>
             <Button
@@ -511,67 +557,79 @@ export function RepeatersPage() {
         </form>
       </Modal>
 
-      <Modal open={coordsOpen} onClose={() => setCoordsOpen(false)}>
-        <h2>Discover by coordinates</h2>
+      <Modal
+        open={coordsOpen}
+        onClose={() => setCoordsOpen(false)}
+        title="Discover by coordinates"
+      >
         <form onSubmit={submitCoords}>
-          <label style={{ display: 'block' }}>
-            Grid square (Maidenhead)
-            <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="hna-form">
+            <div className="hna-field">
+              <label htmlFor={gridId}>Grid square (Maidenhead)</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Input
+                  id={gridId}
+                  value={coordGrid}
+                  onChange={(e) => handleGridChange(e.target.value)}
+                  placeholder="EM19jd"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={autofillGridFromCallsign}
+                  disabled={gridBusy || !user?.callsign}
+                >
+                  {gridBusy ? 'Looking up…' : 'Auto-fill from callsign'}
+                </Button>
+              </div>
+            </div>
+            <div className="hna-field">
+              <label htmlFor={latId}>Latitude</label>
               <Input
-                value={coordGrid}
-                onChange={(e) => handleGridChange(e.target.value)}
-                placeholder="EM19jd"
+                id={latId}
+                type="number"
+                step="0.0001"
+                value={coordLat}
+                onChange={(e) => setCoordLat(e.target.value)}
+                placeholder="39.18"
+                required
               />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={autofillGridFromCallsign}
-                disabled={gridBusy || !user?.callsign}
-              >
-                {gridBusy ? 'Looking up…' : 'Auto-fill from callsign'}
-              </Button>
             </div>
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Latitude
-            <Input
-              type="number"
-              step="0.0001"
-              value={coordLat}
-              onChange={(e) => setCoordLat(e.target.value)}
-              placeholder="39.18"
-              required
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Longitude
-            <Input
-              type="number"
-              step="0.0001"
-              value={coordLon}
-              onChange={(e) => setCoordLon(e.target.value)}
-              placeholder="-96.57"
-              required
-            />
-          </label>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            Distance (miles, 1-100)
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={coordDist}
-              onChange={(e) => setCoordDist(e.target.value)}
-              required
-            />
-          </label>
+            <div className="hna-field">
+              <label htmlFor={lonId}>Longitude</label>
+              <Input
+                id={lonId}
+                type="number"
+                step="0.0001"
+                value={coordLon}
+                onChange={(e) => setCoordLon(e.target.value)}
+                placeholder="-96.57"
+                required
+              />
+            </div>
+            <div className="hna-field">
+              <label htmlFor={distId}>Distance (miles, 1-100)</label>
+              <Input
+                id={distId}
+                type="number"
+                min={1}
+                max={100}
+                value={coordDist}
+                onChange={(e) => setCoordDist(e.target.value)}
+                required
+              />
+            </div>
+          </div>
           {coordErr && (
-            <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+            <p role="alert" className="hna-input-error" style={{ marginTop: 8 }}>
               {coordErr}
-            </div>
+            </p>
           )}
-          <div className="hna-flex-wrap" style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-            <Button type="submit">Search</Button>
+          <div className="hna-modal-actions">
+            <Button type="submit" variant="primary">
+              Search
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -583,54 +641,67 @@ export function RepeatersPage() {
         </form>
       </Modal>
 
-      <Modal open={suggestionsOpen} onClose={() => setSuggestionsOpen(false)}>
-        <h2>Suggested repeaters near {user?.callsign ?? ''}</h2>
-        {suggesting && <p>Loading…</p>}
+      <Modal
+        open={suggestionsOpen}
+        onClose={() => setSuggestionsOpen(false)}
+        size="wide"
+        title={`Suggested repeaters near ${user?.callsign ?? ''}`}
+      >
+        {suggesting && (
+          <p className="hna-mono" style={{ color: 'var(--color-fg-muted)' }}>
+            Loading…
+          </p>
+        )}
         {suggestionError && (
-          <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+          <p role="alert" className="hna-input-error" style={{ marginTop: 8 }}>
             {suggestionError}
-          </div>
+          </p>
         )}
         {!suggesting && suggestions.length > 0 && (
           <>
             <div style={{ marginBottom: 12 }}>
-              <Button onClick={addAllSuggestions} disabled={addingAll}>
+              <Button variant="primary" onClick={addAllSuggestions} disabled={addingAll}>
                 {addingAll ? 'Adding…' : `Add all (${suggestions.length})`}
               </Button>
             </div>
             {suggestionSource && (
-              <div
+              <p
+                className="hna-mono"
                 style={{
-                  fontSize: 12,
-                  color: 'var(--color-border)',
+                  fontSize: 11,
+                  color: 'var(--color-fg-muted)',
+                  letterSpacing: '0.06em',
                   marginBottom: 8,
                 }}
               >
                 Source: {sourceLabel(suggestionSource)}
                 {attemptedSources.length > 1 &&
                   ` (tried: ${attemptedSources.join(' → ')})`}
-              </div>
+              </p>
             )}
-            <div style={{ display: 'grid', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+            <div style={{ display: 'grid', gap: 12, maxHeight: 400, overflowY: 'auto' }}>
               {suggestions.map((s, i) => (
                 <Card key={`${s.name}-${i}`}>
                   <div
-                    className="hna-flex-wrap"
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
                       gap: 12,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
                     }}
                   >
-                    <RepeaterDetails r={s} />
-                    <Button onClick={() => addSuggestion(i)}>Add</Button>
+                    <RepeaterDisplay r={s} />
+                    <Button variant="primary" onClick={() => addSuggestion(i)}>
+                      Add
+                    </Button>
                   </div>
                 </Card>
               ))}
             </div>
           </>
         )}
-        <div style={{ marginTop: 12 }}>
+        <div className="hna-modal-actions">
           <Button variant="secondary" onClick={() => setSuggestionsOpen(false)}>
             Close
           </Button>
