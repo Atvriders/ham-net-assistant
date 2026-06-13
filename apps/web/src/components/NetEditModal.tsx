@@ -5,6 +5,7 @@ import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
+import { ConfirmModal } from './ui/ConfirmModal.js';
 import { ScriptImportModal } from './ScriptImportModal.js';
 import { ScriptLibraryPicker } from './ScriptLibraryPicker.js';
 import { ScriptEditor } from './ScriptEditor.js';
@@ -106,6 +107,11 @@ export function NetEditModal({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  // Pending saved-script replacement awaiting user confirmation. When non-null
+  // the ConfirmModal asks the operator whether to overwrite the current
+  // script body before we mutate the form.
+  const [pendingReplaceScript, setPendingReplaceScript] =
+    useState<NetScript | null>(null);
 
   // Field ids — drive `htmlFor` ↔ control id linkage, plus
   // `aria-describedby` for the inline error messages.
@@ -220,10 +226,11 @@ export function NetEditModal({
   function applySavedScript(script: NetScript): void {
     const current = (data.scriptMd ?? '').trim();
     if (current.length > 0) {
-      const ok = window.confirm(
-        `Replace the current script with "${script.title}"? This cannot be undone.`,
-      );
-      if (!ok) return;
+      // Stage the replacement so the ConfirmModal can surface the same legacy
+      // copy ("Replace the current script with … ? This cannot be undone.")
+      // inside a calibrated dialog instead of window.confirm.
+      setPendingReplaceScript(script);
+      return;
     }
     setData({
       ...data,
@@ -232,6 +239,19 @@ export function NetEditModal({
     });
     setLoadedScriptTitle(script.title);
     setScriptPickerOpen(false);
+  }
+
+  function confirmReplaceScript(): void {
+    const script = pendingReplaceScript;
+    if (!script) return;
+    setData({
+      ...data,
+      scriptMd: script.body,
+      scriptCategory: script.category,
+    });
+    setLoadedScriptTitle(script.title);
+    setScriptPickerOpen(false);
+    setPendingReplaceScript(null);
   }
 
   async function saveAsScript(): Promise<void> {
@@ -821,6 +841,18 @@ export function NetEditModal({
         onClose={() => setScriptPickerOpen(false)}
         onPick={applySavedScript}
         preferredCategory={data.scriptCategory ?? 'general'}
+      />
+      <ConfirmModal
+        open={pendingReplaceScript !== null}
+        title="Replace script"
+        message={
+          pendingReplaceScript
+            ? `Replace the current script with "${pendingReplaceScript.title}"? This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Replace"
+        onConfirm={confirmReplaceScript}
+        onClose={() => setPendingReplaceScript(null)}
       />
     </>
   );

@@ -39,6 +39,7 @@ function AdminLogoControls({
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <Button
+        size="sm"
         onClick={(e) => {
           e.stopPropagation();
           onOpenUpload();
@@ -50,6 +51,7 @@ function AdminLogoControls({
       {theme.uploadedLogoUrl && (
         <Button
           variant="secondary"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             void remove();
@@ -64,6 +66,13 @@ function AdminLogoControls({
   );
 }
 
+/**
+ * Theme picker — calibrated chip vocabulary. Each theme renders as a small
+ * card with the slug in mono caption above, the college name in display,
+ * and a row of small hairline-bordered color swatches. The active card
+ * gets a 2px amber underline on the name to match the rest of the app's
+ * selected-state vocabulary.
+ */
 export function ThemePicker() {
   const { current, all, setTheme, refresh } = useTheme();
   const { user } = useAuth();
@@ -72,65 +81,60 @@ export function ThemePicker() {
   return (
     <Card>
       <h3>College theme</h3>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-          gap: 12,
-        }}
-      >
-        {all.map((t) => (
-          <div
-            key={t.slug}
-            style={{
-              padding: 12,
-              border: `2px solid ${current.slug === t.slug ? t.colors.primary : 'var(--color-border)'}`,
-              borderRadius: 8,
-              background: t.colors.bg,
-              color: t.colors.fg,
-              textAlign: 'left',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setTheme(t.slug)}
-              aria-pressed={current.slug === t.slug}
-              style={{
-                cursor: 'pointer',
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                color: 'inherit',
-                textAlign: 'left',
-                width: '100%',
-              }}
+      <div className="hna-theme-grid">
+        {all.map((t) => {
+          const active = current.slug === t.slug;
+          // Up to four swatches per card: primary first, then fg, accent, bg.
+          // We render solid hairline-bordered squares — no soft blobs.
+          const swatches: { label: string; color: string }[] = [
+            { label: 'primary', color: t.colors.primary ?? 'transparent' },
+            { label: 'fg', color: t.colors.fg ?? 'transparent' },
+            { label: 'bg', color: t.colors.bg ?? 'transparent' },
+          ];
+          return (
+            <div
+              key={t.slug}
+              className="hna-theme-card"
+              data-active={active ? 'true' : undefined}
             >
-              <img
-                src={effectiveLogoUrl(t)}
-                alt={t.logo.alt}
-                style={{ height: 32, marginBottom: 6, display: 'block' }}
-              />
-              <div
-                style={{
-                  width: '100%',
-                  height: 24,
-                  background: t.colors.primary,
-                  borderRadius: 4,
-                  marginBottom: 8,
-                }}
-              />
-              <strong style={{ display: 'block' }}>{t.shortName}</strong>
-              <small>{t.name}</small>
-            </button>
-            {isAdmin && (
-              <AdminLogoControls
-                theme={t}
-                onChanged={refresh}
-                onOpenUpload={() => setUploadingSlug(t.slug)}
-              />
-            )}
-          </div>
-        ))}
+              <button
+                type="button"
+                onClick={() => setTheme(t.slug)}
+                aria-pressed={active}
+                className="hna-theme-card__btn"
+              >
+                <span className="hna-theme-card__slug">// {t.slug}</span>
+                <img
+                  src={effectiveLogoUrl(t)}
+                  alt={t.logo.alt}
+                  className="hna-theme-card__logo"
+                />
+                <span className="hna-theme-card__name">{t.shortName}</span>
+                <span className="hna-theme-card__sub">{t.name}</span>
+                <span
+                  className="hna-theme-card__swatches"
+                  aria-hidden="true"
+                >
+                  {swatches.map((sw) => (
+                    <span
+                      key={sw.label}
+                      className="hna-theme-card__swatch"
+                      style={{ background: sw.color }}
+                      title={sw.label}
+                    />
+                  ))}
+                </span>
+              </button>
+              {isAdmin && (
+                <AdminLogoControls
+                  theme={t}
+                  onChanged={refresh}
+                  onOpenUpload={() => setUploadingSlug(t.slug)}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
       {isAdmin && uploadingSlug && (
         <LogoUploadModal

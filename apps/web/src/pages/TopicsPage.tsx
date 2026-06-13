@@ -149,14 +149,7 @@ export function TopicsPage() {
           const canDelete = isOfficer || (mine && t.status === 'OPEN');
           return (
             <Card key={t.id}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) auto',
-                  gap: 'var(--space-3)',
-                  alignItems: 'start',
-                }}
-              >
+              <div className="hna-topic-card">
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
@@ -200,31 +193,24 @@ export function TopicsPage() {
                     </p>
                   )}
                 </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 'var(--space-2)',
-                    alignItems: 'stretch',
-                  }}
-                >
+                <div className="hna-topic-card__actions">
                   {isOfficer && t.status === 'OPEN' && (
-                    <Button variant="secondary" onClick={() => setStatus(t.id, 'USED')}>
+                    <Button variant="secondary" size="sm" onClick={() => setStatus(t.id, 'USED')}>
                       Mark used
                     </Button>
                   )}
                   {isOfficer && t.status !== 'OPEN' && (
-                    <Button variant="secondary" onClick={() => setStatus(t.id, 'OPEN')}>
+                    <Button variant="secondary" size="sm" onClick={() => setStatus(t.id, 'OPEN')}>
                       Mark open
                     </Button>
                   )}
                   {isOfficer && t.status === 'OPEN' && (
-                    <Button variant="ghost" onClick={() => setStatus(t.id, 'DISMISSED')}>
+                    <Button variant="ghost" size="sm" onClick={() => setStatus(t.id, 'DISMISSED')}>
                       Dismiss
                     </Button>
                   )}
                   {canDelete && (
-                    <Button variant="danger" onClick={() => setConfirmDelete(t)}>
+                    <Button variant="danger" size="sm" onClick={() => setConfirmDelete(t)}>
                       Remove
                     </Button>
                   )}

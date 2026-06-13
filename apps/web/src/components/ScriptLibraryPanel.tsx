@@ -6,6 +6,7 @@ import { Card } from './ui/Card.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
+import { ConfirmModal } from './ui/ConfirmModal.js';
 import { ScriptEditor } from './ScriptEditor.js';
 
 const CATEGORIES: ScriptCategory[] = ['weekly', 'general', 'impromptu'];
@@ -31,6 +32,9 @@ export function ScriptLibraryPanel() {
   const [edit, setEdit] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Pending soft-delete awaiting user confirmation. The ConfirmModal surfaces
+  // the same prompt that window.confirm() previously showed.
+  const [pendingDelete, setPendingDelete] = useState<NetScript | null>(null);
   const titleId = useId();
   const categoryId = useId();
   const bodyId = useId();
@@ -92,10 +96,7 @@ export function ScriptLibraryPanel() {
     }
   }
 
-  async function remove(s: NetScript): Promise<void> {
-    if (!window.confirm(`Delete saved script "${s.title}"? This cannot be undone from the UI.`)) {
-      return;
-    }
+  async function performDelete(s: NetScript): Promise<void> {
     try {
       await apiFetch(`/scripts/${s.id}`, { method: 'DELETE' });
       await refresh();
@@ -124,29 +125,47 @@ export function ScriptLibraryPanel() {
           </div>
         )}
         {scripts !== null && scripts.length > 0 && (
-          <div className="hna-table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="hna-table-scroll" style={{ overflowX: 'auto' }}>
+            <table className="hna-log-table" style={{ minWidth: 520 }}>
+              <caption className="sr-only">Saved scripts in the script library</caption>
               <thead>
                 <tr>
-                  <th align="left">Title</th>
-                  <th align="left">Category</th>
-                  <th align="left">Author</th>
-                  <th></th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Author</th>
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {scripts.map((s) => (
-                  <tr key={s.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                    <td>{s.title}</td>
-                    <td>{s.category}</td>
-                    <td>{s.createdByCallsign ?? '—'}</td>
-                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Button variant="secondary" onClick={() => startEdit(s)}>
-                        Edit
-                      </Button>
-                      <Button variant="danger" onClick={() => void remove(s)}>
-                        Delete
-                      </Button>
+                  <tr key={s.id}>
+                    <th scope="row" style={{ fontWeight: 600, textAlign: 'left' }}>
+                      {s.title}
+                    </th>
+                    <td>
+                      <span className="hna-chip">{s.category}</span>
+                    </td>
+                    <td
+                      className="hna-mono"
+                      style={{ fontSize: 12, color: 'var(--color-fg-muted)' }}
+                    >
+                      {s.createdByCallsign ?? '—'}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button variant="secondary" size="sm" onClick={() => startEdit(s)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => setPendingDelete(s)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -159,7 +178,7 @@ export function ScriptLibraryPanel() {
         open={edit !== null}
         onClose={() => setEdit(null)}
         size="wide"
-        titleId={dialogTitleId}
+        title={edit?.id ? 'Edit saved script' : 'New saved script'}
       >
         {edit && (
           <div>
@@ -220,6 +239,22 @@ export function ScriptLibraryPanel() {
           </div>
         )}
       </Modal>
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Delete saved script"
+        message={
+          pendingDelete
+            ? `Delete saved script "${pendingDelete.title}"? This cannot be undone from the UI.`
+            : ''
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void performDelete(target);
+        }}
+        onClose={() => setPendingDelete(null)}
+      />
     </>
   );
 }

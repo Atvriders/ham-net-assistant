@@ -358,25 +358,28 @@ export function AdminPage() {
         {users !== null && users.length > 0 && (
           <div className="hna-table-scroll" style={{ overflowX: 'auto' }}>
             <table className="hna-log-table" style={{ minWidth: 720 }}>
+              <caption className="sr-only">Club members</caption>
               <thead>
                 <tr>
-                  <th align="left">Callsign</th>
-                  <th align="left">Name</th>
-                  <th align="left">Email</th>
-                  <th align="left">Role</th>
-                  <th align="left">Theme</th>
-                  <th></th>
+                  <th scope="col">Callsign</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Theme</th>
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td className="hna-log-table__cs">
+                    <th scope="row" className="hna-log-table__cs" style={{ textAlign: 'left' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <OnlineDot online={isOnlineById(u.id)} />
                         {displayCallsign(u.callsign)}
                       </span>
-                    </td>
+                    </th>
                     <td>{u.name}</td>
                     <td
                       className="hna-mono"
@@ -681,12 +684,17 @@ export function AdminPage() {
             </p>
             <div className="hna-table-scroll" style={{ overflowX: 'auto' }}>
               <table className="hna-log-table" style={{ minWidth: 720 }}>
+                <caption className="sr-only">
+                  Recently deleted sessions and check-ins
+                </caption>
                 <thead>
                   <tr>
-                    <th align="left">Type</th>
-                    <th align="left">Description</th>
-                    <th align="left">Deleted at</th>
-                    <th></th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Deleted at</th>
+                    <th scope="col">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1001,29 +1009,38 @@ function DuplicateGroupRow({
       </p>
       <div style={{ overflowX: 'auto' }}>
         <table className="hna-log-table" style={{ minWidth: 600 }}>
+          <caption className="sr-only">
+            Duplicate sessions for {group.netName} on {formatGroupDate(group.date)} —
+            pick which one to keep
+          </caption>
           <thead>
             <tr>
-              <th align="left">Keep</th>
-              <th align="left">Started</th>
-              <th align="left">Topic</th>
-              <th align="left">Control</th>
-              <th align="left">Check-ins</th>
-              <th align="left">Status</th>
+              <th scope="col">Keep</th>
+              <th scope="col">Started</th>
+              <th scope="col">Topic</th>
+              <th scope="col">Control</th>
+              <th scope="col">Check-ins</th>
+              <th scope="col">Status</th>
             </tr>
           </thead>
           <tbody>
             {group.sessions.map((s) => (
               <tr key={s.id}>
                 <td>
-                  <input
-                    type="radio"
-                    name={`keep-${group.netId}-${group.date}`}
-                    checked={keepId === s.id}
-                    onChange={() => setKeepId(s.id)}
-                    aria-label={`Keep session started ${formatTime(s.startedAt)}`}
-                  />
+                  <label className="hna-radio">
+                    <input
+                      type="radio"
+                      name={`keep-${group.netId}-${group.date}`}
+                      checked={keepId === s.id}
+                      onChange={() => setKeepId(s.id)}
+                      aria-label={`Keep session started ${formatTime(s.startedAt)}`}
+                    />
+                    <span className="hna-radio__mark" aria-hidden="true" />
+                  </label>
                 </td>
-                <td className="hna-mono">{formatTime(s.startedAt)}</td>
+                <th scope="row" className="hna-mono" style={{ textAlign: 'left' }}>
+                  {formatTime(s.startedAt)}
+                </th>
                 <td>{s.topicTitle ?? '—'}</td>
                 <td className="hna-mono" style={{ fontSize: 12 }}>
                   {s.controlOpCallsign

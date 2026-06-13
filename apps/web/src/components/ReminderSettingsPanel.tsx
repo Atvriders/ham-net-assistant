@@ -108,15 +108,20 @@ export function ReminderSettingsPanel() {
           </p>
         )}
         {weeklyNets.length > 0 && (
-          <div className="hna-table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="hna-table-scroll" style={{ overflowX: 'auto' }}>
+            <table className="hna-log-table" style={{ minWidth: 600 }}>
+              <caption className="sr-only">
+                Reminder schedule per weekly net
+              </caption>
               <thead>
                 <tr>
-                  <th align="left">Net</th>
-                  <th align="left">When</th>
-                  <th align="left">Reminders</th>
-                  <th align="left">On</th>
-                  <th></th>
+                  <th scope="col">Net</th>
+                  <th scope="col">When</th>
+                  <th scope="col">Reminders</th>
+                  <th scope="col">On</th>
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -127,35 +132,42 @@ export function ReminderSettingsPanel() {
                   const isOn = mins.length > 0;
                   const isPending = pendingId === n.id;
                   return (
-                    <tr
-                      key={n.id}
-                      style={{ borderTop: '1px solid var(--color-border)' }}
-                    >
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{n.name}</div>
+                    <tr key={n.id}>
+                      <th scope="row" style={{ textAlign: 'left' }}>
+                        <div className="hna-display" style={{ fontSize: 14 }}>
+                          {n.name}
+                        </div>
                         <div
+                          className="hna-mono"
                           style={{
-                            fontSize: 12,
-                            color: 'var(--color-text-muted)',
+                            fontSize: 11,
+                            letterSpacing: '0.06em',
+                            color: 'var(--color-fg-muted)',
+                            fontWeight: 400,
                           }}
                         >
                           {n.repeater?.name ?? '—'}
                         </div>
-                      </td>
-                      <td style={{ fontSize: 13 }}>
+                      </th>
+                      <td
+                        className="hna-mono"
+                        style={{ fontSize: 12, letterSpacing: '0.06em' }}
+                      >
                         {dayName(n.dayOfWeek)}{' '}
                         {formatStartLocal12h(n.startLocal)}
                       </td>
-                      <td style={{ fontSize: 13 }}>
+                      <td
+                        className="hna-mono"
+                        style={{ fontSize: 12, color: 'var(--color-fg-muted)' }}
+                      >
                         {formatReminderMinutes(mins)}
                       </td>
                       <td>
-                        <label
+                        <span
+                          className="hna-switch"
                           style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
                             cursor: isPending ? 'wait' : 'pointer',
+                            opacity: isPending ? 0.6 : 1,
                           }}
                         >
                           <input
@@ -168,11 +180,14 @@ export function ReminderSettingsPanel() {
                               void toggleReminders(n, e.target.checked)
                             }
                           />
-                        </label>
+                          <span className="hna-switch__track" aria-hidden="true" />
+                          <span className="hna-switch__thumb" aria-hidden="true" />
+                        </span>
                       </td>
                       <td>
                         <Button
                           variant="secondary"
+                          size="sm"
                           onClick={() =>
                             setEditing({
                               id: n.id,

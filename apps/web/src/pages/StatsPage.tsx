@@ -279,6 +279,9 @@ export function StatsPage() {
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="hna-log-table" style={{ minWidth: 320 }}>
+                <caption className="sr-only">
+                  Check-in counts per member
+                </caption>
                 <thead>
                   <tr>
                     <SortHeader
@@ -302,7 +305,13 @@ export function StatsPage() {
                 <tbody>
                   {sortedMembers.slice(0, 12).map((m) => (
                     <tr key={m.callsign}>
-                      <td className="hna-log-table__cs">{displayCallsign(m.callsign)}</td>
+                      <th
+                        scope="row"
+                        className="hna-log-table__cs"
+                        style={{ textAlign: 'left' }}
+                      >
+                        {displayCallsign(m.callsign)}
+                      </th>
                       <td>{m.name}</td>
                       <td
                         className="hna-mono"
@@ -336,17 +345,22 @@ export function StatsPage() {
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="hna-log-table" style={{ minWidth: 320 }}>
+                <caption className="sr-only">
+                  Sessions and average attendance per net
+                </caption>
                 <thead>
                   <tr>
-                    <th align="left">Net</th>
+                    <th scope="col">Net</th>
                     <th
-                      align="right"
+                      scope="col"
+                      data-align="right"
                       style={{ textAlign: 'right' }}
                     >
                       Sessions
                     </th>
                     <th
-                      align="right"
+                      scope="col"
+                      data-align="right"
                       style={{ textAlign: 'right' }}
                     >
                       Avg attendance
@@ -359,12 +373,13 @@ export function StatsPage() {
                       n.sessions > 0 ? Math.round((n.checkIns / n.sessions) * 10) / 10 : 0;
                     return (
                       <tr key={n.netId}>
-                        <td
+                        <th
+                          scope="row"
                           className="hna-display"
-                          style={{ fontSize: 13, color: 'var(--color-fg)' }}
+                          style={{ fontSize: 13, color: 'var(--color-fg)', textAlign: 'left' }}
                         >
                           {n.netName}
-                        </td>
+                        </th>
                         <td
                           className="hna-mono"
                           style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
@@ -511,18 +526,11 @@ export function StatsPage() {
                   </p>
                 )}
                 {s.checkIns.length > 0 && (
-                  <details style={{ marginTop: 'var(--space-3)' }}>
-                    <summary
-                      className="hna-mono"
-                      style={{
-                        fontSize: 11,
-                        letterSpacing: '0.14em',
-                        color: 'var(--color-fg-muted)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      SHOW CHECK-INS ({s.checkIns.length})
-                    </summary>
+                  <details
+                    className="hna-disclosure"
+                    style={{ marginTop: 'var(--space-3)' }}
+                  >
+                    <summary>SHOW CHECK-INS ({s.checkIns.length})</summary>
                     <ol style={{ marginTop: 8, paddingLeft: 22 }}>
                       {s.checkIns.map((c) => (
                         <li
@@ -630,10 +638,15 @@ function SortHeader({
   align?: 'left' | 'right';
 }) {
   return (
-    <th align={align} style={{ textAlign: align }}>
+    <th
+      scope="col"
+      data-align={align === 'right' ? 'right' : undefined}
+      style={{ textAlign: align }}
+    >
       <button
         type="button"
         onClick={onClick}
+        aria-pressed={active}
         style={{
           background: 'transparent',
           border: 0,
