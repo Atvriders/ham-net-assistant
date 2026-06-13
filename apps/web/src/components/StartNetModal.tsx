@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
@@ -15,6 +15,14 @@ interface StartedSession {
   id: string;
 }
 
+/**
+ * Topic-mode radio above the two sections — picks which source of truth wins
+ * at submit. The previous design quietly clobbered radio selections when a
+ * non-empty custom topic was typed (and vice-versa); making the source of
+ * truth explicit removes that footgun.
+ */
+type TopicMode = 'none' | 'suggested' | 'custom';
+
 export function StartNetModal({
   open,
   netId,
@@ -29,14 +37,21 @@ export function StartNetModal({
   onStarted: (sessionId: string) => void;
 }) {
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [selected, setSelected] = useState<string>('__none__');
+  const [mode, setMode] = useState<TopicMode>('none');
+  const [selected, setSelected] = useState<string>('');
   const [customTitle, setCustomTitle] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const modeGroupName = useId();
+  const suggestedGroupName = useId();
+  const customInputId = useId();
+  const dialogTitleId = useId();
+
   useEffect(() => {
     if (!open) return;
-    setSelected('__none__');
+    setMode('none');
+    setSelected('');
     setCustomTitle('');
     setErr(null);
     const ctrl = new AbortController();
@@ -53,15 +68,30 @@ export function StartNetModal({
     setErr(null);
     try {
       const body: { topicId?: string; topicTitle?: string } = {};
-      if (customTitle.trim().length > 0) {
-        body.topicTitle = customTitle.trim();
-      } else if (selected !== '__none__') {
+      if (mode === 'suggested') {
+        if (!selected) {
+          setErr('Pick a suggested topic, or switch modes.');
+          setSubmitting(false);
+          return;
+        }
         body.topicId = selected;
+      } else if (mode === 'custom') {
+        const trimmed = customTitle.trim();
+        if (!trimmed) {
+          setErr('Enter a topic title, or switch modes.');
+          setSubmitting(false);
+          return;
+        }
+        body.topicTitle = trimmed;
       }
-      const s = await apiFetch<StartedSession & { reused?: boolean }>(`/nets/${netId}/sessions`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      // mode === 'none' sends an empty body (no topic).
+      const s = await apiFetch<StartedSession & { reused?: boolean }>(
+        `/nets/${netId}/sessions`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        },
+      );
       onStarted(s.id);
     } catch (e) {
       if (e instanceof ApiErrorException && e.payload.code === 'CONFLICT') {
@@ -75,69 +105,120 @@ export function StartNetModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} titleId={dialogTitleId}>
       <div>
-        <h2 style={{ marginTop: 0 }}>Start {netName}</h2>
+        <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
+          Start {netName}
+        </h2>
         <p>Pick a topic for tonight&rsquo;s net (optional).</p>
-        <div
-          style={{
-            maxHeight: 240,
-            overflowY: 'auto',
-            border: '1px solid var(--color-border)',
-            borderRadius: 6,
-            padding: 8,
-            marginBottom: 12,
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 4 }}>
+
+        {/* Mode chooser — three labelled radio chips. The active section is
+            enabled; the other two visually fade and become non-interactive. */}
+        <fieldset className="hna-topic-mode">
+          <legend>Topic source</legend>
+          <label
+            className="hna-topic-mode__option"
+            data-selected={mode === 'none'}
+          >
             <input
               type="radio"
-              name="topic"
-              checked={selected === '__none__'}
-              onChange={() => {
-                setSelected('__none__');
-                setCustomTitle('');
-              }}
+              name={modeGroupName}
+              value="none"
+              checked={mode === 'none'}
+              onChange={() => setMode('none')}
             />
             <span>No topic</span>
           </label>
+          <label
+            className="hna-topic-mode__option"
+            data-selected={mode === 'suggested'}
+          >
+            <input
+              type="radio"
+              name={modeGroupName}
+              value="suggested"
+              checked={mode === 'suggested'}
+              onChange={() => setMode('suggested')}
+            />
+            <span>Suggested topic</span>
+          </label>
+          <label
+            className="hna-topic-mode__option"
+            data-selected={mode === 'custom'}
+          >
+            <input
+              type="radio"
+              name={modeGroupName}
+              value="custom"
+              checked={mode === 'custom'}
+              onChange={() => setMode('custom')}
+            />
+            <span>New topic</span>
+          </label>
+        </fieldset>
+
+        {/* Suggested-topic section. Disabled (greyed + click-blocked) when the
+            mode chooser points elsewhere. */}
+        <fieldset
+          className="hna-topic-section"
+          aria-disabled={mode !== 'suggested'}
+        >
+          <legend>Suggested topics</legend>
+          {topics.length === 0 && (
+            <div style={{ color: 'var(--color-fg-muted)', fontSize: 13 }}>
+              No open topic suggestions.
+            </div>
+          )}
           {topics.map((t) => (
             <label
               key={t.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 4 }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: 4,
+              }}
             >
               <input
                 type="radio"
-                name="topic"
+                name={suggestedGroupName}
+                value={t.id}
                 checked={selected === t.id}
-                onChange={() => {
-                  setSelected(t.id);
-                  setCustomTitle('');
-                }}
+                onChange={() => setSelected(t.id)}
+                disabled={mode !== 'suggested'}
               />
               <span>{t.title}</span>
             </label>
           ))}
-          {topics.length === 0 && (
-            <div style={{ color: 'var(--color-muted)', padding: 4 }}>
-              No open topic suggestions.
-            </div>
-          )}
-        </div>
-        <label>
-          Or enter a custom topic
+        </fieldset>
+
+        {/* New-topic text input. Mirrors the styling of the radio block so the
+            two are clearly parallel choices. */}
+        <fieldset
+          className="hna-topic-section"
+          aria-disabled={mode !== 'custom'}
+        >
+          <legend>Or enter a new topic</legend>
+          <label htmlFor={customInputId} className="hna-label">
+            New topic title
+          </label>
           <Input
+            id={customInputId}
             value={customTitle}
-            onChange={(e) => {
-              setCustomTitle(e.target.value);
-              if (e.target.value.length > 0) setSelected('__custom__');
-              else setSelected('__none__');
-            }}
+            onChange={(e) => setCustomTitle(e.target.value)}
             placeholder="e.g. Field Day planning"
+            disabled={mode !== 'custom'}
           />
-        </label>
+        </fieldset>
+
         {err && (
-          <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>
+          <div
+            role="alert"
+            className="hna-form-error"
+            style={{ marginTop: 4 }}
+          >
+            {err}
+          </div>
         )}
         <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
           <Button onClick={submit} disabled={submitting}>

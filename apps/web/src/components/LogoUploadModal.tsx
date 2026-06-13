@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { Modal } from './ui/Modal.js';
@@ -93,6 +93,7 @@ export function LogoUploadModal({
   const [busy, setBusy] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const dialogTitleId = useId();
 
   function reset() {
     setImageSrc(null);
@@ -157,9 +158,18 @@ export function LogoUploadModal({
   }
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }}>
+    <Modal
+      open={open}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      titleId={dialogTitleId}
+    >
       <div style={{ minWidth: 0, maxWidth: 560 }}>
-        <h2 style={{ marginTop: 0 }}>Upload logo for {slug}</h2>
+        <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
+          Upload logo for {slug}
+        </h2>
         <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <Button
             variant={tab === 'file' ? 'primary' : 'secondary'}

@@ -174,12 +174,28 @@ export function Dashboard() {
                     </div>
                     <div className="hna-net-row__actions">
                       {canControl && (
-                        <Button
-                          variant="secondary"
-                          onClick={() => takeControl(s.id)}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'stretch',
+                            gap: 4,
+                          }}
                         >
-                          Take control
-                        </Button>
+                          <Button
+                            variant="secondary"
+                            aria-describedby={`dash-take-control-help-${s.id}`}
+                            onClick={() => takeControl(s.id)}
+                          >
+                            Take control
+                          </Button>
+                          <span
+                            id={`dash-take-control-help-${s.id}`}
+                            className="hna-help"
+                          >
+                            Transfer Net Control authority to yourself for this session.
+                          </span>
+                        </div>
                       )}
                       <Link to={`/nets/${s.net.id}/join`}>
                         <Button variant="primary">Open net</Button>

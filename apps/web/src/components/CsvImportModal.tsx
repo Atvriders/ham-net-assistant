@@ -1,4 +1,4 @@
-import React, { useState, type JSX } from 'react';
+import React, { useId, useState, type JSX } from 'react';
 import type { RepeaterInput } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
@@ -28,6 +28,7 @@ export function CsvImportModal({
   const [result, setResult] = useState<{ success: number; errors: string[] } | null>(
     null,
   );
+  const dialogTitleId = useId();
 
   function reset() {
     setRawText('');
@@ -141,8 +142,8 @@ export function CsvImportModal({
   const includedCount = rows.filter((r) => r.include && !r.error).length;
 
   return (
-    <Modal open={open} onClose={handleClose}>
-      <h2>Import repeaters from CSV</h2>
+    <Modal open={open} onClose={handleClose} titleId={dialogTitleId}>
+      <h2 id={dialogTitleId}>Import repeaters from CSV</h2>
       <p style={{ fontSize: 13, color: 'var(--color-border)' }}>
         Paste a CSV exported from CHIRP, RT Systems, or any spreadsheet. Column
         headers are auto-detected.

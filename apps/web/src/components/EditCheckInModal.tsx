@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import type { CheckIn } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
@@ -18,6 +18,9 @@ export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const callsignId = useId();
+  const nameId = useId();
+  const dialogTitleId = useId();
 
   useEffect(() => {
     if (checkIn) {
@@ -54,15 +57,26 @@ export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <h3 style={{ marginTop: 0 }}>Edit check-in</h3>
-      <label>
+    <Modal open={open} onClose={onClose} titleId={dialogTitleId}>
+      <h3 id={dialogTitleId} style={{ marginTop: 0 }}>
+        Edit check-in
+      </h3>
+      <label htmlFor={callsignId}>
         Callsign
-        <CallsignInput value={callsign} onChange={setCallsign} autoFocus />
+        <CallsignInput
+          id={callsignId}
+          value={callsign}
+          onChange={setCallsign}
+          autoFocus
+        />
       </label>
-      <label style={{ display: 'block', marginTop: 12 }}>
+      <label htmlFor={nameId} style={{ display: 'block', marginTop: 12 }}>
         Name
-        <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <Input
+          id={nameId}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </label>
       {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>

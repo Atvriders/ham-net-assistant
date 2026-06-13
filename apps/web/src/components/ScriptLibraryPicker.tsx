@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import type { NetScript, ScriptCategory } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
@@ -29,6 +29,7 @@ export function ScriptLibraryPicker({ open, onClose, onPick, preferredCategory }
   const [query, setQuery] = useState('');
   const [scripts, setScripts] = useState<NetScript[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogTitleId = useId();
 
   useEffect(() => {
     if (open) {
@@ -64,9 +65,11 @@ export function ScriptLibraryPicker({ open, onClose, onPick, preferredCategory }
   }, [scripts, query]);
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} titleId={dialogTitleId}>
       <div style={{ minWidth: 0, maxWidth: 640, width: '100%' }}>
-        <h2 style={{ marginTop: 0 }}>Use a saved script</h2>
+        <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
+          Use a saved script
+        </h2>
         <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0 }}>
           Pick one of the saved scripts to load into this net&rsquo;s script
           field. The current editor content will be replaced.

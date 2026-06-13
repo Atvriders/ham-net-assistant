@@ -305,17 +305,11 @@ export function RunNetPage() {
     await refresh();
   }
 
-  // Escape key opens the end-net review modal (Modal handles its own Escape to close)
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !reviewOpen) {
-        endNet();
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, reviewOpen]);
+  // Note: a previous build wired a global Escape listener to open the
+  // end-net review modal. That collided with Modal's own Escape-to-close,
+  // so an Escape pressed inside any nested modal would close the modal AND
+  // immediately open this review modal — a documented footgun per the
+  // accessibility audit. Removed entirely; the "End net" button remains.
 
   function onCallsignKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Backspace' && callsign === '') {
@@ -389,19 +383,32 @@ export function RunNetPage() {
         </div>
         <div className="hna-runnet-status__actions">
           {user && canManageControl && session.controlOpId !== user.id && !session.endedAt && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                await apiFetch(`/sessions/${session.id}`, {
-                  method: 'PATCH',
-                  body: JSON.stringify({ controlOpId: user.id }),
-                });
-                await refresh();
+            <div
+              style={{
+                display: 'inline-flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 2,
               }}
             >
-              Take control
-            </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-describedby="run-take-control-help"
+                onClick={async () => {
+                  await apiFetch(`/sessions/${session.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ controlOpId: user.id }),
+                  });
+                  await refresh();
+                }}
+              >
+                Take control
+              </Button>
+              <span id="run-take-control-help" className="hna-help">
+                Transfer Net Control authority to yourself for this session.
+              </span>
+            </div>
           )}
           {canManageControl && !session.endedAt && (
             <Button

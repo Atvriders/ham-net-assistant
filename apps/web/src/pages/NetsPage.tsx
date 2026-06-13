@@ -121,9 +121,28 @@ function NetCard({
             </Button>
           )}
           {canEdit && active && (
-            <Button variant="primary" onClick={() => onTake(active.id)}>
-              Take control
-            </Button>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                gap: 4,
+              }}
+            >
+              <Button
+                variant="primary"
+                aria-describedby={`nets-take-control-help-${n.id}`}
+                onClick={() => onTake(active.id)}
+              >
+                Take control
+              </Button>
+              <span
+                id={`nets-take-control-help-${n.id}`}
+                className="hna-help"
+              >
+                Transfer Net Control authority to yourself for this session.
+              </span>
+            </div>
           )}
           {active && (
             <Button variant="secondary" onClick={() => onJoin(n.id)}>

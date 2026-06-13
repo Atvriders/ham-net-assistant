@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import type { NetScript, ScriptCategory } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { useAuth } from '../auth/AuthProvider.js';
@@ -31,6 +31,10 @@ export function ScriptLibraryPanel() {
   const [edit, setEdit] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const titleId = useId();
+  const categoryId = useId();
+  const bodyId = useId();
+  const dialogTitleId = useId();
 
   async function refresh(): Promise<void> {
     try {
@@ -151,24 +155,31 @@ export function ScriptLibraryPanel() {
           </div>
         )}
       </Card>
-      <Modal open={edit !== null} onClose={() => setEdit(null)} size="wide">
+      <Modal
+        open={edit !== null}
+        onClose={() => setEdit(null)}
+        size="wide"
+        titleId={dialogTitleId}
+      >
         {edit && (
           <div>
-            <h2 style={{ marginTop: 0 }}>
+            <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
               {edit.id ? 'Edit saved script' : 'New saved script'}
             </h2>
             <div className="hna-form">
               <div className="hna-field">
-                <label>Title</label>
+                <label htmlFor={titleId}>Title</label>
                 <Input
+                  id={titleId}
                   value={edit.title}
                   onChange={(e) => setEdit({ ...edit, title: e.target.value })}
                   placeholder="e.g. Weekly tech net — opening"
                 />
               </div>
               <div className="hna-field">
-                <label>Category</label>
+                <label htmlFor={categoryId}>Category</label>
                 <select
+                  id={categoryId}
                   className="hna-input"
                   value={edit.category}
                   onChange={(e) =>
@@ -183,8 +194,9 @@ export function ScriptLibraryPanel() {
                 </select>
               </div>
               <div className="hna-field">
-                <label>Body</label>
+                <label htmlFor={bodyId}>Body</label>
                 <ScriptEditor
+                  id={bodyId}
                   value={edit.body}
                   onChange={(md) => setEdit({ ...edit, body: md })}
                 />

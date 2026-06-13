@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import mammoth from 'mammoth';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
@@ -45,6 +45,7 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const dialogTitleId = useId();
 
   function reset() {
     setUrl('');
@@ -114,9 +115,18 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }}>
+    <Modal
+      open={open}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      titleId={dialogTitleId}
+    >
       <div style={{ minWidth: 0, maxWidth: 640, width: '100%' }}>
-        <h2 style={{ marginTop: 0 }}>Import script</h2>
+        <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
+          Import script
+        </h2>
         <div className="hna-flex-wrap" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <Button variant={tab === 'file' ? 'primary' : 'secondary'} onClick={() => { setTab('file'); setPreview(null); }}>File</Button>
           <Button variant={tab === 'url' ? 'primary' : 'secondary'} onClick={() => { setTab('url'); setPreview(null); }}>From URL</Button>

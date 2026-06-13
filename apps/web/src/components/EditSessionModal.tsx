@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import type { ParticipationStats } from '@hna/shared';
 import { apiFetch, ApiErrorException, isAbortError } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
@@ -40,6 +40,10 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   const [checkIns, setCheckIns] = useState<EditableCheckIn[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const topicId = useId();
+  const controlOpFieldId = useId();
+  const notesId = useId();
+  const dialogTitleId = useId();
 
   useEffect(() => {
     if (!session) return;
@@ -128,15 +132,18 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   if (!session) return null;
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <h3 style={{ marginTop: 0 }}>Edit session</h3>
+    <Modal open={open} onClose={onClose} titleId={dialogTitleId}>
+      <h3 id={dialogTitleId} style={{ marginTop: 0 }}>
+        Edit session
+      </h3>
       <div style={{ opacity: 0.7, fontSize: 13, marginBottom: 12 }}>
         {session.netName} — {new Date(session.startedAt).toLocaleString()}
       </div>
 
-      <label style={{ display: 'block' }}>
+      <label htmlFor={topicId} style={{ display: 'block' }}>
         Topic
         <Input
+          id={topicId}
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           placeholder="Topic for this net"
@@ -144,9 +151,13 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
         />
       </label>
 
-      <label style={{ display: 'block', marginTop: 12 }}>
+      <label
+        htmlFor={controlOpFieldId}
+        style={{ display: 'block', marginTop: 12 }}
+      >
         Control operator
         <select
+          id={controlOpFieldId}
           className="hna-input"
           value={controlOpId}
           onChange={(e) => setControlOpId(e.target.value)}
@@ -160,9 +171,10 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
         </select>
       </label>
 
-      <label style={{ display: 'block', marginTop: 12 }}>
+      <label htmlFor={notesId} style={{ display: 'block', marginTop: 12 }}>
         Notes
         <textarea
+          id={notesId}
           className="hna-input"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}

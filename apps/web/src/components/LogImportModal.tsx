@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
@@ -41,6 +41,10 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportSummary | null>(null);
   const [enrichNames, setEnrichNames] = useState(true);
+  const attachNetId = useId();
+  const logTextId = useId();
+  const urlInputId = useId();
+  const dialogTitleId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -81,12 +85,26 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }}>
+    <Modal
+      open={open}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      titleId={dialogTitleId}
+    >
       <div style={{ minWidth: 0, maxWidth: 720, width: '100%' }}>
-        <h2 style={{ marginTop: 0 }}>Import historical net logs</h2>
+        <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
+          Import historical net logs
+        </h2>
         <div className="hna-field" style={{ marginBottom: 12 }}>
-          <label>Attach to net</label>
-          <select className="hna-input" value={netId} onChange={(e) => setNetId(e.target.value)}>
+          <label htmlFor={attachNetId}>Attach to net</label>
+          <select
+            id={attachNetId}
+            className="hna-input"
+            value={netId}
+            onChange={(e) => setNetId(e.target.value)}
+          >
             {nets.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
           </select>
         </div>
@@ -96,8 +114,9 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
         </div>
         {tab === 'paste' && (
           <div className="hna-field">
-            <label>Log text (blank lines separate sessions)</label>
+            <label htmlFor={logTextId}>Log text (blank lines separate sessions)</label>
             <textarea
+              id={logTextId}
               className="hna-input"
               rows={14}
               value={text}
@@ -109,8 +128,9 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
         )}
         {tab === 'url' && (
           <div className="hna-field">
-            <label>Google Docs (or plain text) URL</label>
+            <label htmlFor={urlInputId}>Google Docs (or plain text) URL</label>
             <Input
+              id={urlInputId}
               placeholder="https://docs.google.com/document/d/.../edit"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
