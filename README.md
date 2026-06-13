@@ -73,6 +73,16 @@ New members inherit the global default theme set by an admin.
   already exists either reuses the active session or 409s if it's already
   ended
 - Admin merge tool for any pre-existing duplicates (by net + day)
+- **Impromptu nets** — kind `"impromptu"` skips the recurring schedule and
+  the reminder scheduler; create one and start it immediately
+- **Saved script library** — reusable script bodies tagged by category
+  (`weekly` / `general` / `impromptu`) with a Picker affordance in the net
+  edit modal and a "Save as saved script" button to push the current
+  editor body into the library
+- **24-hour chat backfill** — when a net starts, the chat panel pre-loads
+  every `SessionMessage` from the same Net within the last 24 hours
+  (soft-deleted sessions excluded), with a "PRE-NET CONTEXT" / "NET
+  STARTED" divider and autoscroll to the bottom
 
 ### Topics
 - Any member can submit a net topic suggestion
@@ -110,9 +120,13 @@ New members inherit the global default theme set by an admin.
 - **Net lifecycle notifications** — bot posts `🟢 <Net> is now live on
   <freq>` on Start net and `🔴 <Net> has ended · N check-in(s) · M min`
   when the net is finalized
-- **Scheduled reminders** — admin-configurable times-of-day per reminder
-  (e.g. 4:00 PM and 7:30 PM), evaluated in each net's IANA timezone
-  (DST-aware via `Intl.DateTimeFormat`)
+- **Scheduled reminders** — configured per net as a list of lead times in
+  minutes (e.g. `[240, 30]` for 4 h + 30 min before the scheduled start).
+  Centralized **Reminder Settings** panel on the Officer Tools page for
+  quick on/off per net with a Customize affordance for fine-tuning. New
+  nets default to reminders OFF; officers opt in. Impromptu nets are
+  excluded. Evaluated in each net's IANA timezone (DST-aware via
+  `Intl.DateTimeFormat`).
 - **Test button** with diagnostic error messages (token invalid, missing
   intent, channel not in server, missing Send permission, etc.)
 - **Env vars override DB settings** — secrets like `DISCORD_BOT_TOKEN` can
@@ -128,24 +142,39 @@ New members inherit the global default theme set by an admin.
 - **Delete user** (cannot self-delete)
 - **Backfill names from FCC**
 
+### Officer tools (`/officer-tools`)
+Officer- and admin-only page that hosts:
+- **Reminder settings panel** — one row per weekly net with an on/off
+  switch (toggle ON seeds the default `[240, 30]` minutes; toggle OFF
+  clears) and a Customize button that opens the shared net edit modal
+- **Saved script library** — full CRUD for scripts (Title / Category /
+  Body) using the same WYSIWYG editor; soft-delete via `deletedAt`
+
 ### Live updates
 - Pages auto-poll with visibility-aware pausing (no traffic when tab is
   hidden)
 - RunNetPage 3s · JoinNetPage 5s · Admin 5s · Dashboard 5-10s · others 10-30s
 - Deep-equal gate prevents unnecessary re-renders
 
-### Aesthetic
-- IBM Plex Mono / Plex Sans typography pair
-- Uppercase tracked microtypography on labels
-- Tabular figures on callsigns and frequencies; dot-leader rows for
-  repeater data
-- Cards have a 2 px ledger stripe in theme primary; featured cards get an
-  L-bracket corner tick
-- Subtle radial primary-glow + 24 px dot-grid background pattern (adapts to
-  every college theme via `color-mix`)
-- Dashboard "Next net" hero with a live tabular-mono countdown
-- Mobile-responsive: 3-col layouts collapse, modals go full-width, 44px tap
-  targets
+### Aesthetic — "Calibrated radio console"
+- **Type stack**: Big Shoulders Display (industrial signage) for page heads,
+  JetBrains Mono for every identifier (callsign, frequency, timestamp, day
+  marker, counter chip, kbd label), Sora for body copy
+- Sharp 2 px hairlines and corner-bracket Cards in place of soft shadows
+- Phosphor-amber primary accent in dark mode; brass-on-cream in the
+  logbook-paper light mode (`data-color-mode="light"`)
+- Breathing-pulse `<LiveDot>` for live nets; steady `<OnlineDot>` for
+  members currently active (heartbeat-based presence, 2 min window)
+- Instrument-panel `<Modal>` with focus trap, return-focus, `[ESC]` close
+  chip, `▮▮▮` marker; ConfirmModal replaces every native `window.confirm`
+- Dashboard hero with mono `T-DD:HH:MM:SS` countdown to the next weekly
+  net; ACTIVE / UPCOMING / RECENT sections with calibrated chip dividers
+- WYSIWYG net-script editor (TipTap + tiptap-markdown) with a Raw markdown
+  toggle for power users; markdown stays the storage format
+- WCAG AA on every fg/bg pair in both themes; global `:focus-visible`
+  ring; `role="log" aria-live="polite"` on chat + check-in lists
+- Mobile-responsive: 3-col layouts collapse, modals go full-width, 44 px
+  tap targets, sticky check-in form on RunNet at phone widths
 
 ## Dev
 
@@ -159,12 +188,13 @@ Frontend at http://localhost:5173.
 
     npm test
 
-266+ API tests (Vitest + Supertest) · 31 web tests (Vitest + React Testing
-Library) · 18 shared schema tests.
+313 API tests (Vitest + Supertest) · 80 web tests (Vitest + React Testing
+Library) · 46 shared schema tests — 439 total.
 
 ## Run with Docker Compose
 
-Uses the prebuilt image from GHCR — no local build required:
+Uses the prebuilt image from GitHub Container Registry
+(`ghcr.io/atvriders/ham-net-assistant:latest`) — no local build required:
 
     docker compose up -d
 
@@ -177,10 +207,25 @@ To build from source instead:
       -p 3045:3000 -v hna-data:/data \
       -e JWT_SECRET=change-me-change-me-change-me hna:local
 
-The image is based on `node:20-slim`, runs as non-root user `hna` via a
+The image is based on `node:22-slim`, runs as non-root user `hna` via a
 `gosu` entrypoint that chowns `/data` on startup so bind-mounted or
 migrated volumes just work. Built-in HEALTHCHECK on `/api/themes`. Multi-stage
 build keeps the runtime image trim.
+
+### CI / image publishing
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `master`:
+
+- **build-and-test** — `npm install`, prisma generate, typecheck, lint
+  (ESLint 9 flat config, `--max-warnings=0`), full test suite (439 tests),
+  vite production build
+- **docker** — multi-stage build, push two tags to GHCR:
+  - `ghcr.io/atvriders/ham-net-assistant:latest`
+  - `ghcr.io/atvriders/ham-net-assistant:<commit-sha>`
+
+Auth uses the built-in `GITHUB_TOKEN` with `packages: write` permission —
+no manual PAT required. Pull side is public; no auth needed for
+`docker compose pull` / `docker pull`.
 
 ## Environment
 
@@ -259,8 +304,10 @@ without `docker logs`.
   `.strict()`)
 - Soft deletes on sessions and check-ins; hard delete only via admin
   "Delete forever" in trash
-- First-user-ADMIN TOCTOU exists on a freshly provisioned instance —
-  deploy behind a trusted network for the first registration
+- First-user-ADMIN promotion runs inside `prisma.$transaction` so two
+  concurrent first registrations can't both win the ADMIN seat
+- Duplicate non-`N0CALL` callsigns rejected at registration with 409
+- JWT verify pins `algorithms: ['HS256']`; sign pins matching algorithm
 
 ## Docs
 
