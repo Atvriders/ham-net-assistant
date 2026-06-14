@@ -108,9 +108,13 @@ export function StartNetModal({
     <Modal open={open} onClose={onClose} titleId={dialogTitleId}>
       <div>
         <h2 id={dialogTitleId} style={{ marginTop: 0 }}>
-          Start {netName}
+          Open {netName}
         </h2>
-        <p>Pick a topic for tonight&rsquo;s net (optional).</p>
+        <p>
+          Pick a topic for tonight&rsquo;s net (optional). The net opens into a
+          prep view — you&rsquo;ll press <strong>START NET</strong> there when
+          you&rsquo;re ready to go live.
+        </p>
 
         {/* Mode chooser — three labelled radio chips. The active section is
             enabled; the other two visually fade and become non-interactive. */}
@@ -222,7 +226,7 @@ export function StartNetModal({
         )}
         <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
           <Button onClick={submit} disabled={submitting}>
-            {submitting ? 'Starting…' : 'Start net'}
+            {submitting ? 'Opening…' : 'Open net'}
           </Button>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel

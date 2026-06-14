@@ -161,6 +161,11 @@ model NetSession {
   netId       String
   net         Net       @relation(fields: [netId], references: [id], onDelete: Cascade)
   startedAt   DateTime
+  /// When the session actually goes "live" — the operator pressed START. Null
+  /// means the session was OPENED into prep state but the control op has not
+  /// yet started it. Distinct from startedAt so we can track when the prep
+  /// window began (for staleness) separately from when the on-air net began.
+  liveAt      DateTime?
   endedAt     DateTime?
   controlOpId String?
   controlOp   User?     @relation("ControlOp", fields: [controlOpId], references: [id], onDelete: SetNull)

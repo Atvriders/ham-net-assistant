@@ -156,6 +156,9 @@ export function JoinNetPage() {
   const canStillEditOwn =
     !!myRow &&
     Date.now() - new Date(myRow.checkedInAt).getTime() < 5 * 60 * 1000;
+  // PREP vs LIVE — members get a "preparing" card instead of the check-in form
+  // until the control op presses START NET.
+  const isPrep = session.liveAt == null;
 
   return (
     <div>
@@ -197,10 +200,25 @@ export function JoinNetPage() {
               </span>
             )}
           </div>
-          <span className="hna-runnet-status__live">
-            <LiveDot />
-            <span>LIVE</span>
-          </span>
+          {isPrep ? (
+            <span
+              className="hna-chip hna-chip--prep"
+              data-testid="join-prep-chip"
+              style={{
+                background: 'var(--color-warn-bg, rgba(255,176,32,0.15))',
+                color: 'var(--color-warn, #d49016)',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+              }}
+            >
+              PREP
+            </span>
+          ) : (
+            <span className="hna-runnet-status__live">
+              <LiveDot />
+              <span>LIVE</span>
+            </span>
+          )}
         </div>
         {net?.repeater && (
           <div
@@ -236,7 +254,17 @@ export function JoinNetPage() {
       {/* ===== Check-in form ===== */}
       <SectionDivider>YOU</SectionDivider>
       <Card>
-        {alreadyCheckedIn ? (
+        {isPrep ? (
+          <div className="hna-empty" data-testid="join-preparing-card">
+            <p className="hna-empty__title">
+              PREPARING — {net?.name ?? 'Net'} is being set up.
+            </p>
+            <p className="hna-empty__body">
+              Check back in a few minutes. The control op will start the net
+              when they&rsquo;re ready; check-ins open at that point.
+            </p>
+          </div>
+        ) : alreadyCheckedIn ? (
           <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
             <span className="hna-checkedin">
               ✓ YOU'RE CHECKED IN
@@ -448,7 +476,7 @@ export function JoinNetPage() {
 
       {/* ===== Chat ===== */}
       <SectionDivider>CHAT</SectionDivider>
-      <ChatBox sessionId={session.id} />
+      <ChatBox sessionId={session.id} liveAt={session.liveAt ?? null} />
 
       <EditCheckInModal
         open={editingCheckIn !== null}

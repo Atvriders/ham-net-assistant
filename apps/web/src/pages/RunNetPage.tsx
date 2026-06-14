@@ -181,6 +181,26 @@ export function RunNetPage() {
     await refresh();
   }
 
+  // Transition PREP → LIVE. The API gates this to OFFICER+ and 409s if the
+  // session is already live or already ended; the caller is responsible for
+  // hiding the button in those states, but we still surface the error if it
+  // races with another operator pressing START at the same time.
+  const [startErr, setStartErr] = useState<string | null>(null);
+  const [startingNet, setStartingNet] = useState(false);
+  async function startNet() {
+    if (!sessionId) return;
+    setStartingNet(true);
+    setStartErr(null);
+    try {
+      await apiFetch(`/sessions/${sessionId}/start`, { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      setStartErr((e as Error).message);
+    } finally {
+      setStartingNet(false);
+    }
+  }
+
   // Autofill name from member directory (instant), check-in history + FCC lookup
   // (parallel, debounced) with history priority for repeat visitors.
   useEffect(() => {
@@ -346,6 +366,10 @@ export function RunNetPage() {
   // check-in order ("#01" is the first person to check in).
   const checkInsNewestFirst = session.checkIns;
   const totalCheckIns = session.checkIns.length;
+  // PREP vs LIVE state: liveAt is null while opened-but-not-started. Once set
+  // (via POST /sessions/:id/start) the row is live and check-ins are accepted.
+  const isPrep = session.liveAt == null;
+  const liveStartIso = session.liveAt ?? session.startedAt;
 
   return (
     <div>
@@ -375,13 +399,73 @@ export function RunNetPage() {
             <span style={{ opacity: 0.7 }}>·</span>
             <strong>{repeaterFreq}</strong>
           </span>
-          <ElapsedTimer startIso={session.startedAt} />
-          <span className="hna-runnet-status__live">
-            <LiveDot />
-            <span>LIVE</span>
-          </span>
+          {isPrep ? (
+            <span
+              className="hna-mono"
+              data-testid="prep-not-started-label"
+              style={{
+                fontSize: 12,
+                letterSpacing: '0.12em',
+                color: 'var(--color-fg-muted)',
+                textTransform: 'uppercase',
+              }}
+              aria-label="Not yet started — press start"
+            >
+              NOT YET STARTED — PRESS START
+            </span>
+          ) : (
+            <ElapsedTimer startIso={liveStartIso} />
+          )}
+          {isPrep ? (
+            <span
+              className="hna-chip hna-chip--prep"
+              data-testid="prep-chip"
+              style={{
+                background: 'var(--color-warn-bg, rgba(255,176,32,0.15))',
+                color: 'var(--color-warn, #d49016)',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+              }}
+            >
+              PREP
+            </span>
+          ) : (
+            <span className="hna-runnet-status__live">
+              <LiveDot />
+              <span>LIVE</span>
+            </span>
+          )}
         </div>
         <div className="hna-runnet-status__actions">
+          {isPrep && canManageControl && !session.endedAt && (
+            <div
+              style={{
+                display: 'inline-flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 2,
+              }}
+            >
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={startNet}
+                disabled={startingNet}
+                data-testid="start-net-button"
+              >
+                {startingNet ? 'Starting…' : 'START NET'}
+              </Button>
+              {startErr && (
+                <span
+                  className="hna-input-error"
+                  role="alert"
+                  style={{ fontSize: 11 }}
+                >
+                  {startErr}
+                </span>
+              )}
+            </div>
+          )}
           {user && canManageControl && session.controlOpId !== user.id && !session.endedAt && (
             <div
               style={{
@@ -477,7 +561,27 @@ export function RunNetPage() {
               </span>
             </header>
 
-            <form className="hna-checkin-form" onSubmit={addCheckIn}>
+            {isPrep && (
+              <p
+                className="hna-mono"
+                data-testid="prep-checkin-hint"
+                style={{
+                  fontSize: 12,
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-fg-muted)',
+                  marginTop: 0,
+                  marginBottom: 'var(--space-2)',
+                }}
+              >
+                Press START NET to begin accepting check-ins.
+              </p>
+            )}
+            <form
+              className="hna-checkin-form"
+              onSubmit={addCheckIn}
+              aria-disabled={isPrep}
+              style={isPrep ? { opacity: 0.55 } : undefined}
+            >
               <div className="hna-checkin-form__row">
                 <div className="hna-field">
                   <label htmlFor="checkin-callsign-input">Callsign</label>
@@ -535,8 +639,15 @@ export function RunNetPage() {
                 />
               </div>
               <div className="hna-checkin-form__actions">
-                <Button type="submit">Add</Button>
-                <Button type="button" variant="secondary" onClick={undoLast}>
+                <Button type="submit" disabled={isPrep} data-testid="checkin-add-button">
+                  Add
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={undoLast}
+                  disabled={isPrep}
+                >
                   Undo
                 </Button>
               </div>
@@ -643,7 +754,7 @@ export function RunNetPage() {
 
         {/* ----- Right column: Chat + Script ----- */}
         <div className="hna-runnet-grid2__col">
-          <ChatBox sessionId={session.id} />
+          <ChatBox sessionId={session.id} liveAt={session.liveAt ?? null} />
 
           <Card>
             <header className="hna-section-caption">

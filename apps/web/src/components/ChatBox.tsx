@@ -11,6 +11,11 @@ import { displayCallsign } from '../lib/format.js';
 
 interface Props {
   sessionId: string;
+  /// Optional prep-state hint. When `liveAt` is null the divider label switches
+  /// from "NET STARTED" to "SESSION OPENED" to match the prep semantics on
+  /// RunNetPage and JoinNetPage. Older callers can omit this and get the
+  /// existing live-only behavior.
+  liveAt?: string | null;
 }
 
 const QUICK_EMOJI = ['👍', '❤️', '😂', '🎉', '📡', '⚡'];
@@ -25,7 +30,11 @@ function groupReactions(rs: MessageReaction[]): Record<string, MessageReaction[]
   return out;
 }
 
-export function ChatBox({ sessionId }: Props) {
+export function ChatBox({ sessionId, liveAt }: Props) {
+  // PREP-state aware label: when liveAt is null the session has been opened
+  // but not yet started, so the divider reads "SESSION OPENED" instead of the
+  // post-start "NET STARTED" used while the net is live.
+  const dividerLabel = liveAt === null ? 'SESSION OPENED' : 'NET STARTED';
   const { user } = useAuth();
   const { data, refresh } = useAutoFetch<SessionMessage[]>(
     `/sessions/${sessionId}/messages`,
@@ -190,7 +199,7 @@ export function ChatBox({ sessionId }: Props) {
                   style={{ margin: 'var(--space-2) 0', color: 'var(--color-primary)' }}
                   role="separator"
                 >
-                  <span>— NET STARTED —</span>
+                  <span>— {dividerLabel} —</span>
                 </div>
               )}
               <div

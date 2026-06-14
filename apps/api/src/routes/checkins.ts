@@ -17,6 +17,15 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     });
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     if (session.endedAt) throw new HttpError(409, 'CONFLICT', 'Session already ended');
+    // PREP gate: the net has been opened but not yet started — check-ins must
+    // wait for the control op to press START NET.
+    if (!session.liveAt) {
+      throw new HttpError(
+        409,
+        'CONFLICT',
+        'Net is preparing — wait for the control op to start it',
+      );
+    }
     const body = req.body as typeof CheckInInput._type;
     const matched = await prisma.user.findFirst({
       where: { callsign: body.callsign },

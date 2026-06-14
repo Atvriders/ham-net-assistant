@@ -117,7 +117,7 @@ function NetCard({
         <div className="hna-net-row__actions">
           {canEdit && !active && (
             <Button variant="primary" onClick={() => onStart(n.id, n.name)}>
-              Start net
+              Open net
             </Button>
           )}
           {canEdit && active && (

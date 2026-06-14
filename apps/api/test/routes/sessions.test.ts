@@ -41,11 +41,13 @@ beforeEach(async () => {
 });
 
 describe('sessions', () => {
-  it('OFFICER starts a session', async () => {
+  it('OFFICER opens a session into PREP state', async () => {
     const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     expect(res.status).toBe(201);
     expect(res.body.netId).toBe(netId);
     expect(res.body.endedAt).toBeNull();
+    // New: opens the session in PREP — liveAt is null until /start.
+    expect(res.body.liveAt).toBeNull();
   });
   it('MEMBER cannot start', async () => {
     const m = await request(app).post('/api/auth/register').send({
@@ -118,6 +120,7 @@ describe('sessions', () => {
   });
   it('ADMIN soft-deletes a session (row remains, filtered from GET)', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
     const del = await request(app).delete(`/api/sessions/${s.body.id}`).set('Cookie', officer);
@@ -247,6 +250,7 @@ describe('sessions', () => {
   });
   it('GET /api/sessions/:id/summary returns aggregated data', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
     const res = await request(app).get(`/api/sessions/${s.body.id}/summary`);
@@ -266,11 +270,27 @@ describe('sessions', () => {
     expect(s2.body.id).toBe(s1.body.id);
     expect(s2.body.reused).toBe(true);
   });
-  it('starting a new session posts a Discord notification', async () => {
+  it('opening a session does NOT post to Discord (PREP is silent)', async () => {
     (postToDiscord as unknown as { mockClear: () => void }).mockClear();
     const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     expect(res.status).toBe(201);
-    // Wait for the fire-and-forget tick to run
+    expect(res.body.liveAt).toBeNull();
+    // Wait for any fire-and-forget tick that *could* have run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
+    expect(fn.mock.calls.length).toBe(0);
+  });
+
+  it('POST /sessions/:id/start transitions PREP → LIVE and posts to Discord', async () => {
+    (postToDiscord as unknown as { mockClear: () => void }).mockClear();
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.status).toBe(201);
+    expect(open.body.liveAt).toBeNull();
+    const start = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', officer);
+    expect(start.status).toBe(200);
+    expect(start.body.liveAt).not.toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 50));
     const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
     expect(fn.mock.calls.length).toBeGreaterThanOrEqual(1);
@@ -280,8 +300,57 @@ describe('sessions', () => {
     expect(content).toContain('live');
   });
 
+  it('POST /sessions/:id/start on already-live session returns 409', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const first = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', officer);
+    expect(first.status).toBe(200);
+    const second = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', officer);
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('CONFLICT');
+    expect(second.body.error.message).toContain('already live');
+  });
+
+  it('POST /sessions/:id/start on ended session returns 409', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', officer);
+    await request(app).patch(`/api/sessions/${open.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+    const restart = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', officer);
+    expect(restart.status).toBe(409);
+    expect(restart.body.error.code).toBe('CONFLICT');
+    expect(restart.body.error.message).toContain('already ended');
+  });
+
+  it('POST /sessions/:id/start by MEMBER is forbidden', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-start-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'M', callsign: 'KB0MST',
+    });
+    const res = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`)
+      .set('Cookie', m.headers['set-cookie'][0]);
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /sessions/:id/start on unknown id returns 404', async () => {
+    const res = await request(app)
+      .post('/api/sessions/does-not-exist/start')
+      .set('Cookie', officer);
+    expect(res.status).toBe(404);
+  });
+
   it('reusing an active same-day session does NOT re-post to Discord', async () => {
-    await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${open.body.id}/start`).set('Cookie', officer);
     await new Promise((resolve) => setTimeout(resolve, 50));
     (postToDiscord as unknown as { mockClear: () => void }).mockClear();
     const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
@@ -309,6 +378,8 @@ describe('sessions', () => {
     (postToDiscord as unknown as { mockClear: () => void }).mockClear();
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     expect(s.status).toBe(201);
+    // Start the session so check-ins are accepted (PREP → LIVE).
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
     // Add a check-in so we have something to count
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
@@ -361,5 +432,55 @@ describe('sessions', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
     expect(fn.mock.calls.length).toBe(0);
+  });
+});
+
+describe('session prep gates', () => {
+  it('check-in to a PREP session returns 409 CONFLICT', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.status).toBe(201);
+    expect(open.body.liveAt).toBeNull();
+    const ci = await request(app).post(`/api/sessions/${open.body.id}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    expect(ci.status).toBe(409);
+    expect(ci.body.error.code).toBe('CONFLICT');
+    expect(ci.body.error.message).toContain('preparing');
+  });
+
+  it('check-in to a LIVE session succeeds', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${open.body.id}/start`).set('Cookie', officer);
+    const ci = await request(app).post(`/api/sessions/${open.body.id}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    expect(ci.status).toBe(201);
+  });
+
+  it('chat send to a PREP session is allowed (operators coordinate)', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.body.liveAt).toBeNull();
+    const msg = await request(app).post(`/api/sessions/${open.body.id}/messages`)
+      .set('Cookie', officer)
+      .send({ body: 'prep: testing audio' });
+    expect(msg.status).toBe(201);
+    expect(msg.body.body).toBe('prep: testing audio');
+  });
+
+  it('GET /api/nets/active includes PREP sessions', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.body.liveAt).toBeNull();
+    const active = await request(app).get('/api/nets/active').set('Cookie', officer);
+    expect(active.status).toBe(200);
+    expect(active.body.some((s: { id: string }) => s.id === open.body.id)).toBe(true);
+  });
+
+  it('dedupe: a second POST returns the existing PREP session, not a new one', async () => {
+    const first = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(first.status).toBe(201);
+    const second = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.reused).toBe(true);
   });
 });

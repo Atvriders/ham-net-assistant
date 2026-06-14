@@ -12,6 +12,10 @@ export const NetSession = z.object({
   id: z.string(),
   netId: z.string(),
   startedAt: z.string().datetime(),
+  /// Null while the session is in PREP (opened but not yet started). Set to
+  /// the ISO timestamp when the control op presses START NET. The Discord
+  /// "now live" notification fires at that transition, not at session-create.
+  liveAt: z.string().datetime().nullable(),
   endedAt: z.string().datetime().nullable(),
   controlOpId: z.string().nullable(),
   notes: z.string().nullable(),

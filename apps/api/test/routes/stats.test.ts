@@ -23,6 +23,8 @@ beforeAll(async () => {
   const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer)
     .send({ topicTitle: 'Antennas 101' });
   sessionId = s.body.id;
+  // Transition PREP → LIVE so check-ins are accepted.
+  await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
   await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
     .send({ callsign: 'W1AW', nameAtCheckIn: 'Alice' });
   await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)

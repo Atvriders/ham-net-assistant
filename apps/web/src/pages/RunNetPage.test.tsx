@@ -34,6 +34,9 @@ const session = {
   id: 's1',
   netId: 'n1',
   startedAt: new Date().toISOString(),
+  // Existing tests assume the session is already live, so seed liveAt so the
+  // RunNetPage renders the live UI (not the new PREP state).
+  liveAt: new Date().toISOString(),
   endedAt: null,
   controlOpId: 'u1',
   checkIns: [],

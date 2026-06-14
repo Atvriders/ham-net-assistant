@@ -25,6 +25,8 @@ beforeAll(async () => {
   });
   const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer);
   sessionId = s.body.id;
+  // Transition PREP → LIVE so check-ins are accepted by /sessions/:id/checkins.
+  await request(app).post(`/api/sessions/${sessionId}/start`).set('Cookie', officer);
 });
 afterAll(async () => { await cleanupTestDb(prisma, dbFile); });
 beforeEach(async () => { await prisma.checkIn.deleteMany(); });

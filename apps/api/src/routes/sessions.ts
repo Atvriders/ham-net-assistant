@@ -25,6 +25,12 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   const nested = Router({ mergeParams: true });
   const flat = Router();
 
+  // POST /api/nets/:netId/sessions — OPEN (not start) a session into PREP state.
+  //
+  // Creates the session with liveAt = null. The session row exists, the operator
+  // can prep (set topic, edit script, coordinate over chat) but the net is not
+  // yet "on the air": no Discord 🟢 announcement, no check-ins accepted. The
+  // separate POST /api/sessions/:id/start route transitions PREP → LIVE.
   nested.post('/', requireRole('OFFICER'), asyncHandler(async (req, res) => {
     const { netId } = req.params as { netId: string };
     const body = req.body && Object.keys(req.body).length > 0
@@ -33,11 +39,13 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const net = await prisma.net.findUnique({ where: { id: netId } });
     if (!net) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
 
-    // Check for existing same-day session
+    // Check for existing same-day session. The dedupe path doesn't care whether
+    // the existing row is in PREP or LIVE — either way we return that row so a
+    // second click of "Open net" doesn't create a duplicate prep session.
     const existing = await findSameDaySession(prisma, netId, new Date());
     if (existing) {
       if (existing.endedAt === null) {
-        // Reuse the active session
+        // Reuse the active session (prep or live).
         const reused = await prisma.netSession.findUnique({
           where: { id: existing.id },
           include: {
@@ -75,6 +83,9 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         data: {
           netId,
           startedAt: new Date(),
+          // liveAt intentionally left null — the row is in PREP until the
+          // operator presses START via POST /api/sessions/:id/start.
+          liveAt: null,
           controlOpId: req.user!.id,
           topicId,
           topicTitle,
@@ -100,16 +111,54 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       return session;
     });
     res.status(201).json(created);
-    // Fire-and-forget Discord "now live" notification. Only on truly new sessions
-    // (we already returned early above when reusing an active same-day session).
+    // No Discord post here — the 🟢 notification is fired by /sessions/:id/start.
+  }));
+
+  // POST /api/sessions/:id/start — transition PREP → LIVE.
+  //
+  // Fires the Discord 🟢 announcement (moved here from the create route).
+  // Validates that the session exists, is not soft-deleted, has not already
+  // gone live (liveAt must be null), and has not already ended.
+  flat.post('/:id/start', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+    const session = await prisma.netSession.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    // Check the terminal state first — an ended session can't be restarted even
+    // if it once went live. The "already live" guard catches the
+    // currently-running case where liveAt is set but endedAt is still null.
+    if (session.endedAt) {
+      throw new HttpError(409, 'CONFLICT', 'Session has already ended');
+    }
+    if (session.liveAt) {
+      throw new HttpError(409, 'CONFLICT', 'Session is already live');
+    }
+    const updated = await prisma.netSession.update({
+      where: { id: session.id },
+      data: { liveAt: new Date() },
+      include: {
+        topic: true,
+        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+        net: {
+          include: {
+            repeater: true,
+            links: { include: { repeater: true } },
+          },
+        },
+        controlOp: { select: { callsign: true, name: true } },
+      },
+    });
+    res.status(200).json(updated);
+    // Fire-and-forget Discord "now live" notification — moved from the
+    // session-create route so the 🟢 ping happens at the actual START moment.
     void (async () => {
       try {
-        const repeater = created.net?.repeater;
+        const repeater = updated.net?.repeater;
         const freq = repeater?.frequency != null ? `${repeater.frequency.toFixed(3)} MHz` : '';
         const repeaterName = repeater?.name ? ` (${repeater.name})` : '';
-        const topicLine = created.topicTitle ? ` · Topic: ${created.topicTitle}` : '';
+        const topicLine = updated.topicTitle ? ` · Topic: ${updated.topicTitle}` : '';
         const content =
-          `🟢 **${created.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
+          `🟢 **${updated.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
         await postToDiscord(prisma, content);
       } catch { /* ignore */ }
     })();

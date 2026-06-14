@@ -47,6 +47,7 @@ describe('admin trash', () => {
 
   it('soft-deleted check-in appears in trash and can be restored', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', admin);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', admin);
     const c = await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', member)
       .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
     const del = await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', member);
@@ -71,6 +72,7 @@ describe('admin trash', () => {
 
   it('ADMIN permanently deletes a soft-deleted check-in', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', admin);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', admin);
     const c = await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', admin)
       .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
     await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', admin);
@@ -128,6 +130,7 @@ describe('admin trash', () => {
 
   it('restoring a check-in warns if parent session is still soft-deleted', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', admin);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', admin);
     const c = await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', admin)
       .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
     await request(app).delete(`/api/checkins/${c.body.id}`).set('Cookie', admin);

@@ -82,13 +82,23 @@ export function Dashboard() {
     });
     nav(`/run/${sessionId}`);
   }
+
+  /** OFFICER+ shortcut from the dashboard PREP row — transition PREP → LIVE
+   *  without first having to open the run-net page. */
+  async function startPrepSession(sessionId: string) {
+    try {
+      await apiFetch(`/sessions/${sessionId}/start`, { method: 'POST' });
+    } catch {
+      /* ignore — the dashboard auto-refresh will surface any error state */
+    }
+  }
   const { data: netsData } = useAutoFetch<NetWithRepeater[]>('/nets', {
     intervalMs: 10000,
   });
   const { data: sessionsData, refresh: refreshSessions } = useAutoFetch<
     NetSession[]
   >('/sessions', { intervalMs: 10000 });
-  const { data: activeSessionsData } = useAutoFetch<ActiveSessionRow[]>(
+  const { data: activeSessionsData, refresh: refreshActive } = useAutoFetch<ActiveSessionRow[]>(
     '/nets/active',
     { intervalMs: 5000 },
   );
@@ -144,13 +154,32 @@ export function Dashboard() {
           <div className="hna-stack">
             {activeSessions.map((s) => {
               const op = s.controlOp;
+              const isPrep = s.liveAt == null;
               return (
                 <Card key={s.id}>
                   <div className="hna-net-row">
                     <div className="hna-net-row__when">
-                      <span className="hna-live-label">
-                        <LiveDot label="Live" /> &nbsp;LIVE
-                      </span>
+                      {isPrep ? (
+                        <span
+                          className="hna-mono"
+                          data-testid="dash-prep-chip"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 11,
+                            letterSpacing: '0.14em',
+                            textTransform: 'uppercase',
+                            color: 'var(--color-warn, #d49016)',
+                          }}
+                        >
+                          PREP
+                        </span>
+                      ) : (
+                        <span className="hna-live-label">
+                          <LiveDot label="Live" /> &nbsp;LIVE
+                        </span>
+                      )}
                       <span className="hna-net-row__name">{s.net.name}</span>
                     </div>
                     <div className="hna-net-row__meta">
@@ -173,6 +202,18 @@ export function Dashboard() {
                       </span>
                     </div>
                     <div className="hna-net-row__actions">
+                      {canControl && isPrep && (
+                        <Button
+                          variant="ghost"
+                          data-testid={`dash-start-prep-${s.id}`}
+                          onClick={async () => {
+                            await startPrepSession(s.id);
+                            await refreshActive();
+                          }}
+                        >
+                          Start
+                        </Button>
+                      )}
                       {canControl && (
                         <div
                           style={{
@@ -197,7 +238,7 @@ export function Dashboard() {
                           </span>
                         </div>
                       )}
-                      <Link to={`/nets/${s.net.id}/join`}>
+                      <Link to={`/run/${s.id}`}>
                         <Button variant="primary">Open net</Button>
                       </Link>
                     </div>
