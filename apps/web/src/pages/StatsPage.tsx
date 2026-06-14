@@ -548,6 +548,16 @@ export function StatsPage() {
                             {displayCallsign(c.callsign)}
                           </span>
                           {c.name}
+                          {c.mode === 'echolink' && (
+                            <span
+                              className="hna-chip"
+                              data-testid="echolink-chip"
+                              style={{ marginLeft: 6 }}
+                              aria-label="Checked in via EchoLink"
+                            >
+                              ECHOLINK
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ol>

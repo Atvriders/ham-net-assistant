@@ -51,6 +51,8 @@ export function JoinNetPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
   const [comment, setComment] = useState('');
+  // Participation method — defaults to local RF, resets to RF after submit.
+  const [mode, setMode] = useState<'rf' | 'echolink'>('rf');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const canModify = (ci: CheckIn): boolean => {
@@ -93,10 +95,12 @@ export function JoinNetPage() {
           callsign: user.callsign,
           nameAtCheckIn: capitalizedName,
           ...(trimmedComment ? { comment: trimmedComment } : {}),
+          mode,
         }),
       });
       setCheckedInAt(new Date().toISOString());
       setComment('');
+      setMode('rf');
       await refresh();
     } catch (e) {
       setErrMsg((e as Error).message);
@@ -318,6 +322,57 @@ export function JoinNetPage() {
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+            <div
+              className="hna-field"
+              role="group"
+              aria-label="Participation method"
+            >
+              <span
+                className="hna-mono"
+                style={{
+                  fontSize: 11,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-fg-muted)',
+                }}
+              >
+                Mode
+              </span>
+              <div
+                className="hna-mode-toggle"
+                style={{ display: 'inline-flex', gap: 4, marginTop: 4 }}
+                data-testid="join-mode-toggle"
+              >
+                <button
+                  type="button"
+                  className={
+                    mode === 'rf'
+                      ? 'hna-chip hna-chip--accent'
+                      : 'hna-chip hna-chip--off'
+                  }
+                  style={{ cursor: 'pointer' }}
+                  aria-pressed={mode === 'rf'}
+                  onClick={() => setMode('rf')}
+                  data-testid="join-mode-rf"
+                >
+                  [ RF ]
+                </button>
+                <button
+                  type="button"
+                  className={
+                    mode === 'echolink'
+                      ? 'hna-chip hna-chip--accent'
+                      : 'hna-chip hna-chip--off'
+                  }
+                  style={{ cursor: 'pointer' }}
+                  aria-pressed={mode === 'echolink'}
+                  onClick={() => setMode('echolink')}
+                  data-testid="join-mode-echolink"
+                >
+                  [ ECHOLINK ]
+                </button>
+              </div>
+            </div>
             <div className="hna-field">
               <label htmlFor="join-comment-input">Comment (optional)</label>
               <Input
@@ -413,6 +468,16 @@ export function JoinNetPage() {
                 <span className="hna-roster__cs">
                   <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
                   {displayCallsign(ci.callsign)}
+                  {ci.mode === 'echolink' && (
+                    <span
+                      className="hna-chip"
+                      data-testid="echolink-chip"
+                      style={{ marginLeft: 6 }}
+                      aria-label="Checked in via EchoLink"
+                    >
+                      ECHOLINK
+                    </span>
+                  )}
                 </span>
                 <span className="hna-roster__name">
                   {ci.nameAtCheckIn}

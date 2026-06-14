@@ -99,6 +99,50 @@ describe('stats', () => {
     expect(res.text).toMatch(/W1AW - Alice/);
   });
 
+  it("CSV export includes a 'mode' column with RF / ECHOLINK values", async () => {
+    // Isolated net + session so we can mix RF and EchoLink check-ins without
+    // disturbing the count assertions other tests in this suite rely on.
+    const r3 = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'R3', frequency: 147.12, offsetKhz: 600, mode: 'FM' });
+    const n3 = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: 'Mode Net', repeaterId: r3.body.id, dayOfWeek: 6,
+      startLocal: '21:00', timezone: 'America/Chicago',
+    });
+    const s3 = await request(app).post(`/api/nets/${n3.body.id}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s3.body.id}/start`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s3.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'KE0RF1', nameAtCheckIn: 'OnAir' });
+    await request(app).post(`/api/sessions/${s3.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'KE0VOIP', nameAtCheckIn: 'Remote', mode: 'echolink' });
+    const res = await request(app).get('/api/stats/export.csv').set('Cookie', officer);
+    expect(res.status).toBe(200);
+    // Header row now advertises the column.
+    expect(res.text).toMatch(/^checkedInAt,netName,callsign,name,mode,comment/m);
+    // Mode values are uppercased ('RF' / 'ECHOLINK') for the FCC log.
+    const ecLine = res.text
+      .split('\n')
+      .find((l) => l.includes('KE0VOIP'));
+    expect(ecLine).toBeDefined();
+    expect(ecLine!).toMatch(/,ECHOLINK,/);
+    const rfLine = res.text
+      .split('\n')
+      .find((l) => l.includes('KE0RF1'));
+    expect(rfLine).toBeDefined();
+    expect(rfLine!).toMatch(/,RF,/);
+    // Per-session aggregate line tags EchoLink rows in the readable summary.
+    expect(res.text).toMatch(/KE0VOIP - Remote \(EchoLink\)/);
+  });
+
+  it("participation feed exposes 'mode' on each check-in", async () => {
+    const res = await request(app).get('/api/stats/participation').set('Cookie', officer);
+    expect(res.status).toBe(200);
+    for (const s of res.body.sessions) {
+      for (const ci of s.checkIns) {
+        expect(['rf', 'echolink']).toContain(ci.mode);
+      }
+    }
+  });
+
   it('GET /api/stats/export.pdf returns PDF bytes', async () => {
     const res = await request(app)
       .get('/api/stats/export.pdf')

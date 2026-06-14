@@ -74,6 +74,7 @@ export function ParticipationPdf({
                 {s.checkIns.map((c, i) => (
                   <Text key={i} style={styles.checkInLine}>
                     {c.callsign} — {c.name}
+                    {c.mode === 'echolink' ? ' (EchoLink)' : ''}
                   </Text>
                 ))}
               </View>

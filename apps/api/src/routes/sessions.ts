@@ -9,6 +9,21 @@ import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
 import { findSameDaySession } from '../lib/sessionDedupe.js';
 import { postToDiscord } from '../discord/client.js';
+import { withCheckInMode } from '../lib/checkinMode.js';
+
+/**
+ * Normalize the checkIns array on a session-shaped object so each row carries
+ * a concrete `mode` value ('rf' by default, 'echolink' when set) instead of
+ * the DB's nullable string. Mutates the passed object in place and returns it.
+ */
+function liftSessionCheckInModes<T extends { checkIns?: Array<{ mode?: string | null }> }>(
+  s: T,
+): T {
+  if (Array.isArray(s.checkIns)) {
+    s.checkIns = s.checkIns.map((ci) => withCheckInMode(ci));
+  }
+  return s;
+}
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -60,6 +75,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
             controlOp: { select: { callsign: true, name: true } },
           },
         });
+        if (reused) liftSessionCheckInModes(reused);
         res.status(200).json({ ...reused, reused: true });
         return;
       }
@@ -110,6 +126,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       }
       return session;
     });
+    liftSessionCheckInModes(created);
     res.status(201).json(created);
     // No Discord post here — the 🟢 notification is fired by /sessions/:id/start.
   }));
@@ -148,6 +165,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         controlOp: { select: { callsign: true, name: true } },
       },
     });
+    liftSessionCheckInModes(updated);
     res.status(200).json(updated);
     // Fire-and-forget Discord "now live" notification — moved from the
     // session-create route so the 🟢 ping happens at the actual START moment.
@@ -201,7 +219,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       session: rest,
       net: { ...netRest, links },
       repeater,
-      checkIns,
+      checkIns: checkIns.map((ci) => withCheckInMode(ci)),
       stats: { count: checkIns.length },
     };
     redactScriptsForRole(payload, req.user?.role);
@@ -224,6 +242,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       },
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+    liftSessionCheckInModes(s);
     redactScriptsForRole(s, req.user?.role);
     res.json(s);
   }));
@@ -278,6 +297,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         controlOp: { select: { callsign: true, name: true } },
       },
     });
+    liftSessionCheckInModes(updated);
     res.json(updated);
 
     // Post Discord notification if session just ended (endedAt transitioned from null to non-null)

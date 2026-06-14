@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useId } from 'react';
-import type { CheckIn } from '@hna/shared';
+import type { CheckIn, CheckInMode } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
@@ -16,16 +16,21 @@ interface Props {
 export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
+  const [mode, setMode] = useState<CheckInMode>('rf');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const callsignId = useId();
   const nameId = useId();
+  const modeId = useId();
   const dialogTitleId = useId();
 
   useEffect(() => {
     if (checkIn) {
       setCallsign(checkIn.callsign);
       setName(checkIn.nameAtCheckIn);
+      // Round-trip the participation method so officers correcting a
+      // historical log preserve (or knowingly change) how the check-in was made.
+      setMode(checkIn.mode ?? 'rf');
       setErr(null);
     }
   }, [checkIn]);
@@ -45,7 +50,7 @@ export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
     try {
       await apiFetch(`/checkins/${checkIn.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ callsign, nameAtCheckIn: trimmed }),
+        body: JSON.stringify({ callsign, nameAtCheckIn: trimmed, mode }),
       });
       onSaved();
       onClose();
@@ -77,6 +82,20 @@ export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+      </label>
+      <label htmlFor={modeId} style={{ display: 'block', marginTop: 12 }}>
+        Mode
+        <select
+          id={modeId}
+          data-testid="edit-checkin-mode"
+          value={mode}
+          onChange={(e) => setMode(e.target.value as CheckInMode)}
+          className="hna-input"
+          style={{ display: 'block', marginTop: 4 }}
+        >
+          <option value="rf">RF (local repeater)</option>
+          <option value="echolink">EchoLink (VoIP)</option>
+        </select>
       </label>
       {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>

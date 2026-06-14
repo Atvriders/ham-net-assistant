@@ -2,7 +2,12 @@ interface SessionForLog {
   startedAt: string;
   topic: string | null;
   controlOp: { callsign: string; name: string } | null;
-  checkIns: Array<{ callsign: string; name: string; checkedInAt: string }>;
+  checkIns: Array<{
+    callsign: string;
+    name: string;
+    checkedInAt: string;
+    mode?: 'rf' | 'echolink' | null;
+  }>;
 }
 
 /**
@@ -12,11 +17,13 @@ interface SessionForLog {
  *   Topic: ...
  *   NET control: <CALL> <name>
  *   ● <CALL1> <name1>
- *   ● <CALL2> <name2>
+ *   ● <CALL2> <name2> (EchoLink)
  *
  * Topic line is omitted when no topic. NET control line shows '(none)'
  * when no control op. Check-ins are rendered chronologically (oldest first)
  * with a bullet glyph, raw ASCII callsigns (no slashed-zero substitution).
+ * EchoLink rows append ' (EchoLink)' to make participation method explicit
+ * on the FCC-friendly log; RF (the default) renders quietly without a tag.
  */
 export function buildSessionLogText(s: SessionForLog): string {
   const date = new Date(s.startedAt).toLocaleDateString('en-US', {
@@ -33,7 +40,8 @@ export function buildSessionLogText(s: SessionForLog): string {
     (a, b) => new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
   );
   for (const ci of sorted) {
-    lines.push(`● ${ci.callsign} ${ci.name}`);
+    const tag = ci.mode === 'echolink' ? ' (EchoLink)' : '';
+    lines.push(`● ${ci.callsign} ${ci.name}${tag}`);
   }
   return lines.join('\n');
 }

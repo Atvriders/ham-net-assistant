@@ -94,6 +94,10 @@ export function RunNetPage() {
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
   const [comment, setComment] = useState('');
+  // Participation method for the next check-in. Defaults to 'rf' (the common
+  // case on local repeater RF) and resets after each submit so the next
+  // operator entry doesn't accidentally carry over an EchoLink flag.
+  const [mode, setMode] = useState<'rf' | 'echolink'>('rf');
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [endNotes, setEndNotes] = useState('');
@@ -315,11 +319,16 @@ export function RunNetPage() {
         callsign,
         nameAtCheckIn: capitalized,
         ...(trimmedComment ? { comment: trimmedComment } : {}),
+        mode,
       }),
     });
     setCallsign('');
     setName('');
     setComment('');
+    // Reset participation method so the next check-in starts from the common
+    // RF default — keeps the operator from accidentally tagging a string of
+    // RF check-ins as EchoLink after one VoIP entry.
+    setMode('rf');
     lastAutoFilledNameRef.current = '';
     inputRef.current?.focus();
     await refresh();
@@ -629,6 +638,57 @@ export function RunNetPage() {
                   />
                 </div>
               </div>
+              <div
+                className="hna-field"
+                role="group"
+                aria-label="Participation method"
+              >
+                <span
+                  className="hna-mono"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-fg-muted)',
+                  }}
+                >
+                  Mode
+                </span>
+                <div
+                  className="hna-mode-toggle"
+                  style={{ display: 'inline-flex', gap: 4, marginTop: 4 }}
+                  data-testid="checkin-mode-toggle"
+                >
+                  <button
+                    type="button"
+                    className={
+                      mode === 'rf'
+                        ? 'hna-chip hna-chip--accent'
+                        : 'hna-chip hna-chip--off'
+                    }
+                    style={{ cursor: 'pointer' }}
+                    aria-pressed={mode === 'rf'}
+                    onClick={() => setMode('rf')}
+                    data-testid="checkin-mode-rf"
+                  >
+                    [ RF ]
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      mode === 'echolink'
+                        ? 'hna-chip hna-chip--accent'
+                        : 'hna-chip hna-chip--off'
+                    }
+                    style={{ cursor: 'pointer' }}
+                    aria-pressed={mode === 'echolink'}
+                    onClick={() => setMode('echolink')}
+                    data-testid="checkin-mode-echolink"
+                  >
+                    [ ECHOLINK ]
+                  </button>
+                </div>
+              </div>
               <div className="hna-field">
                 <label htmlFor="checkin-comment-input">Comment (optional)</label>
                 <Input
@@ -697,6 +757,16 @@ export function RunNetPage() {
                     <span className="hna-roster__cs">
                       <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
                       {displayCallsign(ci.callsign)}
+                      {ci.mode === 'echolink' && (
+                        <span
+                          className="hna-chip"
+                          data-testid="echolink-chip"
+                          style={{ marginLeft: 6 }}
+                          aria-label="Checked in via EchoLink"
+                        >
+                          ECHOLINK
+                        </span>
+                      )}
                     </span>
                     <span className="hna-roster__name">
                       {ci.nameAtCheckIn}

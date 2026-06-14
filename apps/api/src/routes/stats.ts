@@ -6,6 +6,7 @@ import { toCsvRow } from '../lib/csv.js';
 import { renderParticipationPdf } from '../lib/pdf.js';
 import { asyncHandler } from '../middleware/async.js';
 import { requireRole } from '../middleware/auth.js';
+import { normalizeCheckInMode } from '../lib/checkinMode.js';
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -85,6 +86,7 @@ async function computeStats(
           callsign: ci.callsign,
           name: ci.nameAtCheckIn,
           checkedInAt: ci.checkedInAt.toISOString(),
+          mode: normalizeCheckInMode(ci.mode),
         })),
       };
     });
@@ -111,7 +113,7 @@ export function statsRouter(prisma: PrismaClient): Router {
     const { from, to } = parseRange(req.query);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="checkins.csv"');
-    res.write(toCsvRow(['checkedInAt', 'netName', 'callsign', 'name', 'comment']));
+    res.write(toCsvRow(['checkedInAt', 'netName', 'callsign', 'name', 'mode', 'comment']));
     const checkIns = await prisma.checkIn.findMany({
       where: {
         deletedAt: null,
@@ -127,6 +129,8 @@ export function statsRouter(prisma: PrismaClient): Router {
           ci.session.net.name,
           ci.callsign,
           ci.nameAtCheckIn,
+          // Uppercase the mode for the FCC-friendly log ('RF' / 'ECHOLINK').
+          normalizeCheckInMode(ci.mode).toUpperCase(),
           ci.comment,
         ]),
       );
@@ -139,7 +143,11 @@ export function statsRouter(prisma: PrismaClient): Router {
     );
     for (const s of stats.sessions) {
       const checkInsStr = s.checkIns
-        .map((c) => `${c.callsign} - ${c.name}`)
+        .map((c) =>
+          c.mode === 'echolink'
+            ? `${c.callsign} - ${c.name} (EchoLink)`
+            : `${c.callsign} - ${c.name}`,
+        )
         .join(' | ');
       res.write(
         toCsvRow([

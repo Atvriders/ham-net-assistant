@@ -107,6 +107,7 @@ export function SessionSummaryPage() {
         callsign: c.callsign,
         name: c.nameAtCheckIn,
         checkedInAt: c.checkedInAt,
+        mode: c.mode,
       })),
     });
   }
@@ -355,6 +356,16 @@ export function SessionSummaryPage() {
                         </td>
                         <td className="hna-log-table__cs">
                           {displayCallsign(ci.callsign)}
+                          {ci.mode === 'echolink' && (
+                            <span
+                              className="hna-chip"
+                              data-testid="echolink-chip"
+                              style={{ marginLeft: 6 }}
+                              aria-label="Checked in via EchoLink"
+                            >
+                              ECHOLINK
+                            </span>
+                          )}
                         </td>
                         <td>{ci.nameAtCheckIn}</td>
                         <td className="hna-log-table__time">

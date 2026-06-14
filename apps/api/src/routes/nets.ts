@@ -11,6 +11,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
+import { withCheckInMode } from '../lib/checkinMode.js';
 
 const netInclude = {
   repeater: true,
@@ -137,7 +138,11 @@ export function netsRouter(prisma: PrismaClient): Router {
     });
     if (!s) throw new HttpError(404, 'NOT_FOUND', 'No active session for this net');
     redactScriptsForRole(s, req.user?.role);
-    res.json({ ...s, net: hydrateReminderMinutes(s.net) });
+    res.json({
+      ...s,
+      net: hydrateReminderMinutes(s.net),
+      checkIns: s.checkIns.map((ci) => withCheckInMode(ci)),
+    });
   }));
 
   router.post('/', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {

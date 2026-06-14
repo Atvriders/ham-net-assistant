@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CheckInMode } from './checkin.js';
 
 export const StatsQuery = z.object({
   from: z.string().datetime().optional(),
@@ -33,6 +34,7 @@ export const ParticipationStats = z.object({
           callsign: z.string(),
           name: z.string(),
           checkedInAt: z.string().datetime(),
+          mode: CheckInMode,
         }),
       ),
     }),

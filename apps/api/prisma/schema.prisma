@@ -224,6 +224,11 @@ model CheckIn {
   nameAtCheckIn String
   checkedInAt   DateTime   @default(now())
   comment       String?
+  /// Participation method. NULL is treated as 'rf' (the default for the
+  /// FCC-friendly log — operators on the local repeater). 'echolink' marks
+  /// VoIP check-ins. Kept as a free-form string (not an enum) so future
+  /// modes like 'allstar' / 'irlp' don't require another migration.
+  mode          String?
   deletedAt     DateTime?
 
   @@index([sessionId])

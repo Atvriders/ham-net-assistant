@@ -174,4 +174,55 @@ describe('check-ins', () => {
     expect(p.status).toBe(200);
     expect(p.body.userId).toBeNull();
   });
+
+  it("defaults mode to 'rf' when omitted on POST", async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    expect(c.status).toBe(201);
+    expect(c.body.mode).toBe('rf');
+  });
+
+  it("POST with mode 'echolink' persists and round-trips", async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest', mode: 'echolink' });
+    expect(c.status).toBe(201);
+    expect(c.body.mode).toBe('echolink');
+    // Round-trip via the session fetch — the inline checkIns list should
+    // surface 'echolink' too (DB write actually happened, not just the create
+    // payload echo).
+    const s = await request(app).get(`/api/sessions/${sessionId}`).set('Cookie', officer);
+    expect(s.status).toBe(200);
+    const found = s.body.checkIns.find((x: { id: string }) => x.id === c.body.id);
+    expect(found?.mode).toBe('echolink');
+  });
+
+  it('rejects invalid mode values on POST', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest', mode: 'irlp' });
+    expect(c.status).toBe(400);
+  });
+
+  it("PATCH can update mode 'rf' -> 'echolink'", async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    expect(c.body.mode).toBe('rf');
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest', mode: 'echolink' });
+    expect(p.status).toBe(200);
+    expect(p.body.mode).toBe('echolink');
+  });
+
+  it('PATCH that omits mode preserves existing mode', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest', mode: 'echolink' });
+    expect(c.body.mode).toBe('echolink');
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Renamed' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Renamed');
+    expect(p.body.mode).toBe('echolink');
+  });
 });

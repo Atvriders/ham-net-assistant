@@ -5,6 +5,7 @@ import { validateBody } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
+import { withCheckInMode } from '../lib/checkinMode.js';
 
 export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Router } {
   const nested = Router({ mergeParams: true });
@@ -36,9 +37,12 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         sessionId, callsign: body.callsign, nameAtCheckIn: body.nameAtCheckIn,
         comment: body.comment ?? null, userId: matched?.id ?? null,
         createdById: req.user!.id,
+        // Mode defaults to 'rf' when omitted — keeps existing clients on the
+        // FCC-friendly default and only records the variant when supplied.
+        mode: body.mode ?? 'rf',
       },
     });
-    res.status(201).json(created);
+    res.status(201).json(withCheckInMode(created));
   }));
 
   flat.get('/callsign-history/:callsign', requireAuth, asyncHandler(async (req, res) => {
@@ -80,9 +84,13 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         nameAtCheckIn: body.nameAtCheckIn,
         comment: body.comment === undefined ? undefined : body.comment,
         userId: matched?.id ?? null,
+        // Preserve-on-omit: undefined leaves the existing mode unchanged so
+        // officers fixing a name don't accidentally clobber the participation
+        // method recorded at check-in time.
+        mode: body.mode === undefined ? undefined : body.mode,
       },
     });
-    res.json(updated);
+    res.json(withCheckInMode(updated));
   }));
 
   flat.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
