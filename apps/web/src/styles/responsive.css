@@ -94,3 +94,43 @@ input[type="password"] {
 @media (max-width: 480px) {
   .hna-repeater-grid { grid-template-columns: 1fr !important; }
 }
+
+/* ------------------------------------------------------------------
+ * Global responsive sweep — defensive rules so no page can horizontal
+ * scroll, regardless of content. Each rule below targets a documented
+ * overflow trap discovered during the responsive audit.
+ * ------------------------------------------------------------------ */
+
+/* Net rows on Dashboard / NetsPage have a 3-col grid that can squeeze
+ * long net names. Wrap the name + give the row a min-width baseline. */
+.hna-net-row { min-width: 0; }
+.hna-net-row__name,
+.hna-net-row__sub { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.hna-net-row__when,
+.hna-net-row__meta { min-width: 0; }
+
+/* Roster name cell holds free-text comments — anywhere break. */
+.hna-roster__name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+
+/* Status strip cells: long NCS callsigns / repeater names. */
+.hna-runnet-status__name,
+.hna-runnet-status__cell { min-width: 0; overflow-wrap: anywhere; }
+
+/* Wrap utility — apply where children might receive a long URL or
+ * email/callsign and we don't want a horizontal scrollbar. */
+.hna-anywrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+
+/* Table-scroll: also clamp width so wrapper never exceeds parent. */
+.hna-table-scroll { max-width: 100%; }
+
+/* Toolbar wrap — was a single-row flex on some screens. */
+.hna-toolbar { flex-wrap: wrap; }
+.hna-toolbar__filter,
+.hna-toolbar__actions { min-width: 0; flex-wrap: wrap; }
+
+/* Card content can't push parent grid width. */
+.hna-card { min-width: 0; }
+
+/* Auth shell already caps width but the inner SVG mast mark should
+ * never stretch. (Belt-and-suspenders — reset.css covers it too.) */
+.hna-auth-mark__glyph svg { max-width: 100%; }

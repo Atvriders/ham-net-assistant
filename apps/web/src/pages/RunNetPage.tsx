@@ -438,14 +438,7 @@ export function RunNetPage() {
         </div>
         <div className="hna-runnet-status__actions">
           {isPrep && canManageControl && !session.endedAt && (
-            <div
-              style={{
-                display: 'inline-flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: 2,
-              }}
-            >
+            <>
               <Button
                 variant="primary"
                 size="sm"
@@ -464,21 +457,15 @@ export function RunNetPage() {
                   {startErr}
                 </span>
               )}
-            </div>
+            </>
           )}
           {user && canManageControl && session.controlOpId !== user.id && !session.endedAt && (
-            <div
-              style={{
-                display: 'inline-flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: 2,
-              }}
-            >
+            <>
               <Button
                 variant="secondary"
                 size="sm"
                 aria-describedby="run-take-control-help"
+                title="Transfer Net Control authority to yourself for this session."
                 onClick={async () => {
                   await apiFetch(`/sessions/${session.id}`, {
                     method: 'PATCH',
@@ -489,10 +476,16 @@ export function RunNetPage() {
               >
                 Take control
               </Button>
-              <span id="run-take-control-help" className="hna-help">
+              {/* Accessibility caption — read by screen readers via
+               * aria-describedby but rendered visually hidden so it
+               * doesn't squeeze between the LIVE pill and the END NET
+               * button (the layout bug the user reported). The hover
+               * tooltip on the button surfaces the same copy for
+               * sighted users. */}
+              <span id="run-take-control-help" className="sr-only">
                 Transfer Net Control authority to yourself for this session.
               </span>
-            </div>
+            </>
           )}
           {canManageControl && !session.endedAt && (
             <Button
@@ -541,10 +534,24 @@ export function RunNetPage() {
         </div>
       </div>
 
-      {/* ===== Two-column rack ===== */}
-      <div className="hna-runnet-grid2">
-        {/* ----- Left column: Roster ----- */}
-        <div className="hna-runnet-grid2__col">
+      {/* ===== Rack =====
+       *
+       * Two layouts share the same three blocks (roster + script +
+       * chat); the wrapper class picks the layout:
+       *
+       *   PREP (`session.liveAt == null`): 2-col rack — operator is
+       *     preparing, script center isn't the priority. Roster left,
+       *     chat + script right.
+       *
+       *   LIVE: 3-col rack — left = sticky check-in form + roster
+       *     log; center = script (the centerpiece, fills the
+       *     viewport so no scrolling is needed); right = chat. Below
+       *     1280px the script promotes to row 1 so it never
+       *     "disappears" off-screen as the window shrinks (the bug
+       *     the user reported).
+       */}
+      {(() => {
+        const rosterBlock = (
           <Card>
             <header className="hna-section-caption">
               <h2 className="hna-section-caption__title">
@@ -750,12 +757,13 @@ export function RunNetPage() {
               })}
             </ul>
           </Card>
-        </div>
+        );
 
-        {/* ----- Right column: Chat + Script ----- */}
-        <div className="hna-runnet-grid2__col">
+        const chatBlock = (
           <ChatBox sessionId={session.id} liveAt={session.liveAt ?? null} />
+        );
 
+        const scriptBlock = (
           <Card>
             <header className="hna-section-caption">
               <h2
@@ -792,8 +800,36 @@ export function RunNetPage() {
               </pre>
             )}
           </Card>
-        </div>
-      </div>
+        );
+
+        // PREP: legacy two-column rack (roster | chat + script).
+        if (isPrep) {
+          return (
+            <div className="hna-runnet-grid2">
+              <div className="hna-runnet-grid2__col">{rosterBlock}</div>
+              <div className="hna-runnet-grid2__col">
+                {chatBlock}
+                {scriptBlock}
+              </div>
+            </div>
+          );
+        }
+
+        // LIVE: three-column rack with script in the centerpiece slot.
+        // The roster's check-in form is sticky at the top of the
+        // column so officers can add a check-in without scrolling
+        // regardless of how long the log grows. Breakpoint behavior
+        // lives in ui.css (`.hna-runnet-grid3` rules).
+        return (
+          <div className="hna-runnet-grid3">
+            <div className="hna-runnet-grid3__roster">
+              <div className="hna-runnet-grid3__checkin">{rosterBlock}</div>
+            </div>
+            <div className="hna-runnet-grid3__script">{scriptBlock}</div>
+            <div className="hna-runnet-grid3__chat">{chatBlock}</div>
+          </div>
+        );
+      })()}
 
       {/* ===== End-of-net review modal ===== */}
       <Modal

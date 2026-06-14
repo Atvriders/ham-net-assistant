@@ -121,28 +121,23 @@ function NetCard({
             </Button>
           )}
           {canEdit && active && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                gap: 4,
-              }}
-            >
+            <>
               <Button
                 variant="primary"
                 aria-describedby={`nets-take-control-help-${n.id}`}
+                title="Transfer Net Control authority to yourself for this session."
                 onClick={() => onTake(active.id)}
               >
                 Take control
               </Button>
+              {/* sr-only caption — matches Dashboard / RunNet pattern. */}
               <span
                 id={`nets-take-control-help-${n.id}`}
-                className="hna-help"
+                className="sr-only"
               >
                 Transfer Net Control authority to yourself for this session.
               </span>
-            </div>
+            </>
           )}
           {active && (
             <Button variant="secondary" onClick={() => onJoin(n.id)}>

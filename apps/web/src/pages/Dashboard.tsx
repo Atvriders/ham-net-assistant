@@ -215,28 +215,26 @@ export function Dashboard() {
                         </Button>
                       )}
                       {canControl && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'stretch',
-                            gap: 4,
-                          }}
-                        >
+                        <>
                           <Button
                             variant="secondary"
                             aria-describedby={`dash-take-control-help-${s.id}`}
+                            title="Transfer Net Control authority to yourself for this session."
                             onClick={() => takeControl(s.id)}
                           >
                             Take control
                           </Button>
+                          {/* sr-only — keeps the explanation reachable
+                           * for screen readers via aria-describedby
+                           * without squeezing visible text into the
+                           * action row. */}
                           <span
                             id={`dash-take-control-help-${s.id}`}
-                            className="hna-help"
+                            className="sr-only"
                           >
                             Transfer Net Control authority to yourself for this session.
                           </span>
-                        </div>
+                        </>
                       )}
                       <Link to={`/run/${s.id}`}>
                         <Button variant="primary">Open net</Button>

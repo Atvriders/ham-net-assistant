@@ -704,7 +704,7 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 .hna-repeater-grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 .hna-repeater-grid.one-col { grid-template-columns: 1fr; }
 @media (max-width: 640px) {
@@ -1147,9 +1147,12 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 .hna-toolbar__filter {
   display: grid;
   gap: var(--space-2);
-  min-width: 240px;
+  min-width: 0;
   flex: 1 1 240px;
   max-width: 320px;
+}
+@media (max-width: 480px) {
+  .hna-toolbar__filter { max-width: 100%; flex-basis: 100%; }
 }
 .hna-toolbar__filter > label {
   font-family: var(--font-mono);
@@ -1240,17 +1243,25 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   border: var(--border-w) solid var(--color-border-strong);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
+  /* The action cluster lives in a dedicated grid area so the TAKE
+   * CONTROL / CHANGE CONTROL / ⋯ / END NET buttons always anchor to
+   * the top-right of the strip — independent of how many facts the
+   * facts row contains. Previously the actions floated inline next to
+   * the facts which made their position drift as content grew. */
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'facts actions';
+  gap: var(--space-3) var(--space-4);
   align-items: center;
   margin-bottom: var(--space-4);
 }
 .hna-runnet-status__facts {
+  grid-area: facts;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3) var(--space-5);
+  min-width: 0;
 }
 .hna-runnet-status__name {
   font-family: var(--font-display);
@@ -1299,14 +1310,37 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   border-radius: var(--radius-sm);
 }
 .hna-runnet-status__actions {
+  grid-area: actions;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-self: start;
 }
 
-/* Two-column desktop layout (roster | chat+script) */
+/* At narrow widths the action cluster moves *below* the facts row
+ * instead of wrapping inline next to them. This keeps the operator
+ * facts (NCS, repeater, elapsed, LIVE pill) on their own line and
+ * the buttons on their own row beneath, so the strip never collapses
+ * into a single tangled wrap. */
+@media (max-width: 720px) {
+  .hna-runnet-status {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'facts'
+      'actions';
+  }
+  .hna-runnet-status__actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * PREP-state two-column layout (roster | chat+script).
+ * Operator is preparing; script center isn't the priority yet.
+ * ------------------------------------------------------------------ */
 .hna-runnet-grid2 {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
@@ -1320,6 +1354,107 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 @media (max-width: 1024px) {
   .hna-runnet-grid2 { grid-template-columns: 1fr; }
+}
+
+/* ------------------------------------------------------------------
+ * LIVE-state three-column layout.
+ *
+ *  ┌──────────────────────────┐
+ *  │ STATUS STRIP             │
+ *  ├────────┬────────┬────────┤
+ *  │ ROSTER │ SCRIPT │ CHAT   │   ≥1280px
+ *  │ (form) │ (read) │        │
+ *  └────────┴────────┴────────┘
+ *
+ * The script is centered — visually the operator's focus while reading
+ * a net script — and the roster's check-in form is `position: sticky`
+ * at the top of its column so officers can add a check-in without
+ * scrolling regardless of how long the log grows.
+ *
+ * Below 1280px the script promotes to a full-width row at the top
+ * (it MUST remain visible without scrolling — the bug the user
+ * reported was "the script disappeared on the active net screen"
+ * because the old 2-col collapse put the script at the bottom).
+ * ------------------------------------------------------------------ */
+.hna-runnet-grid3 {
+  display: grid;
+  grid-template-columns:
+    minmax(280px, 360px)
+    minmax(0, 1fr)
+    minmax(280px, 420px);
+  grid-template-areas: 'roster script chat';
+  gap: var(--space-4);
+  align-items: start;
+}
+.hna-runnet-grid3__roster { grid-area: roster; min-width: 0; }
+.hna-runnet-grid3__script { grid-area: script; min-width: 0; }
+.hna-runnet-grid3__chat { grid-area: chat; min-width: 0; }
+.hna-runnet-grid3__roster,
+.hna-runnet-grid3__script,
+.hna-runnet-grid3__chat {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Sticky check-in form for the LIVE 3-col layout. The form rides at
+ * the top of the roster column so adding a check-in never requires
+ * scrolling. The 56 + 80 offset clears the shell nav (~56px) and the
+ * status strip (~80px sticky). */
+.hna-runnet-grid3 .hna-runnet-grid3__checkin {
+  position: sticky;
+  top: calc(56px + 88px);
+  z-index: 3;
+  background: var(--color-surface);
+}
+
+/* Script panel fills the visible viewport in the LIVE 3-col layout so
+ * the operator reads the script without scrolling the page. The
+ * internal pre/HTML scrolls instead. */
+@media (min-width: 1280px) {
+  .hna-runnet-grid3__script .hna-script-panel {
+    max-height: calc(100vh - 56px - 88px - var(--space-6));
+  }
+}
+
+/* 1024 — 1279px: collapse to 2 rows. Script first, full width, so it
+ * stays prominent at the top of the visible area (fixes the
+ * "script-disappears-on-resize" bug). Roster + chat split row 2. */
+@media (max-width: 1279px) {
+  .hna-runnet-grid3 {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(0, 1fr);
+    grid-template-areas:
+      'script script'
+      'roster chat';
+  }
+}
+
+/* 720 — 1023px: single column. Script SECOND — directly after the
+ * status strip — so it never lands at the bottom of the stack. */
+@media (max-width: 1023px) {
+  .hna-runnet-grid3 {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'script'
+      'roster'
+      'chat';
+  }
+  .hna-runnet-grid3 .hna-runnet-grid3__checkin {
+    position: static;
+  }
+}
+
+/* <720px (phone): script stays SECOND — under the status strip —
+ * still ahead of roster and chat. Sticky bottom check-in form for
+ * one-thumb add (uses the existing mobile sticky rule below). */
+@media (max-width: 719px) {
+  .hna-runnet-grid3 {
+    grid-template-areas:
+      'script'
+      'roster'
+      'chat';
+  }
 }
 
 /* Operator overflow menu (⋯) */
@@ -1669,9 +1804,18 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   padding: var(--space-4);
   max-height: 520px;
   overflow-y: auto;
+  overflow-x: hidden;
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.hna-script-panel pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 /* ============================================================== */

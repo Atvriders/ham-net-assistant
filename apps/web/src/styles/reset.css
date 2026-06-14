@@ -21,8 +21,22 @@ body {
 
 button { font: inherit; color: inherit; }
 
-img { max-width: 100%; height: auto; display: block; }
+/* Media + embeds: never push past their container — every page sweep
+ * relies on this so a wide image, SVG, or iframe inside a flex/grid
+ * child can't force horizontal scroll on the page. */
+img, svg, iframe, video { max-width: 100%; height: auto; display: block; }
+svg { display: inline-block; }
 table { width: 100%; }
+
+/* Long URLs / callsigns inside <pre> shouldn't trigger horizontal
+ * page scroll — wrap by default. Page-level <pre> blocks that NEED
+ * to scroll horizontally opt in via a `.hna-pre-scroll` wrapper. */
+pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 
 /* Page headings: industrial signage face, sentence-stripped uppercase elsewhere */
 h1, h2, h3, h4, h5, h6 {
