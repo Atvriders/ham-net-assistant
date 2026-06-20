@@ -1357,103 +1357,106 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 
 /* ------------------------------------------------------------------
- * LIVE-state three-column layout.
+ * LIVE-state layout — SCRIPT top/dominant, ROSTER aside, CHAT
+ * top-if-it-fits-else-below.
  *
- *  ┌──────────────────────────┐
- *  │ STATUS STRIP             │
- *  ├────────┬────────┬────────┤
- *  │ ROSTER │ SCRIPT │ CHAT   │   ≥1280px
- *  │ (form) │ (read) │        │
- *  └────────┴────────┴────────┘
+ *  ≥1600px (chat fits on the top row):
+ *  ┌──────────────────────────────────┐
+ *  │ STATUS STRIP                     │
+ *  ├──────────────┬─────────┬─────────┤
+ *  │ SCRIPT       │ ROSTER  │ CHAT    │
+ *  │ (dominant)   │ (form)  │         │
+ *  └──────────────┴─────────┴─────────┘
  *
- * The script is centered — visually the operator's focus while reading
- * a net script — and the roster's check-in form is `position: sticky`
- * at the top of its column so officers can add a check-in without
- * scrolling regardless of how long the log grows.
+ *  1024 — 1599px (chat drops under the script+roster row):
+ *  ┌──────────────────────────────────┐
+ *  │ STATUS STRIP                     │
+ *  ├──────────────────────┬───────────┤
+ *  │ SCRIPT (dominant)    │ ROSTER    │
+ *  ├──────────────────────┴───────────┤
+ *  │ CHAT (full width)                │
+ *  └──────────────────────────────────┘
  *
- * Below 1280px the script promotes to a full-width row at the top
- * (it MUST remain visible without scrolling — the bug the user
- * reported was "the script disappeared on the active net screen"
- * because the old 2-col collapse put the script at the bottom).
+ *  <1024px: single column — SCRIPT first (under the status strip),
+ *  then ROSTER, then CHAT. Script is never buried at the bottom.
+ *
+ * The SCRIPT is the prominent top-left reading area; the ROSTER's
+ * check-in form is `position: sticky` so officers can add a check-in
+ * without scrolling regardless of how long the log grows. CHAT rides
+ * in the top row when the viewport is wide enough (≥1600px) and
+ * otherwise wraps to a full-width row underneath — "chat at the top
+ * if it fits, otherwise chat under". The width-driven re-assignment of
+ * the `chat` grid-area is what expresses that behavior in CSS.
  * ------------------------------------------------------------------ */
-.hna-runnet-grid3 {
+.hna-runnet-live {
   display: grid;
+  /* 1024 — 1599px default: script dominant + roster aside, chat below. */
   grid-template-columns:
-    minmax(280px, 360px)
     minmax(0, 1fr)
-    minmax(280px, 420px);
-  grid-template-areas: 'roster script chat';
+    minmax(280px, 380px);
+  grid-template-areas:
+    'script roster'
+    'chat   chat';
   gap: var(--space-4);
   align-items: start;
 }
-.hna-runnet-grid3__roster { grid-area: roster; min-width: 0; }
-.hna-runnet-grid3__script { grid-area: script; min-width: 0; }
-.hna-runnet-grid3__chat { grid-area: chat; min-width: 0; }
-.hna-runnet-grid3__roster,
-.hna-runnet-grid3__script,
-.hna-runnet-grid3__chat {
+.hna-runnet-live__roster { grid-area: roster; min-width: 0; }
+.hna-runnet-live__script { grid-area: script; min-width: 0; }
+.hna-runnet-live__chat { grid-area: chat; min-width: 0; }
+.hna-runnet-live__roster,
+.hna-runnet-live__script,
+.hna-runnet-live__chat {
   display: grid;
   gap: var(--space-4);
 }
 
-/* Sticky check-in form for the LIVE 3-col layout. The form rides at
- * the top of the roster column so adding a check-in never requires
- * scrolling. The 56 + 80 offset clears the shell nav (~56px) and the
- * status strip (~80px sticky). */
-.hna-runnet-grid3 .hna-runnet-grid3__checkin {
+/* Sticky check-in form for the LIVE layout. The form rides at the top
+ * of the roster column so adding a check-in never requires scrolling.
+ * The 56 + 88 offset clears the shell nav (~56px) and the status strip
+ * (~88px sticky). */
+.hna-runnet-live .hna-runnet-live__checkin {
   position: sticky;
   top: calc(56px + 88px);
   z-index: 3;
   background: var(--color-surface);
 }
 
-/* Script panel fills the visible viewport in the LIVE 3-col layout so
- * the operator reads the script without scrolling the page. The
- * internal pre/HTML scrolls instead. */
-@media (min-width: 1280px) {
-  .hna-runnet-grid3__script .hna-script-panel {
+/* ≥1600px: CHAT fits — promote it to a third top-row column so the
+ * top row reads SCRIPT | ROSTER | CHAT (script stays dominant). */
+@media (min-width: 1600px) {
+  .hna-runnet-live {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(300px, 380px)
+      minmax(320px, 460px);
+    grid-template-areas: 'script roster chat';
+  }
+}
+
+/* ≥1024px: the script panel fills the visible viewport so the operator
+ * reads the script without scrolling the page — the internal pre/HTML
+ * scrolls instead. Scoped to the LIVE layout so JoinNetPage's shared
+ * `.hna-script-panel` is unaffected. */
+@media (min-width: 1024px) {
+  .hna-runnet-live .hna-runnet-live__script .hna-script-panel {
     max-height: calc(100vh - 56px - 88px - var(--space-6));
   }
 }
 
-/* 1024 — 1279px: collapse to 2 rows. Script first, full width, so it
- * stays prominent at the top of the visible area (fixes the
- * "script-disappears-on-resize" bug). Roster + chat split row 2. */
-@media (max-width: 1279px) {
-  .hna-runnet-grid3 {
-    grid-template-columns:
-      minmax(0, 1fr)
-      minmax(0, 1fr);
-    grid-template-areas:
-      'script script'
-      'roster chat';
-  }
-}
-
-/* 720 — 1023px: single column. Script SECOND — directly after the
- * status strip — so it never lands at the bottom of the stack. */
+/* <1024px (tablet + phone): single column. Script FIRST — directly
+ * under the status strip — so it never lands at the bottom of the
+ * stack, then roster, then chat. The check-in form drops its top-sticky
+ * (the mobile sticky-bottom rule below takes over for one-thumb add). */
 @media (max-width: 1023px) {
-  .hna-runnet-grid3 {
+  .hna-runnet-live {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'script'
       'roster'
       'chat';
   }
-  .hna-runnet-grid3 .hna-runnet-grid3__checkin {
+  .hna-runnet-live .hna-runnet-live__checkin {
     position: static;
-  }
-}
-
-/* <720px (phone): script stays SECOND — under the status strip —
- * still ahead of roster and chat. Sticky bottom check-in form for
- * one-thumb add (uses the existing mobile sticky rule below). */
-@media (max-width: 719px) {
-  .hna-runnet-grid3 {
-    grid-template-areas:
-      'script'
-      'roster'
-      'chat';
   }
 }
 

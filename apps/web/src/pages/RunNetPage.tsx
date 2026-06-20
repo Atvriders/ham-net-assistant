@@ -552,12 +552,13 @@ export function RunNetPage() {
        *     preparing, script center isn't the priority. Roster left,
        *     chat + script right.
        *
-       *   LIVE: 3-col rack — left = sticky check-in form + roster
-       *     log; center = script (the centerpiece, fills the
-       *     viewport so no scrolling is needed); right = chat. Below
-       *     1280px the script promotes to row 1 so it never
-       *     "disappears" off-screen as the window shrinks (the bug
-       *     the user reported).
+       *   LIVE: script-dominant rack — SCRIPT is the prominent
+       *     top-left reading area (fills the viewport so no scrolling
+       *     is needed); ROSTER (sticky check-in form + log) sits aside
+       *     it; CHAT rides the top row at ≥1600px and otherwise wraps
+       *     to a full-width row underneath. Script always stays at the
+       *     top so it never "disappears" off-screen as the window
+       *     shrinks (the bug the user reported).
        */}
       {(() => {
         const rosterBlock = (
@@ -885,18 +886,21 @@ export function RunNetPage() {
           );
         }
 
-        // LIVE: three-column rack with script in the centerpiece slot.
-        // The roster's check-in form is sticky at the top of the
-        // column so officers can add a check-in without scrolling
-        // regardless of how long the log grows. Breakpoint behavior
-        // lives in ui.css (`.hna-runnet-grid3` rules).
+        // LIVE: script-dominant rack. SCRIPT is the prominent top-left
+        // reading area; ROSTER sits aside it; CHAT rides in the top row
+        // when the viewport is wide enough (≥1600px) and otherwise wraps
+        // to a full-width row underneath ("chat at the top if it fits,
+        // otherwise chat under"). The roster's check-in form is sticky at
+        // the top of its column so officers can add a check-in without
+        // scrolling regardless of how long the log grows. Breakpoint
+        // behavior lives in ui.css (`.hna-runnet-live` rules).
         return (
-          <div className="hna-runnet-grid3">
-            <div className="hna-runnet-grid3__roster">
-              <div className="hna-runnet-grid3__checkin">{rosterBlock}</div>
+          <div className="hna-runnet-live">
+            <div className="hna-runnet-live__script">{scriptBlock}</div>
+            <div className="hna-runnet-live__roster">
+              <div className="hna-runnet-live__checkin">{rosterBlock}</div>
             </div>
-            <div className="hna-runnet-grid3__script">{scriptBlock}</div>
-            <div className="hna-runnet-grid3__chat">{chatBlock}</div>
+            <div className="hna-runnet-live__chat">{chatBlock}</div>
           </div>
         );
       })()}
