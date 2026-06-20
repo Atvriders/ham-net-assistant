@@ -131,3 +131,48 @@ describe('RunNetPage script tab edit', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('RunNetPage script markdown render', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a markdown script formatted (heading + list), not raw syntax', async () => {
+    const mdNet = { ...net, scriptMd: '# Topic\n\n- one\n- two' };
+    const mdSession = { ...session, net: mdNet };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const json = (body: unknown) =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        if (url.endsWith('/auth/me'))
+          return json({
+            id: 'u1',
+            callsign: 'W1AW',
+            name: 'Op',
+            email: 'o@x.co',
+            role: 'OFFICER',
+          });
+        if (url.endsWith('/presence/heartbeat')) return json({});
+        if (url.endsWith('/api/repeaters')) return json([repeater]);
+        if (url.endsWith('/api/sessions/s1')) return json(mdSession);
+        return json([]);
+      }),
+    );
+    renderPage();
+
+    // The heading and list items render as real HTML elements.
+    const heading = await screen.findByRole('heading', { name: 'Topic' });
+    expect(heading.tagName).toBe('H1');
+    expect(screen.getByText('one').tagName).toBe('LI');
+    expect(screen.getByText('two').tagName).toBe('LI');
+
+    // The raw markdown characters must NOT appear as visible text.
+    expect(screen.queryByText('# Topic')).not.toBeInTheDocument();
+    expect(screen.queryByText('- one')).not.toBeInTheDocument();
+  });
+});

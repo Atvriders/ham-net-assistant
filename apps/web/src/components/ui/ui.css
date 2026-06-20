@@ -699,6 +699,40 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   padding: 6px 10px;
   font-family: var(--font-sans);
 }
+/* Markdown-rendered scripts can emit h4-h6, blockquotes, and code. Keep these
+ * consistent with the calibrated radio-console look; do not restyle globally. */
+.hna-script-html h4,
+.hna-script-html h5,
+.hna-script-html h6 {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px 0;
+  font-size: 14px;
+}
+.hna-script-html li { margin: 0 0 4px 0; }
+.hna-script-html blockquote {
+  margin: 0 0 12px 0;
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted, var(--color-fg));
+}
+.hna-script-html code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.92em;
+}
+.hna-script-html pre {
+  background: var(--color-bg);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3, 10px);
+  overflow-x: auto;
+  margin: 0 0 12px 0;
+}
+.hna-script-html pre code {
+  background: none;
+  padding: 0;
+}
 
 /* Repeaters grid (preserved) */
 .hna-repeater-grid {

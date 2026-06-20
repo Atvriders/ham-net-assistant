@@ -16,7 +16,7 @@ import {
   capitalizeFirst,
   displayCallsign,
 } from '../lib/format.js';
-import { looksLikeHtml } from '../lib/scriptFormat.js';
+import { scriptToHtml } from '../lib/scriptFormat.js';
 import { SanitizedHtml } from '../components/SanitizedHtml.js';
 import { ChatBox } from '../components/ChatBox.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
@@ -408,19 +408,10 @@ export function JoinNetPage() {
                 [ SCRIPT ]
               </span>
             </h3>
-            {looksLikeHtml(session.net.scriptMd) ? (
-              <SanitizedHtml
-                className="hna-script-html hna-script-panel"
-                html={session.net.scriptMd}
-              />
-            ) : (
-              <pre
-                className="hna-script-panel"
-                style={{ whiteSpace: 'pre-wrap', margin: 0 }}
-              >
-                {session.net.scriptMd}
-              </pre>
-            )}
+            <SanitizedHtml
+              className="hna-script-html hna-script-panel"
+              html={scriptToHtml(session.net.scriptMd)}
+            />
           </Card>
         </>
       )}
