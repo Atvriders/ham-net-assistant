@@ -873,27 +873,17 @@ export function RunNetPage() {
           </Card>
         );
 
-        // PREP: legacy two-column rack (roster | chat + script).
-        if (isPrep) {
-          return (
-            <div className="hna-runnet-grid2">
-              <div className="hna-runnet-grid2__col">{rosterBlock}</div>
-              <div className="hna-runnet-grid2__col">
-                {chatBlock}
-                {scriptBlock}
-              </div>
-            </div>
-          );
-        }
-
-        // LIVE: script-dominant rack. SCRIPT is the prominent top-left
-        // reading area; ROSTER sits aside it; CHAT rides in the top row
-        // when the viewport is wide enough (≥1600px) and otherwise wraps
-        // to a full-width row underneath ("chat at the top if it fits,
-        // otherwise chat under"). The roster's check-in form is sticky at
-        // the top of its column so officers can add a check-in without
-        // scrolling regardless of how long the log grows. Breakpoint
-        // behavior lives in ui.css (`.hna-runnet-live` rules).
+        // Both PREP and LIVE use the script-dominant rack. SCRIPT is the
+        // prominent top-left reading area; ROSTER sits aside it; CHAT rides
+        // in the top row when the viewport is wide enough (≥1600px) and
+        // otherwise wraps to a full-width row underneath ("chat at the top
+        // if it fits, otherwise chat under"). The roster's check-in form is
+        // sticky at the top of its column so officers can add a check-in
+        // without scrolling regardless of how long the log grows. In PREP
+        // the check-in form is disabled (handled inside rosterBlock via
+        // `isPrep`), but the script-top arrangement is the same so the
+        // operator reads the script first whether preparing or running.
+        // Breakpoint behavior lives in ui.css (`.hna-runnet-live` rules).
         return (
           <div className="hna-runnet-live">
             <div className="hna-runnet-live__script">{scriptBlock}</div>
