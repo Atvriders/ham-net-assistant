@@ -198,6 +198,23 @@ export function Dashboard() {
                         ) : null}
                         {s.topicTitle || s.topic ? (
                           <> · {s.topicTitle ?? s.topic?.title}</>
+                        ) : isPrep && s.autoOpened ? (
+                          <>
+                            {' '}·{' '}
+                            <span
+                              className="hna-mono"
+                              data-testid={`dash-topic-not-set-${s.id}`}
+                              style={{
+                                fontSize: 11,
+                                letterSpacing: '0.1em',
+                                textTransform: 'uppercase',
+                                color: 'var(--color-fg-muted)',
+                              }}
+                              title="This net auto-opened without a topic — pick one in prep."
+                            >
+                              Topic not set
+                            </span>
+                          </>
                         ) : null}
                       </span>
                     </div>

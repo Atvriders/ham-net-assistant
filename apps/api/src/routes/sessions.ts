@@ -277,6 +277,17 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       });
       if (!exists) throw new HttpError(400, 'VALIDATION', 'Unknown control operator');
     }
+    // Linking a topic suggestion (prep-view picker): validate the FK so a bad id
+    // surfaces as a clean 404 instead of a Prisma constraint blow-up. Passing
+    // null unlinks; omitting leaves the existing link untouched. A free-text
+    // topic comes through as topicTitle-only and clears any prior link.
+    if (body.topicId) {
+      const topic = await prisma.topicSuggestion.findUnique({
+        where: { id: body.topicId },
+        select: { id: true },
+      });
+      if (!topic) throw new HttpError(404, 'NOT_FOUND', 'Topic not found');
+    }
     const updated = await prisma.netSession.update({
       where: { id: req.params.id },
       data: {
@@ -290,8 +301,18 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
             : body.topicTitle && body.topicTitle.trim().length > 0
               ? body.topicTitle.trim()
               : null,
+        // Keep topicId in sync: explicit id links, explicit null unlinks. When
+        // topicId is absent but a free-text topicTitle was sent, drop any stale
+        // link so the session's topic relation matches the new title.
+        topicId:
+          body.topicId !== undefined
+            ? body.topicId
+            : body.topicTitle !== undefined
+              ? null
+              : undefined,
       },
       include: {
+        topic: true,
         net: { include: { repeater: true } },
         checkIns: { where: { deletedAt: null } },
         controlOp: { select: { callsign: true, name: true } },

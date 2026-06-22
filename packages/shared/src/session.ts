@@ -5,6 +5,10 @@ export const NetSessionUpdate = z.object({
   notes: z.string().max(4000).nullable().optional(),
   controlOpId: z.string().optional(),
   topicTitle: z.string().max(200).nullable().optional(),
+  /// Link the session to a topic suggestion (the prep-view topic picker sends
+  /// this alongside topicTitle when an officer picks a queued suggestion). Pass
+  /// null to unlink. A custom/free-text topic omits this (topicTitle only).
+  topicId: z.string().nullable().optional(),
 });
 export type NetSessionUpdate = z.infer<typeof NetSessionUpdate>;
 

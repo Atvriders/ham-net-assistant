@@ -1437,6 +1437,9 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 .hna-runnet-live__roster { grid-area: roster; min-width: 0; }
 .hna-runnet-live__script { grid-area: script; min-width: 0; }
 .hna-runnet-live__chat { grid-area: chat; min-width: 0; }
+/* Prep-view TOPIC card rides at the top of the roster column, above the
+ * (sticky) check-in form. min-width:0 keeps long titles from overflowing. */
+.hna-runnet-live__topic { min-width: 0; }
 .hna-runnet-live__roster,
 .hna-runnet-live__script,
 .hna-runnet-live__chat {

@@ -231,6 +231,49 @@ describe('sessions', () => {
     expect(patch.body.controlOpId).toBe(a!.id);
     expect(patch.body.topicTitle).toBe('Corrected topic');
   });
+  it('PATCH links a topic suggestion (topicId + topicTitle) in prep', async () => {
+    // The prep-view topic picker PATCHes the session with both fields.
+    const t = await request(app).post('/api/topics').set('Cookie', officer)
+      .send({ title: 'Grid square hunting' });
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ topicTitle: 'Grid square hunting', topicId: t.body.id });
+    expect(patch.status).toBe(200);
+    expect(patch.body.topicId).toBe(t.body.id);
+    expect(patch.body.topicTitle).toBe('Grid square hunting');
+    expect(patch.body.topic.id).toBe(t.body.id);
+  });
+  it('PATCH with an unknown topicId returns 404', async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ topicTitle: 'X', topicId: 'no-such-topic' });
+    expect(patch.status).toBe(404);
+    expect(patch.body.error.code).toBe('NOT_FOUND');
+  });
+  it('PATCH a free-text topicTitle clears a prior topic link', async () => {
+    const t = await request(app).post('/api/topics').set('Cookie', officer)
+      .send({ title: 'Linked topic' });
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicId: t.body.id });
+    expect(s.body.topicId).toBe(t.body.id);
+    // Switching to a custom topic (title only) drops the suggestion link.
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ topicTitle: 'Custom override' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.topicTitle).toBe('Custom override');
+    expect(patch.body.topicId).toBeNull();
+  });
+  it('PATCH an empty topicTitle clears both title and link', async () => {
+    const t = await request(app).post('/api/topics').set('Cookie', officer)
+      .send({ title: 'Topic to clear' });
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
+      .send({ topicId: t.body.id });
+    const patch = await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ topicTitle: '' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.topicTitle).toBeNull();
+    expect(patch.body.topicId).toBeNull();
+  });
   it('MEMBER cannot change net control', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
     const m = await request(app).post('/api/auth/register').send({

@@ -51,6 +51,13 @@ interface ControlCandidate {
   name: string;
   role: string;
 }
+interface RecommendedTopic {
+  id: string;
+  title: string;
+  status: string;
+  createdByCallsign?: string;
+  recommended?: boolean;
+}
 
 const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
   weekly: 'Weekly',
@@ -108,6 +115,13 @@ export function RunNetPage() {
   const [controlCandidates, setControlCandidates] = useState<ControlCandidate[]>([]);
   const [editNetOpen, setEditNetOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  // Prep-view topic picker: the OPEN suggestion queue (oldest-first, the oldest
+  // flagged recommended) and the free-text custom-topic field. Only loaded/used
+  // during PREP — once the net is LIVE the topic is shown read-only.
+  const [recommendedTopics, setRecommendedTopics] = useState<RecommendedTopic[]>([]);
+  const [customTopic, setCustomTopic] = useState('');
+  const [topicBusy, setTopicBusy] = useState(false);
+  const [topicQueueNonce, setTopicQueueNonce] = useState(0);
   const canManageControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,6 +173,25 @@ export function RunNetPage() {
     return () => ctrl.abort();
   }, [controlOpen, canManageControl]);
 
+  // Load the OPEN topic-suggestion queue for the prep-view picker. Only fetched
+  // while the session is in PREP and the viewer can manage control — once LIVE
+  // the topic is read-only so there's nothing to pick from. `topicQueueNonce`
+  // forces a re-fetch after a suggestion is consumed (marked USED).
+  const sessionIsPrep = session?.liveAt == null;
+  useEffect(() => {
+    if (!sessionIsPrep || !canManageControl) {
+      setRecommendedTopics([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    apiFetch<RecommendedTopic[]>('/topics/recommended', { signal: ctrl.signal })
+      .then(setRecommendedTopics)
+      .catch((e) => {
+        if (!isAbortError(e)) console.warn('recommended topics load failed', e);
+      });
+    return () => ctrl.abort();
+  }, [sessionIsPrep, canManageControl, topicQueueNonce]);
+
   // Dismiss the overflow menu when clicking outside it.
   useEffect(() => {
     if (!overflowOpen) return;
@@ -183,6 +216,62 @@ export function RunNetPage() {
     });
     setControlOpen(false);
     await refresh();
+  }
+
+  // Prep-view topic actions. All three PATCH the session and then refresh so the
+  // chosen topic shows immediately. Picking a queued suggestion also marks that
+  // suggestion USED (mirrors the open-time flow in StartNetModal/session-create)
+  // so it drains out of everyone's queue.
+  async function applySuggestion(s: RecommendedTopic) {
+    if (!sessionId || topicBusy) return;
+    setTopicBusy(true);
+    try {
+      await apiFetch(`/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ topicTitle: s.title, topicId: s.id }),
+      });
+      await apiFetch(`/topics/${s.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'USED' }),
+      });
+      setTopicQueueNonce((n) => n + 1);
+      await refresh();
+    } finally {
+      setTopicBusy(false);
+    }
+  }
+
+  async function setCustomTopicTitle() {
+    if (!sessionId || topicBusy) return;
+    const trimmed = customTopic.trim();
+    if (!trimmed) return;
+    setTopicBusy(true);
+    try {
+      // Custom/free-text topic — title only, no topicId (clears any prior link).
+      await apiFetch(`/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ topicTitle: trimmed }),
+      });
+      setCustomTopic('');
+      await refresh();
+    } finally {
+      setTopicBusy(false);
+    }
+  }
+
+  async function clearTopic() {
+    if (!sessionId || topicBusy) return;
+    setTopicBusy(true);
+    try {
+      // Empty topicTitle clears both the title and the link server-side.
+      await apiFetch(`/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ topicTitle: '' }),
+      });
+      await refresh();
+    } finally {
+      setTopicBusy(false);
+    }
   }
 
   // Transition PREP → LIVE. The API gates this to OFFICER+ and 409s if the
@@ -379,6 +468,9 @@ export function RunNetPage() {
   // (via POST /sessions/:id/start) the row is live and check-ins are accepted.
   const isPrep = session.liveAt == null;
   const liveStartIso = session.liveAt ?? session.startedAt;
+  // Topic shown in both the prep picker (as "current") and the live read-only
+  // line. topicTitle is the source of truth; fall back to the linked relation.
+  const currentTopic = session.topicTitle ?? session.topic?.title ?? null;
 
   return (
     <div>
@@ -561,6 +653,189 @@ export function RunNetPage() {
        *     shrinks (the bug the user reported).
        */}
       {(() => {
+        // ===== TOPIC =====
+        // In PREP, OFFICER/ADMIN can pick a queued suggestion, type a custom
+        // topic, or clear the topic before going live. Once LIVE the picker
+        // collapses to a read-only line — the topic is meant to be set during
+        // prep. Members (and the live state) only ever see the read-only line.
+        const topicReadOnly = (
+          <div
+            className="hna-mono"
+            data-testid="topic-readonly"
+            style={{
+              fontSize: 13,
+              letterSpacing: '0.04em',
+              color: currentTopic
+                ? 'var(--color-fg)'
+                : 'var(--color-fg-muted)',
+            }}
+          >
+            {currentTopic ?? 'No topic set yet.'}
+          </div>
+        );
+
+        const topicBlock =
+          isPrep && canManageControl ? (
+            <Card>
+              <header className="hna-section-caption">
+                <h2 className="hna-section-caption__title">
+                  <span
+                    className="hna-cap hna-cap--accent"
+                    style={{ margin: 0 }}
+                  >
+                    [ TOPIC ]
+                  </span>
+                </h2>
+                {currentTopic && (
+                  <button
+                    type="button"
+                    className="hna-roster__btn"
+                    data-testid="topic-clear-button"
+                    onClick={clearTopic}
+                    disabled={topicBusy}
+                    aria-label="Clear topic"
+                    title="Clear topic"
+                  >
+                    Clear topic
+                  </button>
+                )}
+              </header>
+
+              <div
+                data-testid="topic-current"
+                style={{ marginBottom: 'var(--space-3)' }}
+              >
+                <span
+                  className="hna-mono"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-fg-muted)',
+                  }}
+                >
+                  Current
+                </span>
+                <div style={{ marginTop: 2 }}>{topicReadOnly}</div>
+              </div>
+
+              <SectionDivider>SUGGESTIONS</SectionDivider>
+              {recommendedTopics.length === 0 ? (
+                <div
+                  className="hna-empty"
+                  data-testid="topic-suggestions-empty"
+                  style={{ padding: 'var(--space-2) 0' }}
+                >
+                  <p className="hna-empty__body" style={{ margin: 0 }}>
+                    No open topic suggestions.
+                  </p>
+                </div>
+              ) : (
+                <ul
+                  data-testid="topic-suggestions"
+                  style={{ listStyle: 'none', padding: 0, margin: 0 }}
+                >
+                  {recommendedTopics.map((s) => (
+                    <li
+                      key={s.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 0',
+                        borderBottom: '1px solid var(--color-border)',
+                      }}
+                    >
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        {s.recommended && (
+                          <span
+                            className="hna-chip hna-mono"
+                            data-testid="topic-recommended-chip"
+                            style={{
+                              marginRight: 6,
+                              fontSize: 10,
+                              letterSpacing: '0.12em',
+                            }}
+                          >
+                            RECOMMENDED
+                          </span>
+                        )}
+                        {s.title}
+                        {s.createdByCallsign && (
+                          <span
+                            className="hna-mono"
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 11,
+                              color: 'var(--color-fg-muted)',
+                            }}
+                          >
+                            {displayCallsign(s.createdByCallsign)}
+                          </span>
+                        )}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={topicBusy}
+                        data-testid={`topic-use-${s.id}`}
+                        onClick={() => applySuggestion(s)}
+                      >
+                        Use
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <SectionDivider>CUSTOM TOPIC</SectionDivider>
+              <div
+                className="hna-field"
+                style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}
+              >
+                <div style={{ flex: 1 }}>
+                  <label htmlFor="prep-custom-topic">Custom topic</label>
+                  <Input
+                    id="prep-custom-topic"
+                    value={customTopic}
+                    onChange={(e) => setCustomTopic(e.target.value)}
+                    placeholder="e.g. Field Day planning"
+                    maxLength={200}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void setCustomTopicTitle();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={topicBusy || customTopic.trim().length === 0}
+                  data-testid="topic-set-custom-button"
+                  onClick={setCustomTopicTitle}
+                >
+                  Set
+                </Button>
+              </div>
+            </Card>
+          ) : currentTopic ? (
+            <Card>
+              <header className="hna-section-caption">
+                <h2 className="hna-section-caption__title">
+                  <span
+                    className="hna-cap hna-cap--accent"
+                    style={{ margin: 0 }}
+                  >
+                    [ TOPIC ]
+                  </span>
+                </h2>
+              </header>
+              {topicReadOnly}
+            </Card>
+          ) : null;
+
         const rosterBlock = (
           <Card>
             <header className="hna-section-caption">
@@ -879,6 +1154,9 @@ export function RunNetPage() {
           <div className="hna-runnet-live">
             <div className="hna-runnet-live__script">{scriptBlock}</div>
             <div className="hna-runnet-live__roster">
+              {topicBlock && (
+                <div className="hna-runnet-live__topic">{topicBlock}</div>
+              )}
               <div className="hna-runnet-live__checkin">{rosterBlock}</div>
             </div>
             <div className="hna-runnet-live__chat">{chatBlock}</div>
