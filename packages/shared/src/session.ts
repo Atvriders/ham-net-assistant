@@ -19,5 +19,9 @@ export const NetSession = z.object({
   endedAt: z.string().datetime().nullable(),
   controlOpId: z.string().nullable(),
   notes: z.string().nullable(),
+  /// True when the server-side auto-open scheduler created this PREP session
+  /// (~15 minutes before a weekly net's scheduled start). Operator-opened
+  /// sessions are false. Defaults false for legacy rows.
+  autoOpened: z.boolean().default(false),
 });
 export type NetSession = z.infer<typeof NetSession>;

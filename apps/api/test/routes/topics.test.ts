@@ -118,3 +118,57 @@ describe('topic suggestions', () => {
     expect(del2.status).toBe(403);
   });
 });
+
+describe('GET /api/topics/recommended', () => {
+  /** Seed an OPEN suggestion at an explicit createdAt so order is deterministic. */
+  async function seedOpen(title: string, createdAt: Date, status = 'OPEN'): Promise<string> {
+    const row = await prisma.topicSuggestion.create({
+      data: { title, status, createdById: memberUserId, createdAt },
+    });
+    return row.id;
+  }
+
+  it('returns OPEN suggestions oldest-first with recommended=true on the oldest', async () => {
+    const oldId = await seedOpen('Oldest topic', new Date('2026-01-01T00:00:00Z'));
+    const midId = await seedOpen('Middle topic', new Date('2026-01-02T00:00:00Z'));
+    const newId = await seedOpen('Newest topic', new Date('2026-01-03T00:00:00Z'));
+
+    const res = await request(app).get('/api/topics/recommended').set('Cookie', member);
+    expect(res.status).toBe(200);
+    expect(res.body.map((t: { id: string }) => t.id)).toEqual([oldId, midId, newId]);
+    // recommended flag is true only on the single oldest OPEN suggestion.
+    expect(res.body.map((t: { recommended: boolean }) => t.recommended)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    // carries the existing topic fields
+    expect(res.body[0].title).toBe('Oldest topic');
+    expect(res.body[0].status).toBe('OPEN');
+    expect(res.body[0].createdByCallsign).toBe('KB0BOB');
+  });
+
+  it('excludes USED and DISMISSED suggestions', async () => {
+    await seedOpen('Used one', new Date('2026-01-01T00:00:00Z'), 'USED');
+    await seedOpen('Dismissed one', new Date('2026-01-02T00:00:00Z'), 'DISMISSED');
+    const openId = await seedOpen('Still open', new Date('2026-01-03T00:00:00Z'));
+
+    const res = await request(app).get('/api/topics/recommended').set('Cookie', member);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(openId);
+    expect(res.body[0].recommended).toBe(true);
+  });
+
+  it('returns an empty array when there are no OPEN suggestions', async () => {
+    await seedOpen('Used only', new Date('2026-01-01T00:00:00Z'), 'USED');
+    const res = await request(app).get('/api/topics/recommended').set('Cookie', member);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('401 when unauthenticated', async () => {
+    const res = await request(app).get('/api/topics/recommended');
+    expect(res.status).toBe(401);
+  });
+});

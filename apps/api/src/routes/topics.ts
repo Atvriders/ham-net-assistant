@@ -32,6 +32,38 @@ export function topicsRouter(prisma: PrismaClient): Router {
     }),
   );
 
+  // GET /api/topics/recommended — the OPEN suggestion queue for the prep-view
+  // topic picker. Returns OPEN suggestions oldest-first (FIFO so the queue
+  // drains fairly), with `recommended: true` flagged on the single oldest one.
+  // USED / DISMISSED suggestions are excluded. Empty array when none are OPEN.
+  // Registered before POST '/' (both are exact paths, but keep the read route
+  // grouped with the other GETs).
+  router.get(
+    '/recommended',
+    requireAuth,
+    asyncHandler(async (_req, res) => {
+      const rows = await prisma.topicSuggestion.findMany({
+        where: { status: 'OPEN' },
+        orderBy: { createdAt: 'asc' },
+        include: { createdBy: { select: { callsign: true, name: true } } },
+      });
+      res.json(
+        rows.map((r, i) => ({
+          id: r.id,
+          title: r.title,
+          details: r.details,
+          status: r.status,
+          createdAt: r.createdAt.toISOString(),
+          createdById: r.createdById,
+          createdByCallsign: r.createdBy.callsign,
+          createdByName: r.createdBy.name,
+          // Only the oldest OPEN suggestion (index 0) is the recommendation.
+          recommended: i === 0,
+        })),
+      );
+    }),
+  );
+
   router.post(
     '/',
     requireAuth,

@@ -48,6 +48,8 @@ describe('sessions', () => {
     expect(res.body.endedAt).toBeNull();
     // New: opens the session in PREP — liveAt is null until /start.
     expect(res.body.liveAt).toBeNull();
+    // Operator-opened sessions are not auto-opened.
+    expect(res.body.autoOpened).toBe(false);
   });
   it('MEMBER cannot start', async () => {
     const m = await request(app).post('/api/auth/register').send({

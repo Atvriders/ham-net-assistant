@@ -4,6 +4,7 @@ import { env } from './env.js';
 import { reconcileDiscord, loadDiscordConfig } from './discord/client.js';
 import { handleInboundDiscordMessage } from './discord/bridge.js';
 import { startReminderScheduler } from './discord/reminders.js';
+import { startAutoOpenScheduler } from './lib/autoOpenScheduler.js';
 
 const app = buildApp(prisma);
 app.listen(env.PORT, () => {
@@ -20,6 +21,11 @@ void (async () => {
   // Discord isn't connected, and the scheduler is cheap. This way enabling
   // Discord later via the admin UI doesn't require a process restart.
   startReminderScheduler(prisma);
+  // Auto-open scheduler: opens a PREP session ~15 minutes before each weekly
+  // net's scheduled start. Unconditional — it makes no Discord posts, so it
+  // doesn't depend on Discord being connected. Kept out of the test app
+  // (buildApp) so tests drive autoOpenTick with a fixed clock instead.
+  startAutoOpenScheduler(prisma);
   try {
     const cfg = await loadDiscordConfig(prisma);
     if (!cfg.enabled) return;

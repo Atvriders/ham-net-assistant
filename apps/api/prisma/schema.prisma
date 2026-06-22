@@ -173,6 +173,11 @@ model NetSession {
   topicId     String?
   topic       TopicSuggestion? @relation("SessionTopic", fields: [topicId], references: [id], onDelete: SetNull)
   topicTitle  String?
+  /// True when this session was created by the server-side auto-open scheduler
+  /// (a weekly net's PREP session opened ~15 minutes before its scheduled
+  /// start). Operator-opened sessions stay false. Used so the prep view can
+  /// surface that the net was auto-opened and is awaiting a control op.
+  autoOpened  Boolean   @default(false)
   checkIns    CheckIn[]
   messages    SessionMessage[]
   deletedAt   DateTime?

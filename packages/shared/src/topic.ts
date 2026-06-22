@@ -18,6 +18,9 @@ export const TopicSuggestion = z.object({
   createdById: z.string(),
   createdByCallsign: z.string().optional(),
   createdByName: z.string().optional(),
+  /// Set by GET /api/topics/recommended: true on the single oldest OPEN
+  /// suggestion (the queue's next pick), false/absent on the rest.
+  recommended: z.boolean().optional(),
 });
 export type TopicSuggestion = z.infer<typeof TopicSuggestion>;
 
