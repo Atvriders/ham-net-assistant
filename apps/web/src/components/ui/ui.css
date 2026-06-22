@@ -560,6 +560,83 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   border-color: var(--color-primary);
 }
 
+/* ---- Live local-time clock in the shell ---- */
+.hna-clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--color-fg);
+  white-space: nowrap;
+  flex: none;
+}
+.hna-clock__time {
+  font-variant-numeric: tabular-nums;
+}
+.hna-clock__seconds {
+  color: var(--color-fg-muted);
+}
+.hna-clock__tz {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+}
+
+/* ---- Net-started / live-nets indicator in the shell ---- */
+.hna-netstatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: none;
+}
+.hna-netstatus__live {
+  text-decoration: none;
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.hna-netstatus__live:hover {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+.hna-netstatus__prep {
+  text-decoration: none;
+  color: var(--color-warn, #d49016);
+  border-color: var(--color-warn, #d49016);
+  opacity: 0.85;
+}
+.hna-netstatus__prep:hover {
+  opacity: 1;
+}
+/* One-shot attention pulse fired on the 0 -> >=1 LIVE transition. */
+.hna-netstatus__live.is-pinging {
+  animation: hna-net-ping 600ms var(--ease-instrument) 0s 3;
+}
+@keyframes hna-net-ping {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-danger) 0%, transparent);
+  }
+}
+
+/* Keep the shell tail from overflowing the nav: it may wrap, and the clock
+   sheds its seconds (≤900px) then its tz label (≤640px) before the row
+   would ever need a horizontal scrollbar. */
+.hna-shell__tail { min-width: 0; flex-wrap: wrap; row-gap: var(--space-2); }
+@media (max-width: 900px) {
+  .hna-clock__seconds { display: none; }
+}
+@media (max-width: 640px) {
+  .hna-clock__tz { display: none; }
+}
+
 /* ============================================================== */
 /* Form layout — preserved class names                              */
 /* ============================================================== */
@@ -2229,6 +2306,9 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
     transition-duration: 0.001ms !important;
   }
   .hna-livedot, .hna-onlinedot--on {
+    animation: none !important;
+  }
+  .hna-netstatus__live.is-pinging {
     animation: none !important;
   }
   .hna-btn::after { transition: none !important; }

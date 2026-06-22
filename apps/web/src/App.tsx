@@ -16,6 +16,8 @@ import { SessionSummaryPage } from './pages/SessionSummaryPage.js';
 import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { OfficerToolsPage } from './pages/OfficerToolsPage.js';
+import { Clock } from './components/ui/Clock.js';
+import { NetStatusIndicator } from './components/NetStatusIndicator.js';
 import { displayCallsign } from './lib/format.js';
 
 // Lazy-load the StatsPage so the recharts bundle (~300-400 KB) is only fetched
@@ -161,6 +163,8 @@ function NavBar() {
           </nav>
         )}
         <div className="hna-shell__tail">
+          {user && <NetStatusIndicator enabled={!!user} />}
+          <Clock />
           <ColorModeToggle />
           {user && (
             <>
