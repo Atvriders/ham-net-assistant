@@ -192,7 +192,7 @@ const HNA_VERSION = '0.1';
 function Footer() {
   return (
     <footer className="hna-shell__footer">
-      <span>{`// W0HNA · HAM-NET-ASSISTANT v${HNA_VERSION}`}</span>
+      <span>{`// HAM-NET-ASSISTANT v${HNA_VERSION}`}</span>
     </footer>
   );
 }
