@@ -7,6 +7,14 @@
  * the bottom so existing pages keep rendering without code changes.
  */
 :root {
+  /* Tell the browser to render native controls (select option popups,
+   * scrollbars, date pickers) with dark-appropriate contrast. Without this,
+   * an appearance:none dark-themed <select> inherits the light --color-fg
+   * onto the browser's default white option popup — light-on-white and
+   * unreadable. Dark is the default color mode; the light override lives
+   * under html[data-color-mode='light']. */
+  color-scheme: dark;
+
   /* --- Type stack ----------------------------------------------------- */
   --font-display: 'Big Shoulders Display', 'Arial Narrow', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -71,6 +79,8 @@
 
 /* LIGHT palette — logbook paper */
 html[data-color-mode='light'] {
+  /* Native controls render light-appropriate (dark text on light popup). */
+  color-scheme: light;
   --color-bg: #F4EFE2;
   --color-surface: #FFFBF0;
   --color-surface-2: #FFFFFF;
