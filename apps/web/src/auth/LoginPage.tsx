@@ -54,9 +54,14 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Block a second submit while the first is in flight — on a slow network a
+    // dead-looking button otherwise invites a duplicate POST /auth/login.
+    if (submitting) return;
+    setSubmitting(true);
     setErr(null);
     try {
       await login({ email, password });
@@ -65,6 +70,7 @@ export function LoginPage() {
     } catch (ex) {
       if (ex instanceof ApiErrorException) setErr(ex.payload.message);
       else setErr('Login failed');
+      setSubmitting(false);
     }
   }
 
@@ -122,8 +128,8 @@ export function LoginPage() {
             <Link to="/register" className="hna-btn ghost" style={{ textDecoration: 'none' }}>
               Register
             </Link>
-            <Button type="submit" variant="primary">
-              Sign in
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'Signing in…' : 'Sign in'}
             </Button>
           </div>
         </form>

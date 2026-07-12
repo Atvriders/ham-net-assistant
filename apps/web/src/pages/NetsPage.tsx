@@ -2,7 +2,7 @@ import React, { useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Net, NetInput, NetSession, Repeater, ScriptCategory } from '@hna/shared';
 import { roleAtLeast } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, errorMessage } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
@@ -207,12 +207,24 @@ export function NetsPage() {
   );
   const allEmpty = visibleByKind.every((g) => g.length === 0);
 
+  const [takingControl, setTakingControl] = useState(false);
+  const [actionErr, setActionErr] = useState<string | null>(null);
   async function takeControl(sessionId: string) {
-    await apiFetch(`/sessions/${sessionId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ controlOpId: user!.id }),
-    });
-    nav(`/run/${sessionId}`);
+    // Guard re-entry so a double-click can't fire two racing PATCHes, and
+    // surface a failure instead of leaving a dead-looking button.
+    if (takingControl) return;
+    setTakingControl(true);
+    setActionErr(null);
+    try {
+      await apiFetch(`/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ controlOpId: user!.id }),
+      });
+      nav(`/run/${sessionId}`);
+    } catch (e) {
+      setActionErr(errorMessage(e));
+      setTakingControl(false);
+    }
   }
 
   function openStart(id: string, name: string) {
@@ -229,6 +241,12 @@ export function NetsPage() {
           session; officers can also add and edit nets.
         </p>
       </header>
+
+      {actionErr && (
+        <p className="hna-input-error" role="alert" style={{ marginBottom: 'var(--space-2)' }}>
+          {actionErr}
+        </p>
+      )}
 
       <div className="hna-toolbar">
         <div className="hna-toolbar__filter">

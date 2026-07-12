@@ -100,8 +100,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setTheme = (next: string) => {
+    const prev = slug;
     setSlug(next);
-    if (user) void updateMe({ collegeSlug: next });
+    if (user) {
+      void updateMe({ collegeSlug: next }).catch(() => {
+        // Persist failed — roll back so the picker reflects what's actually
+        // saved rather than silently reverting on the next login.
+        setSlug(prev);
+      });
+    }
   };
 
   return (

@@ -1,7 +1,7 @@
 import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Repeater, RepeaterInput } from '@hna/shared';
-import { apiFetch, ApiErrorException } from '../api/client.js';
+import { apiFetch, ApiErrorException, errorMessage } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
@@ -160,8 +160,15 @@ export function RepeatersPage() {
 
   async function del(id: string) {
     if (!confirm('Delete this repeater?')) return;
-    await apiFetch(`/repeaters/${id}`, { method: 'DELETE' });
-    await reload();
+    setTopAlert(null);
+    try {
+      await apiFetch(`/repeaters/${id}`, { method: 'DELETE' });
+      await reload();
+    } catch (e) {
+      // The visible `err` only reflects the list GET; surface a failed delete
+      // in the page-level alert instead of letting it vanish.
+      setTopAlert(errorMessage(e));
+    }
   }
 
   async function runDiscovery(query: string, openModal: boolean) {

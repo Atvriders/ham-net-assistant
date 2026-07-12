@@ -35,3 +35,15 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export function isAbortError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError';
 }
+
+/**
+ * Normalize any thrown value from a mutation into a human message: the API's
+ * `error.message` when it's an ApiErrorException, else the Error's message,
+ * else a generic fallback. Used by the async-action handlers app-wide so a
+ * failed request is surfaced instead of swallowed.
+ */
+export function errorMessage(e: unknown): string {
+  if (e instanceof ApiErrorException) return e.payload.message;
+  if (e instanceof Error && e.message) return e.message;
+  return 'Something went wrong';
+}

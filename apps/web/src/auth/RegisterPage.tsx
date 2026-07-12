@@ -38,6 +38,7 @@ export function RegisterPage() {
     inviteCode: '',
   });
   const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const callsignId = useId();
   const nameId = useId();
@@ -101,6 +102,10 @@ export function RegisterPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Guard against a double-submit that would fire a second POST /auth/register
+    // (the second erroring "email already taken" after the first navigated).
+    if (submitting) return;
+    setSubmitting(true);
     setErr(null);
     try {
       const payload: {
@@ -123,6 +128,7 @@ export function RegisterPage() {
     } catch (ex) {
       if (ex instanceof ApiErrorException) setErr(ex.payload.message);
       else setErr('Registration failed');
+      setSubmitting(false);
     }
   }
 
@@ -327,8 +333,8 @@ export function RegisterPage() {
             <Link to="/login" className="hna-btn ghost" style={{ textDecoration: 'none' }}>
               Sign in
             </Link>
-            <Button type="submit" variant="primary">
-              Create account
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'Creating…' : 'Create account'}
             </Button>
           </div>
         </form>

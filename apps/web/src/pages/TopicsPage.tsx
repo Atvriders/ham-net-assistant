@@ -1,6 +1,6 @@
 import React, { useId, useState } from 'react';
 import type { TopicSuggestion, TopicStatus } from '@hna/shared';
-import { apiFetch, ApiErrorException } from '../api/client.js';
+import { apiFetch, ApiErrorException, errorMessage } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -33,6 +33,10 @@ export function TopicsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<TopicSuggestion | null>(null);
+  // Errors + in-flight guard for the per-topic status/remove actions (distinct
+  // from the suggest-form `err`, which lives up in the form).
+  const [rowErr, setRowErr] = useState<string | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
 
   const isOfficer = user?.role === 'OFFICER' || user?.role === 'ADMIN';
   const titleId = useId();
@@ -66,19 +70,33 @@ export function TopicsPage() {
   }
 
   async function setStatus(id: string, status: TopicStatus) {
-    await apiFetch(`/topics/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    await refresh();
+    if (rowBusyId) return;
+    setRowBusyId(id);
+    setRowErr(null);
+    try {
+      await apiFetch(`/topics/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      await refresh();
+    } catch (e) {
+      setRowErr(errorMessage(e));
+    } finally {
+      setRowBusyId(null);
+    }
   }
 
   async function performDelete() {
     if (!confirmDelete) return;
     const id = confirmDelete.id;
     setConfirmDelete(null);
-    await apiFetch(`/topics/${id}`, { method: 'DELETE' });
-    await refresh();
+    setRowErr(null);
+    try {
+      await apiFetch(`/topics/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      setRowErr(errorMessage(e));
+    }
   }
 
   return (
@@ -133,6 +151,11 @@ export function TopicsPage() {
       <p className="hna-cap" style={{ marginTop: 'var(--space-5)' }}>
         [ SUGGESTIONS ]
       </p>
+      {rowErr && (
+        <p className="hna-input-error" role="alert" style={{ marginTop: 'var(--space-2)' }}>
+          {rowErr}
+        </p>
+      )}
       <div className="hna-stack">
         {topics.length === 0 && (
           <Card>
@@ -195,17 +218,32 @@ export function TopicsPage() {
                 </div>
                 <div className="hna-topic-card__actions">
                   {isOfficer && t.status === 'OPEN' && (
-                    <Button variant="secondary" size="sm" onClick={() => setStatus(t.id, 'USED')}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={rowBusyId !== null}
+                      onClick={() => setStatus(t.id, 'USED')}
+                    >
                       Mark used
                     </Button>
                   )}
                   {isOfficer && t.status !== 'OPEN' && (
-                    <Button variant="secondary" size="sm" onClick={() => setStatus(t.id, 'OPEN')}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={rowBusyId !== null}
+                      onClick={() => setStatus(t.id, 'OPEN')}
+                    >
                       Mark open
                     </Button>
                   )}
                   {isOfficer && t.status === 'OPEN' && (
-                    <Button variant="ghost" size="sm" onClick={() => setStatus(t.id, 'DISMISSED')}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={rowBusyId !== null}
+                      onClick={() => setStatus(t.id, 'DISMISSED')}
+                    >
                       Dismiss
                     </Button>
                   )}

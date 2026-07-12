@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Net, Repeater, NetSession } from '@hna/shared';
 import { roleAtLeast } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, errorMessage } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { LiveDot } from '../components/ui/LiveDot.js';
@@ -77,21 +77,41 @@ export function Dashboard() {
   // Run-the-net authority (take control, start a PREP session) — NET_CONTROL+.
   const canRunNet = !!user && roleAtLeast(user.role, 'NET_CONTROL');
 
+  // One in-flight action at a time across the ACTIVE NOW rows: the id disables
+  // that row's buttons (blocking the double-fire that produced the "click again"
+  // loop) and any failure is surfaced instead of swallowed.
+  const [busySessionId, setBusySessionId] = React.useState<string | null>(null);
+  const [actionErr, setActionErr] = React.useState<string | null>(null);
+
   async function takeControl(sessionId: string) {
-    await apiFetch(`/sessions/${sessionId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ controlOpId: user!.id }),
-    });
-    nav(`/run/${sessionId}`);
+    if (busySessionId) return;
+    setBusySessionId(sessionId);
+    setActionErr(null);
+    try {
+      await apiFetch(`/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ controlOpId: user!.id }),
+      });
+      nav(`/run/${sessionId}`);
+    } catch (e) {
+      setActionErr(errorMessage(e));
+      setBusySessionId(null);
+    }
   }
 
   /** Run-the-net shortcut from the dashboard PREP row — transition PREP → LIVE
    *  without first having to open the run-net page. */
   async function startPrepSession(sessionId: string) {
+    if (busySessionId) return;
+    setBusySessionId(sessionId);
+    setActionErr(null);
     try {
       await apiFetch(`/sessions/${sessionId}/start`, { method: 'POST' });
-    } catch {
-      /* ignore — the dashboard auto-refresh will surface any error state */
+      await refreshActive();
+    } catch (e) {
+      setActionErr(errorMessage(e));
+    } finally {
+      setBusySessionId(null);
     }
   }
   const { data: netsData } = useAutoFetch<NetWithRepeater[]>('/nets', {
@@ -142,6 +162,11 @@ export function Dashboard() {
         <h2 id="dash-active" className="hna-cap hna-cap--accent">
           [ ACTIVE NOW ]
         </h2>
+        {actionErr && (
+          <p className="hna-input-error" role="alert" style={{ marginBottom: 'var(--space-2)' }}>
+            {actionErr}
+          </p>
+        )}
         {activeSessions.length === 0 ? (
           <Card>
             <div className="hna-empty">
@@ -225,12 +250,10 @@ export function Dashboard() {
                         <Button
                           variant="ghost"
                           data-testid={`dash-start-prep-${s.id}`}
-                          onClick={async () => {
-                            await startPrepSession(s.id);
-                            await refreshActive();
-                          }}
+                          disabled={busySessionId === s.id}
+                          onClick={() => void startPrepSession(s.id)}
                         >
-                          Start
+                          {busySessionId === s.id ? 'Starting…' : 'Start'}
                         </Button>
                       )}
                       {canRunNet && (
@@ -239,7 +262,8 @@ export function Dashboard() {
                             variant="secondary"
                             aria-describedby={`dash-take-control-help-${s.id}`}
                             title="Transfer Net Control authority to yourself for this session."
-                            onClick={() => takeControl(s.id)}
+                            disabled={busySessionId === s.id}
+                            onClick={() => void takeControl(s.id)}
                           >
                             Take control
                           </Button>

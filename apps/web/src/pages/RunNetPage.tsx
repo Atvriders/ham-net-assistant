@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { roleAtLeast } from '@hna/shared';
-import { apiFetch, isAbortError } from '../api/client.js';
+import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Modal } from '../components/ui/Modal.js';
@@ -12,6 +12,7 @@ import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { CallsignInput } from '../components/CallsignInput.js';
 import { Input } from '../components/ui/Input.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { useAsyncAction } from '../lib/useAsyncAction.js';
 import { usePresence } from '../lib/usePresence.js';
 import { OnlineDot } from '../components/OnlineDot.js';
 import { useAuth } from '../auth/AuthProvider.js';
@@ -65,6 +66,13 @@ const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
   general: 'General',
   impromptu: 'Impromptu',
 };
+
+/** Format a mutation error into a console-appropriate message. */
+function topicErrorMessage(e: unknown): string {
+  return e instanceof ApiErrorException
+    ? e.payload.message
+    : (e as Error)?.message || 'Topic update failed';
+}
 
 /** Elapsed `T+HH:MM:SS` mono counter that ticks every second. */
 function ElapsedTimer({ startIso }: { startIso: string }) {
@@ -122,6 +130,7 @@ export function RunNetPage() {
   const [recommendedTopics, setRecommendedTopics] = useState<RecommendedTopic[]>([]);
   const [customTopic, setCustomTopic] = useState('');
   const [topicBusy, setTopicBusy] = useState(false);
+  const [topicErr, setTopicErr] = useState<string | null>(null);
   const [topicQueueNonce, setTopicQueueNonce] = useState(0);
   // Live-net topic editor toggle. Once the net is LIVE the topic collapses to a
   // compact read-only line with an Edit/Add button; opening it reveals the same
@@ -227,7 +236,7 @@ export function RunNetPage() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [overflowOpen]);
 
-  async function reassignControl(newControlOpId: string) {
+  const reassignAction = useAsyncAction(async (newControlOpId: string) => {
     if (!sessionId) return;
     await apiFetch(`/sessions/${sessionId}`, {
       method: 'PATCH',
@@ -235,7 +244,7 @@ export function RunNetPage() {
     });
     setControlOpen(false);
     await refresh();
-  }
+  });
 
   // Prep-view topic actions. All three PATCH the session and then refresh so the
   // chosen topic shows immediately. Picking a queued suggestion also marks that
@@ -244,6 +253,7 @@ export function RunNetPage() {
   async function applySuggestion(s: RecommendedTopic) {
     if (!sessionId || topicBusy) return;
     setTopicBusy(true);
+    setTopicErr(null);
     try {
       await apiFetch(`/sessions/${sessionId}`, {
         method: 'PATCH',
@@ -257,9 +267,14 @@ export function RunNetPage() {
       // Collapse the live editor back to the compact display after a change.
       // No-op in PREP where the picker is always shown.
       setLiveTopicEditorOpen(false);
-      await refresh();
+    } catch (e) {
+      setTopicErr(topicErrorMessage(e));
     } finally {
+      // Reconcile the UI whether the change applied or failed (a partial
+      // failure — session set but suggestion not drained — still needs a
+      // re-fetch so the queue matches the server).
       setTopicBusy(false);
+      await refresh();
     }
   }
 
@@ -268,6 +283,7 @@ export function RunNetPage() {
     const trimmed = customTopic.trim();
     if (!trimmed) return;
     setTopicBusy(true);
+    setTopicErr(null);
     try {
       // Custom/free-text topic — title only, no topicId (clears any prior link).
       await apiFetch(`/sessions/${sessionId}`, {
@@ -276,15 +292,18 @@ export function RunNetPage() {
       });
       setCustomTopic('');
       setLiveTopicEditorOpen(false);
-      await refresh();
+    } catch (e) {
+      setTopicErr(topicErrorMessage(e));
     } finally {
       setTopicBusy(false);
+      await refresh();
     }
   }
 
   async function clearTopic() {
     if (!sessionId || topicBusy) return;
     setTopicBusy(true);
+    setTopicErr(null);
     try {
       // Empty topicTitle clears both the title and the link server-side.
       await apiFetch(`/sessions/${sessionId}`, {
@@ -292,9 +311,11 @@ export function RunNetPage() {
         body: JSON.stringify({ topicTitle: '' }),
       });
       setLiveTopicEditorOpen(false);
-      await refresh();
+    } catch (e) {
+      setTopicErr(topicErrorMessage(e));
     } finally {
       setTopicBusy(false);
+      await refresh();
     }
   }
 
@@ -317,6 +338,18 @@ export function RunNetPage() {
       setStartingNet(false);
     }
   }
+
+  // Take Net Control authority for this session (status-strip inline button).
+  // Guarded + error-surfacing so a failed/slow PATCH can't silently no-op and
+  // invite a double-click.
+  const takeControlAction = useAsyncAction(async () => {
+    if (!user || !session) return;
+    await apiFetch(`/sessions/${session.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ controlOpId: user.id }),
+    });
+    await refresh();
+  });
 
   // Autofill name from member directory (instant), check-in history + FCC lookup
   // (parallel, debounced) with history priority for repeat visitors.
@@ -373,12 +406,14 @@ export function RunNetPage() {
     };
   }, [callsign, directory]);
 
-  async function undoLast() {
+  // Undo the most recent check-in. Captures the target id inside the action so
+  // a slow refresh can't shift `checkIns[0]` under a rapid second press.
+  const undoLastAction = useAsyncAction(async () => {
     const last = session?.checkIns[0];
     if (!last) return;
     await apiFetch(`/checkins/${last.id}`, { method: 'DELETE' });
     await refresh();
-  }
+  });
 
   const canModify = (ci: CheckIn): boolean => {
     if (canRunNet) return true;
@@ -390,23 +425,17 @@ export function RunNetPage() {
    *  disabled-with-tooltip pencil state after the 5-min window closes). */
   const ownsRow = (ci: CheckIn): boolean => ci.createdById === user?.id;
 
-  async function performDelete(id: string) {
-    try {
-      await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
-      await refresh();
-    } catch (e) {
-      console.warn('delete failed', e);
-    } finally {
-      setConfirmDeleteId(null);
-    }
-  }
+  // Delete a check-in (confirm-modal action). On success the modal closes; on
+  // failure it stays open with the error surfaced in the modal body. The
+  // in-flight guard blocks a double-fire even though ConfirmModal's button
+  // can't be disabled (its prop API is intentionally frozen).
+  const deleteCheckInAction = useAsyncAction(async (id: string) => {
+    await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
+    setConfirmDeleteId(null);
+    await refresh();
+  });
 
-  function endNet() {
-    if (!sessionId) return;
-    setReviewOpen(true);
-  }
-
-  async function confirmEnd() {
+  const endNetAction = useAsyncAction(async () => {
     if (!sessionId) return;
     await apiFetch(`/sessions/${sessionId}`, {
       method: 'PATCH',
@@ -415,11 +444,22 @@ export function RunNetPage() {
         notes: endNotes.trim() || undefined,
       }),
     });
+    // Close the review modal, then navigate — success is reflected exactly once
+    // and only after the PATCH resolves.
+    setReviewOpen(false);
     nav(`/sessions/${sessionId}/summary`);
+  });
+
+  function endNet() {
+    if (!sessionId) return;
+    // Clear any stale error from a previous attempt before re-opening.
+    endNetAction.reset();
+    setReviewOpen(true);
   }
 
-  async function addCheckIn(e?: React.FormEvent) {
-    if (e) e.preventDefault();
+  // Log a check-in. Guarded (disables Add + blocks re-entry so a fast
+  // click+Enter can't log the same operator twice) and error-surfacing.
+  const addCheckInAction = useAsyncAction(async () => {
     if (!sessionId) return;
     if (!/^[A-Z0-9]{3,7}$/.test(callsign)) return;
     const trimmed = name.trim();
@@ -445,7 +485,7 @@ export function RunNetPage() {
     lastAutoFilledNameRef.current = '';
     inputRef.current?.focus();
     await refresh();
-  }
+  });
 
   // Note: a previous build wired a global Escape listener to open the
   // end-net review modal. That collided with Modal's own Escape-to-close,
@@ -456,7 +496,7 @@ export function RunNetPage() {
   function onCallsignKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Backspace' && callsign === '') {
       e.preventDefault();
-      void undoLast();
+      void undoLastAction.run();
       return;
     }
     if (e.key === 'Enter') {
@@ -468,7 +508,7 @@ export function RunNetPage() {
         nameInput?.focus();
         return;
       }
-      void addCheckIn();
+      void addCheckInAction.run();
     }
   }
 
@@ -591,15 +631,10 @@ export function RunNetPage() {
                 size="sm"
                 aria-describedby="run-take-control-help"
                 title="Transfer Net Control authority to yourself for this session."
-                onClick={async () => {
-                  await apiFetch(`/sessions/${session.id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ controlOpId: user.id }),
-                  });
-                  await refresh();
-                }}
+                disabled={takeControlAction.pending}
+                onClick={() => void takeControlAction.run()}
               >
-                Take control
+                {takeControlAction.pending ? 'Taking…' : 'Take control'}
               </Button>
               {/* Accessibility caption — read by screen readers via
                * aria-describedby but rendered visually hidden so it
@@ -610,13 +645,25 @@ export function RunNetPage() {
               <span id="run-take-control-help" className="sr-only">
                 Transfer Net Control authority to yourself for this session.
               </span>
+              {takeControlAction.error && (
+                <span
+                  className="hna-input-error"
+                  role="alert"
+                  style={{ fontSize: 11 }}
+                >
+                  {takeControlAction.error}
+                </span>
+              )}
             </>
           )}
           {canRunNet && !session.endedAt && (
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setControlOpen(true)}
+              onClick={() => {
+                reassignAction.reset();
+                setControlOpen(true);
+              }}
             >
               Change control
             </Button>
@@ -827,6 +874,16 @@ export function RunNetPage() {
                 Set
               </Button>
             </div>
+            {topicErr && (
+              <p
+                className="hna-input-error"
+                role="alert"
+                data-testid="topic-error"
+                style={{ marginTop: 8 }}
+              >
+                {topicErr}
+              </p>
+            )}
           </>
         );
 
@@ -885,7 +942,10 @@ export function RunNetPage() {
                   type="button"
                   className="hna-roster__btn"
                   data-testid="topic-live-edit-toggle"
-                  onClick={() => setLiveTopicEditorOpen((v) => !v)}
+                  onClick={() => {
+                    setTopicErr(null);
+                    setLiveTopicEditorOpen((v) => !v);
+                  }}
                   aria-expanded={liveTopicEditorOpen}
                   aria-label={
                     liveTopicEditorOpen
@@ -982,7 +1042,10 @@ export function RunNetPage() {
             )}
             <form
               className="hna-checkin-form"
-              onSubmit={addCheckIn}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void addCheckInAction.run();
+              }}
               aria-disabled={isPrep}
               style={isPrep ? { opacity: 0.55 } : undefined}
             >
@@ -1020,7 +1083,7 @@ export function RunNetPage() {
                           'checkin-comment-input',
                         ) as HTMLInputElement | null;
                         if (commentInput) commentInput.focus();
-                        else void addCheckIn();
+                        else void addCheckInAction.run();
                       }
                     }}
                   />
@@ -1088,24 +1151,33 @@ export function RunNetPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      void addCheckIn();
+                      void addCheckInAction.run();
                     }
                   }}
                 />
               </div>
               <div className="hna-checkin-form__actions">
-                <Button type="submit" disabled={isPrep} data-testid="checkin-add-button">
-                  Add
+                <Button
+                  type="submit"
+                  disabled={isPrep || addCheckInAction.pending}
+                  data-testid="checkin-add-button"
+                >
+                  {addCheckInAction.pending ? 'Adding…' : 'Add'}
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={undoLast}
-                  disabled={isPrep}
+                  onClick={() => void undoLastAction.run()}
+                  disabled={isPrep || undoLastAction.pending}
                 >
                   Undo
                 </Button>
               </div>
+              {(addCheckInAction.error || undoLastAction.error) && (
+                <p className="hna-input-error" role="alert" style={{ marginTop: 6 }}>
+                  {addCheckInAction.error || undoLastAction.error}
+                </p>
+              )}
             </form>
 
             <SectionDivider>LOG</SectionDivider>
@@ -1190,7 +1262,12 @@ export function RunNetPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => canEdit && setConfirmDeleteId(ci.id)}
+                        onClick={() => {
+                          if (canEdit) {
+                            deleteCheckInAction.reset();
+                            setConfirmDeleteId(ci.id);
+                          }
+                        }}
                         className="hna-roster__btn"
                         data-variant="danger"
                         disabled={!canEdit}
@@ -1279,7 +1356,10 @@ export function RunNetPage() {
       {/* ===== End-of-net review modal ===== */}
       <Modal
         open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
+        onClose={() => {
+          setReviewOpen(false);
+          endNetAction.reset();
+        }}
         title="Review before ending net"
       >
         <div style={{ marginBottom: 8 }}>
@@ -1357,6 +1437,15 @@ export function RunNetPage() {
             Add notes
           </Button>
         )}
+        {endNetAction.error && (
+          <p
+            className="hna-input-error"
+            role="alert"
+            style={{ marginTop: 12, marginBottom: 0 }}
+          >
+            {endNetAction.error}
+          </p>
+        )}
         <div
           style={{
             display: 'flex',
@@ -1368,12 +1457,21 @@ export function RunNetPage() {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setReviewOpen(false)}
+            disabled={endNetAction.pending}
+            onClick={() => {
+              setReviewOpen(false);
+              endNetAction.reset();
+            }}
           >
             Keep running
           </Button>
-          <Button type="button" variant="danger" onClick={confirmEnd}>
-            End net
+          <Button
+            type="button"
+            variant="danger"
+            disabled={endNetAction.pending}
+            onClick={() => void endNetAction.run()}
+          >
+            {endNetAction.pending ? 'Ending…' : 'End net'}
           </Button>
         </div>
       </Modal>
@@ -1397,7 +1495,10 @@ export function RunNetPage() {
       {/* Change control modal */}
       <Modal
         open={controlOpen}
-        onClose={() => setControlOpen(false)}
+        onClose={() => {
+          setControlOpen(false);
+          reassignAction.reset();
+        }}
         title="Change Net Control"
       >
         <p
@@ -1453,8 +1554,8 @@ export function RunNetPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={session.controlOpId === c.id}
-                onClick={() => reassignControl(c.id)}
+                disabled={session.controlOpId === c.id || reassignAction.pending}
+                onClick={() => void reassignAction.run(c.id)}
               >
                 Assign
               </Button>
@@ -1466,8 +1567,19 @@ export function RunNetPage() {
             </li>
           )}
         </ul>
+        {reassignAction.error && (
+          <p className="hna-input-error" role="alert" style={{ marginTop: 8 }}>
+            {reassignAction.error}
+          </p>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-          <Button variant="secondary" onClick={() => setControlOpen(false)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setControlOpen(false);
+              reassignAction.reset();
+            }}
+          >
             Close
           </Button>
         </div>
@@ -1476,11 +1588,27 @@ export function RunNetPage() {
       <ConfirmModal
         open={confirmDeleteId !== null}
         title="Delete check-in"
-        message="Delete this check-in?"
+        message={
+          <>
+            Delete this check-in?
+            {deleteCheckInAction.error && (
+              <span
+                className="hna-input-error"
+                role="alert"
+                style={{ display: 'block', marginTop: 8 }}
+              >
+                {deleteCheckInAction.error}
+              </span>
+            )}
+          </>
+        }
         confirmLabel="Delete"
-        onClose={() => setConfirmDeleteId(null)}
+        onClose={() => {
+          setConfirmDeleteId(null);
+          deleteCheckInAction.reset();
+        }}
         onConfirm={() => {
-          if (confirmDeleteId) void performDelete(confirmDeleteId);
+          if (confirmDeleteId) void deleteCheckInAction.run(confirmDeleteId);
         }}
       />
     </div>

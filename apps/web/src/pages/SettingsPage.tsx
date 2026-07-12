@@ -4,6 +4,7 @@ import { Input } from '../components/ui/Input.js';
 import { Button } from '../components/ui/Button.js';
 import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { useAsyncAction } from '../lib/useAsyncAction.js';
 import { ThemePicker } from '../theme/ThemePicker.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
@@ -26,13 +27,13 @@ export function SettingsPage() {
   const nameId = useId();
   const callsignId = useId();
 
-  if (!user) return null;
-
-  async function saveProfile() {
+  const saveAction = useAsyncAction(async () => {
     await updateMe({ name });
     setSavedFlash(true);
     window.setTimeout(() => setSavedFlash(false), 1800);
-  }
+  });
+
+  if (!user) return null;
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -79,13 +80,20 @@ export function SettingsPage() {
             />
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-            <Button onClick={saveProfile}>Save</Button>
+            <Button onClick={() => void saveAction.run()} disabled={saveAction.pending}>
+              {saveAction.pending ? 'Saving…' : 'Save'}
+            </Button>
             {savedFlash && (
               <span
                 className="hna-mono"
                 style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--color-success)' }}
               >
                 SAVED
+              </span>
+            )}
+            {saveAction.error && (
+              <span className="hna-input-error" role="alert">
+                {saveAction.error}
               </span>
             )}
             <span

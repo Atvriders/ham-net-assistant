@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Net, NetInput, Repeater } from '@hna/shared';
 import { DEFAULT_REMINDER_MINUTES } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, errorMessage } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { Card } from './ui/Card.js';
@@ -45,6 +45,7 @@ export function ReminderSettingsPanel() {
     null,
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [reminderErr, setReminderErr] = useState<string | null>(null);
 
   const weeklyNets = useMemo(() => {
     const all = netsData ?? [];
@@ -61,6 +62,7 @@ export function ReminderSettingsPanel() {
 
   async function setReminderMinutesForNet(net: NetRow, next: number[]) {
     setPendingId(net.id);
+    setReminderErr(null);
     try {
       // PATCH /nets/:id validates against the full NetInput schema (name,
       // repeaterId, dayOfWeek, startLocal, timezone, …), so a partial body
@@ -72,6 +74,9 @@ export function ReminderSettingsPanel() {
         body: JSON.stringify({ ...input, reminderMinutes: next }),
       });
       await refreshNets();
+    } catch (e) {
+      // Without this the switch just reverts on the next 30s poll with no word.
+      setReminderErr(errorMessage(e));
     } finally {
       setPendingId(null);
     }
@@ -101,6 +106,11 @@ export function ReminderSettingsPanel() {
           or open Customize to fine-tune. Impromptu nets are skipped — they
           have no fixed schedule.
         </p>
+        {reminderErr && (
+          <p className="hna-input-error" role="alert">
+            {reminderErr}
+          </p>
+        )}
         {netsData === null && <p>Loading…</p>}
         {netsData !== null && weeklyNets.length === 0 && (
           <p style={{ fontSize: 13, opacity: 0.7, fontStyle: 'italic' }}>

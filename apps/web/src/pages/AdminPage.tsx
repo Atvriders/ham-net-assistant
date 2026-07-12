@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import type { PublicUser } from '@hna/shared';
 import { ROLE_LABEL, Role } from '@hna/shared';
-import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
+import { apiFetch, isAbortError, ApiErrorException, errorMessage } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
@@ -137,6 +137,10 @@ export function AdminPage() {
   );
   const [defaultSlug, setDefaultSlug] = useState<string>('default');
   const [defaultSaved, setDefaultSaved] = useState<string | null>(null);
+  const [defaultThemeSaving, setDefaultThemeSaving] = useState(false);
+  const [defaultThemeError, setDefaultThemeError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [discordSaveError, setDiscordSaveError] = useState<string | null>(null);
   const [logImportOpen, setLogImportOpen] = useState(false);
   const [discordCfg, setDiscordCfg] = useState<DiscordConfig | null>(null);
   const [discordTokenInput, setDiscordTokenInput] = useState('');
@@ -185,6 +189,7 @@ export function AdminPage() {
   async function saveDiscord() {
     if (!discordCfg) return;
     setDiscordSaving(true);
+    setDiscordSaveError(null);
     try {
       const body: Record<string, unknown> = {};
       if (!discordCfg.enabledFromEnv) body.enabled = discordEnabledInput;
@@ -200,6 +205,10 @@ export function AdminPage() {
       await loadDiscord();
       setDiscordSaved(true);
       window.setTimeout(() => setDiscordSaved(false), 2000);
+    } catch (e) {
+      // Mirror the sibling testDiscord: surface the failure instead of letting
+      // the `finally` swallow it into a silent no-op.
+      setDiscordSaveError(errorMessage(e));
     } finally {
       setDiscordSaving(false);
     }
@@ -229,8 +238,14 @@ export function AdminPage() {
   }
 
   async function setRole(id: string, role: Role) {
-    await apiFetch(`/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
-    await refresh();
+    setRoleError(null);
+    try {
+      await apiFetch(`/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+      await refresh();
+    } catch (e) {
+      // On failure the 5s /users poll snaps the dropdown back — say why.
+      setRoleError(errorMessage(e));
+    }
   }
 
   async function performDeleteUser(u: PublicUser) {
@@ -311,13 +326,22 @@ export function AdminPage() {
   }
 
   async function saveDefaultTheme() {
-    const res = await apiFetch<{ slug: string }>('/themes/default', {
-      method: 'PATCH',
-      body: JSON.stringify({ slug: defaultSlug }),
-    });
-    setDefaultSlug(res.slug);
-    setDefaultSaved(res.slug);
-    window.setTimeout(() => setDefaultSaved(null), 2000);
+    if (defaultThemeSaving) return;
+    setDefaultThemeSaving(true);
+    setDefaultThemeError(null);
+    try {
+      const res = await apiFetch<{ slug: string }>('/themes/default', {
+        method: 'PATCH',
+        body: JSON.stringify({ slug: defaultSlug }),
+      });
+      setDefaultSlug(res.slug);
+      setDefaultSaved(res.slug);
+      window.setTimeout(() => setDefaultSaved(null), 2000);
+    } catch (e) {
+      setDefaultThemeError(errorMessage(e));
+    } finally {
+      setDefaultThemeSaving(false);
+    }
   }
 
   return (
@@ -333,6 +357,11 @@ export function AdminPage() {
 
       {/* MEMBERS */}
       <p className="hna-cap hna-cap--accent">[ MEMBERS ]</p>
+      {roleError && (
+        <p className="hna-input-error" role="alert" style={{ marginBottom: 'var(--space-2)' }}>
+          {roleError}
+        </p>
+      )}
       <Card>
         <div className="hna-section-caption">
           <h2 className="hna-section-caption__title">Members</h2>
@@ -545,6 +574,11 @@ export function AdminPage() {
                     SAVED
                   </span>
                 )}
+                {discordSaveError && (
+                  <span className="hna-input-error" role="alert">
+                    {discordSaveError}
+                  </span>
+                )}
               </div>
               {discordTestResult && (
                 <p
@@ -613,7 +647,9 @@ export function AdminPage() {
               />
             );
           })()}
-          <Button onClick={saveDefaultTheme}>Save</Button>
+          <Button onClick={saveDefaultTheme} disabled={defaultThemeSaving}>
+            {defaultThemeSaving ? 'Saving…' : 'Save'}
+          </Button>
           {defaultSaved && (
             <span
               className="hna-mono"
@@ -624,6 +660,11 @@ export function AdminPage() {
               }}
             >
               SAVED · {defaultSaved}
+            </span>
+          )}
+          {defaultThemeError && (
+            <span className="hna-input-error" role="alert">
+              {defaultThemeError}
             </span>
           )}
         </div>

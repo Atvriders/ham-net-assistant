@@ -11,6 +11,7 @@ import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { Input } from '../components/ui/Input.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { useAsyncAction } from '../lib/useAsyncAction.js';
 import { usePresence } from '../lib/usePresence.js';
 import {
   capitalizeFirst,
@@ -62,17 +63,15 @@ export function JoinNetPage() {
   };
   const ownsRow = (ci: CheckIn): boolean => ci.createdById === user?.id;
 
-  async function performDelete(id: string) {
-    try {
-      await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
-      setCheckedInAt(null);
-      await refresh();
-    } catch (e) {
-      console.warn('delete failed', e);
-    } finally {
-      setConfirmDeleteId(null);
-    }
-  }
+  // Delete a check-in. Re-entrancy-guarded (so a double-click can't double-fire
+  // while ConfirmModal's button stays live) and error-surfacing: the modal
+  // stays open with the message on failure, and closes only on success.
+  const deleteCheckInAction = useAsyncAction(async (id: string) => {
+    await apiFetch(`/checkins/${id}`, { method: 'DELETE' });
+    setCheckedInAt(null);
+    setConfirmDeleteId(null);
+    await refresh();
+  });
 
   // When the polled session first arrives, lock the button if we're
   // already on the list.
@@ -504,7 +503,12 @@ export function JoinNetPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => canEdit && setConfirmDeleteId(ci.id)}
+                    onClick={() => {
+                      if (canEdit) {
+                        deleteCheckInAction.reset();
+                        setConfirmDeleteId(ci.id);
+                      }
+                    }}
                     className="hna-roster__btn"
                     data-variant="danger"
                     disabled={!canEdit}
@@ -543,11 +547,27 @@ export function JoinNetPage() {
       <ConfirmModal
         open={confirmDeleteId !== null}
         title="Delete check-in"
-        message="Delete this check-in?"
+        message={
+          <>
+            Delete this check-in?
+            {deleteCheckInAction.error && (
+              <span
+                className="hna-input-error"
+                role="alert"
+                style={{ display: 'block', marginTop: 8 }}
+              >
+                {deleteCheckInAction.error}
+              </span>
+            )}
+          </>
+        }
         confirmLabel="Delete"
-        onClose={() => setConfirmDeleteId(null)}
+        onClose={() => {
+          setConfirmDeleteId(null);
+          deleteCheckInAction.reset();
+        }}
         onConfirm={() => {
-          if (confirmDeleteId) void performDelete(confirmDeleteId);
+          if (confirmDeleteId) void deleteCheckInAction.run(confirmDeleteId);
         }}
       />
     </div>
