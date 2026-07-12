@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
-import type { PublicUser, Role } from '@hna/shared';
+import type { PublicUser } from '@hna/shared';
+import { ROLE_LABEL, Role } from '@hna/shared';
 import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
@@ -388,7 +389,7 @@ export function AdminPage() {
                       {u.email}
                     </td>
                     <td>
-                      <span className="hna-chip">{u.role}</span>
+                      <span className="hna-chip">{ROLE_LABEL[u.role]}</span>
                     </td>
                     <td>
                       <select
@@ -405,19 +406,31 @@ export function AdminPage() {
                       </select>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(['MEMBER', 'OFFICER', 'ADMIN'] as Role[])
-                          .filter((r) => r !== u.role)
-                          .map((r) => (
-                            <Button
-                              key={r}
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setRole(u.id, r)}
-                            >
-                              Make {r.toLowerCase()}
-                            </Button>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {/* Role assignment. Options come from the shared Role
+                            enum (Member / Net Control / Officer / Admin) with
+                            the shared label map, so granting NET_CONTROL is a
+                            single dropdown pick. */}
+                        <select
+                          className="hna-input"
+                          value={u.role}
+                          onChange={(e) => setRole(u.id, e.target.value as Role)}
+                          aria-label={`Role for ${displayCallsign(u.callsign)}`}
+                          style={{ minHeight: 32 }}
+                        >
+                          {Role.options.map((r) => (
+                            <option key={r} value={r}>
+                              {ROLE_LABEL[r]}
+                            </option>
                           ))}
+                        </select>
                         {currentUser && u.id !== currentUser.id && (
                           <Button
                             variant="danger"

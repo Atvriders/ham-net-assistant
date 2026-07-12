@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
+import { roleAtLeast } from '@hna/shared';
 import { apiFetch, isAbortError } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
@@ -127,7 +128,15 @@ export function RunNetPage() {
   // picker inline so an officer can change the topic mid-net without cluttering
   // the running console. Unused/irrelevant in PREP (the picker is always shown).
   const [liveTopicEditorOpen, setLiveTopicEditorOpen] = useState(false);
-  const canManageControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  // Two distinct gates:
+  //   canRunNet   — run-the-net authority (take/change control, start/end the
+  //                 session, edit/delete check-ins, set the net topic). Granted
+  //                 to NET_CONTROL and up.
+  //   canManageNet — club-config authority (editing the net itself via
+  //                 NetEditModal). OFFICER and up only. A Net Control operator
+  //                 can run a live net but must NOT touch net configuration.
+  const canRunNet = !!user && roleAtLeast(user.role, 'NET_CONTROL');
+  const canManageNet = !!user && roleAtLeast(user.role, 'OFFICER');
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
@@ -168,7 +177,7 @@ export function RunNetPage() {
 
   // Load the Net Control candidate roster when the reassign modal opens.
   useEffect(() => {
-    if (!controlOpen || !canManageControl) return;
+    if (!controlOpen || !canRunNet) return;
     const ctrl = new AbortController();
     apiFetch<ControlCandidate[]>('/users/control-candidates', { signal: ctrl.signal })
       .then(setControlCandidates)
@@ -176,7 +185,7 @@ export function RunNetPage() {
         if (!isAbortError(e)) console.warn('control candidates load failed', e);
       });
     return () => ctrl.abort();
-  }, [controlOpen, canManageControl]);
+  }, [controlOpen, canRunNet]);
 
   // Load the OPEN topic-suggestion queue for the topic picker. Fetched while an
   // officer can pick from the queue: always in PREP, and in LIVE only while the
@@ -187,7 +196,7 @@ export function RunNetPage() {
   // consumed (marked USED).
   const sessionIsPrep = session?.liveAt == null;
   const topicQueueActive =
-    canManageControl && (sessionIsPrep || liveTopicEditorOpen);
+    canRunNet && (sessionIsPrep || liveTopicEditorOpen);
   useEffect(() => {
     if (!topicQueueActive) {
       setRecommendedTopics([]);
@@ -372,7 +381,7 @@ export function RunNetPage() {
   }
 
   const canModify = (ci: CheckIn): boolean => {
-    if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
+    if (canRunNet) return true;
     const recent = Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
     return ci.createdById === user?.id && recent;
   };
@@ -553,7 +562,7 @@ export function RunNetPage() {
           )}
         </div>
         <div className="hna-runnet-status__actions">
-          {isPrep && canManageControl && !session.endedAt && (
+          {isPrep && canRunNet && !session.endedAt && (
             <>
               <Button
                 variant="primary"
@@ -575,7 +584,7 @@ export function RunNetPage() {
               )}
             </>
           )}
-          {user && canManageControl && session.controlOpId !== user.id && !session.endedAt && (
+          {user && canRunNet && session.controlOpId !== user.id && !session.endedAt && (
             <>
               <Button
                 variant="secondary"
@@ -603,7 +612,7 @@ export function RunNetPage() {
               </span>
             </>
           )}
-          {canManageControl && !session.endedAt && (
+          {canRunNet && !session.endedAt && (
             <Button
               variant="secondary"
               size="sm"
@@ -612,7 +621,11 @@ export function RunNetPage() {
               Change control
             </Button>
           )}
-          {canManageControl && (
+          {/* Overflow (⋯) currently holds only the config-only "Edit net"
+              action, so it is gated on canManageNet — a Net Control operator
+              never sees it. Any future run-the-net items added here should move
+              behind canRunNet instead. */}
+          {canManageNet && (
             <div className="hna-overflow" ref={overflowMenuRef}>
               <button
                 type="button"
@@ -642,7 +655,7 @@ export function RunNetPage() {
               )}
             </div>
           )}
-          {canManageControl && (
+          {canRunNet && (
             <Button variant="danger" size="sm" onClick={endNet}>
               End net
             </Button>
@@ -669,8 +682,10 @@ export function RunNetPage() {
        */}
       {(() => {
         // ===== TOPIC =====
-        // OFFICER/ADMIN can pick a queued suggestion, type a custom topic, or
-        // clear the topic in both PREP and LIVE. In PREP the full picker is
+        // Anyone who can run the net (NET_CONTROL+) can pick a queued
+        // suggestion, type a custom topic, or clear the topic in both PREP and
+        // LIVE — setting the net topic is a run-the-net action. In PREP the
+        // full picker is
         // expanded inline; once LIVE it collapses to a compact read-only line
         // with an Edit/Add toggle that reveals the same picker on demand so the
         // running console stays tidy. Members only ever see the read-only line.
@@ -816,9 +831,9 @@ export function RunNetPage() {
         );
 
         const topicBlock =
-          isPrep && canManageControl ? (
-            // PREP (officer): the full picker is expanded inline — the operator
-            // is setting the topic before going live.
+          isPrep && canRunNet ? (
+            // PREP (net control+): the full picker is expanded inline — the
+            // operator is setting the topic before going live.
             <Card>
               <header className="hna-section-caption">
                 <h2 className="hna-section-caption__title">
@@ -852,8 +867,8 @@ export function RunNetPage() {
 
               {topicPickerControls}
             </Card>
-          ) : !isPrep && canManageControl ? (
-            // LIVE (officer): compact read-only line + an Edit/Add toggle. The
+          ) : !isPrep && canRunNet ? (
+            // LIVE (net control+): compact read-only line + an Edit/Add toggle. The
             // full picker is only revealed while actively editing so the running
             // console stays tidy; it collapses again after a change.
             <Card>
@@ -1219,7 +1234,7 @@ export function RunNetPage() {
                 <span>Script</span>
                 <span className="hna-chip">{scriptCategoryLabel}</span>
               </h2>
-              {canManageControl && (
+              {canManageNet && (
                 <Button
                   variant="secondary"
                   size="sm"

@@ -212,8 +212,8 @@ export function App() {
                 <Route path="/repeaters" element={<RequireRole><RepeatersPage /></RequireRole>} />
                 <Route path="/nets" element={<RequireRole><NetsPage /></RequireRole>} />
                 <Route path="/nets/:netId/join" element={<RequireRole><JoinNetPage /></RequireRole>} />
-                <Route path="/run/:sessionId" element={<RequireRole min="OFFICER"><RunNetPage /></RequireRole>} />
-                <Route path="/sessions/:sessionId/summary" element={<RequireRole min="OFFICER"><SessionSummaryPage /></RequireRole>} />
+                <Route path="/run/:sessionId" element={<RequireRole min="NET_CONTROL"><RunNetPage /></RequireRole>} />
+                <Route path="/sessions/:sessionId/summary" element={<RequireRole min="NET_CONTROL"><SessionSummaryPage /></RequireRole>} />
                 <Route
                   path="/stats"
                   element={

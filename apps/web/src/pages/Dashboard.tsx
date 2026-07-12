@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Net, Repeater, NetSession } from '@hna/shared';
+import { roleAtLeast } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
@@ -73,7 +74,8 @@ export function Dashboard() {
   const { user } = useAuth();
   const nav = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
-  const canControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  // Run-the-net authority (take control, start a PREP session) — NET_CONTROL+.
+  const canRunNet = !!user && roleAtLeast(user.role, 'NET_CONTROL');
 
   async function takeControl(sessionId: string) {
     await apiFetch(`/sessions/${sessionId}`, {
@@ -83,7 +85,7 @@ export function Dashboard() {
     nav(`/run/${sessionId}`);
   }
 
-  /** OFFICER+ shortcut from the dashboard PREP row — transition PREP → LIVE
+  /** Run-the-net shortcut from the dashboard PREP row — transition PREP → LIVE
    *  without first having to open the run-net page. */
   async function startPrepSession(sessionId: string) {
     try {
@@ -219,7 +221,7 @@ export function Dashboard() {
                       </span>
                     </div>
                     <div className="hna-net-row__actions">
-                      {canControl && isPrep && (
+                      {canRunNet && isPrep && (
                         <Button
                           variant="ghost"
                           data-testid={`dash-start-prep-${s.id}`}
@@ -231,7 +233,7 @@ export function Dashboard() {
                           Start
                         </Button>
                       )}
-                      {canControl && (
+                      {canRunNet && (
                         <>
                           <Button
                             variant="secondary"

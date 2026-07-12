@@ -1,6 +1,7 @@
 import React, { useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Net, NetInput, NetSession, Repeater, ScriptCategory } from '@hna/shared';
+import { roleAtLeast } from '@hna/shared';
 import { apiFetch } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { Button } from '../components/ui/Button.js';
@@ -41,7 +42,8 @@ const SCRIPT_CATEGORY_LABELS: Record<ScriptCategory, string> = {
 function NetCard({
   n,
   active,
-  canEdit,
+  canRun,
+  canManage,
   onStart,
   onTake,
   onEdit,
@@ -49,7 +51,10 @@ function NetCard({
 }: {
   n: NetWithRepeater;
   active?: { id: string; controlOpId: string | null };
-  canEdit: boolean;
+  // canRun: run-the-net authority (open/start a session, take control) —
+  // NET_CONTROL+. canManage: club-config authority (edit the net) — OFFICER+.
+  canRun: boolean;
+  canManage: boolean;
   onStart: (id: string, name: string) => void;
   onTake: (sessionId: string) => void;
   onEdit: (n: NetWithRepeater) => void;
@@ -115,12 +120,12 @@ function NetCard({
           )}
         </div>
         <div className="hna-net-row__actions">
-          {canEdit && !active && (
+          {canRun && !active && (
             <Button variant="primary" onClick={() => onStart(n.id, n.name)}>
               Open net
             </Button>
           )}
-          {canEdit && active && (
+          {canRun && active && (
             <>
               <Button
                 variant="primary"
@@ -144,7 +149,7 @@ function NetCard({
               Join net
             </Button>
           )}
-          {canEdit && (
+          {canManage && (
             <Button variant="secondary" onClick={() => onEdit(n)}>
               Edit
             </Button>
@@ -158,7 +163,10 @@ function NetCard({
 export function NetsPage() {
   const { user } = useAuth();
   const nav = useNavigate();
-  const canEdit = user?.role === 'OFFICER' || user?.role === 'ADMIN';
+  // canRunNet: open/start a session, take control (run-the-net) — NET_CONTROL+.
+  // canManageNet: add / edit nets and manage repeaters (config) — OFFICER+.
+  const canRunNet = !!user && roleAtLeast(user.role, 'NET_CONTROL');
+  const canManageNet = !!user && roleAtLeast(user.role, 'OFFICER');
   const filterId = useId();
   const { data: netsData, refresh: refreshNets } = useAutoFetch<
     NetWithRepeater[]
@@ -217,8 +225,8 @@ export function NetsPage() {
         <p className="hna-page-marker">// 02 — NETS</p>
         <h1 className="hna-page-title">Nets</h1>
         <p className="hna-page-sub">
-          Weekly schedule and impromptu nets. Operators with officer-level
-          permissions can start, edit, and add nets.
+          Weekly schedule and impromptu nets. Net Control operators can open a
+          session; officers can also add and edit nets.
         </p>
       </header>
 
@@ -241,12 +249,12 @@ export function NetsPage() {
         </div>
         <div className="hna-toolbar__spacer" />
         <div className="hna-toolbar__actions">
-          {canEdit && (
+          {canManageNet && (
             <Button variant="secondary" onClick={() => nav('/repeaters')}>
               Manage repeaters
             </Button>
           )}
-          {canEdit && (
+          {canManageNet && (
             <Button variant="primary" onClick={openAddNet}>
               Add net
             </Button>
@@ -258,7 +266,7 @@ export function NetsPage() {
         <section aria-label="No nets" style={{ marginBottom: 24 }}>
           <p className="hna-cap">[ NO NETS ]</p>
           <Card>
-            {canEdit ? (
+            {canManageNet ? (
               <div className="hna-empty">
                 <p className="hna-empty__title">No nets yet</p>
                 <p className="hna-empty__body">
@@ -301,7 +309,8 @@ export function NetsPage() {
                   key={n.id}
                   n={n}
                   active={activeByNetId[n.id]}
-                  canEdit={canEdit}
+                  canRun={canRunNet}
+                  canManage={canManageNet}
                   onStart={openStart}
                   onTake={takeControl}
                   onEdit={(net) =>
