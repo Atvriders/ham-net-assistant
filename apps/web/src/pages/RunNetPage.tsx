@@ -122,6 +122,11 @@ export function RunNetPage() {
   const [customTopic, setCustomTopic] = useState('');
   const [topicBusy, setTopicBusy] = useState(false);
   const [topicQueueNonce, setTopicQueueNonce] = useState(0);
+  // Live-net topic editor toggle. Once the net is LIVE the topic collapses to a
+  // compact read-only line with an Edit/Add button; opening it reveals the same
+  // picker inline so an officer can change the topic mid-net without cluttering
+  // the running console. Unused/irrelevant in PREP (the picker is always shown).
+  const [liveTopicEditorOpen, setLiveTopicEditorOpen] = useState(false);
   const canManageControl = user?.role === 'OFFICER' || user?.role === 'ADMIN';
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -173,13 +178,18 @@ export function RunNetPage() {
     return () => ctrl.abort();
   }, [controlOpen, canManageControl]);
 
-  // Load the OPEN topic-suggestion queue for the prep-view picker. Only fetched
-  // while the session is in PREP and the viewer can manage control — once LIVE
-  // the topic is read-only so there's nothing to pick from. `topicQueueNonce`
-  // forces a re-fetch after a suggestion is consumed (marked USED).
+  // Load the OPEN topic-suggestion queue for the topic picker. Fetched while an
+  // officer can pick from the queue: always in PREP, and in LIVE only while the
+  // live topic editor is actually open (a fetch-on-open, not a poll — the effect
+  // re-runs when the editor toggles or a suggestion is consumed, never on a
+  // timer, so we don't hammer the endpoint while the live console runs with the
+  // editor closed). `topicQueueNonce` forces a re-fetch after a suggestion is
+  // consumed (marked USED).
   const sessionIsPrep = session?.liveAt == null;
+  const topicQueueActive =
+    canManageControl && (sessionIsPrep || liveTopicEditorOpen);
   useEffect(() => {
-    if (!sessionIsPrep || !canManageControl) {
+    if (!topicQueueActive) {
       setRecommendedTopics([]);
       return;
     }
@@ -190,7 +200,7 @@ export function RunNetPage() {
         if (!isAbortError(e)) console.warn('recommended topics load failed', e);
       });
     return () => ctrl.abort();
-  }, [sessionIsPrep, canManageControl, topicQueueNonce]);
+  }, [topicQueueActive, topicQueueNonce]);
 
   // Dismiss the overflow menu when clicking outside it.
   useEffect(() => {
@@ -235,6 +245,9 @@ export function RunNetPage() {
         body: JSON.stringify({ status: 'USED' }),
       });
       setTopicQueueNonce((n) => n + 1);
+      // Collapse the live editor back to the compact display after a change.
+      // No-op in PREP where the picker is always shown.
+      setLiveTopicEditorOpen(false);
       await refresh();
     } finally {
       setTopicBusy(false);
@@ -253,6 +266,7 @@ export function RunNetPage() {
         body: JSON.stringify({ topicTitle: trimmed }),
       });
       setCustomTopic('');
+      setLiveTopicEditorOpen(false);
       await refresh();
     } finally {
       setTopicBusy(false);
@@ -268,6 +282,7 @@ export function RunNetPage() {
         method: 'PATCH',
         body: JSON.stringify({ topicTitle: '' }),
       });
+      setLiveTopicEditorOpen(false);
       await refresh();
     } finally {
       setTopicBusy(false);
@@ -654,10 +669,11 @@ export function RunNetPage() {
        */}
       {(() => {
         // ===== TOPIC =====
-        // In PREP, OFFICER/ADMIN can pick a queued suggestion, type a custom
-        // topic, or clear the topic before going live. Once LIVE the picker
-        // collapses to a read-only line — the topic is meant to be set during
-        // prep. Members (and the live state) only ever see the read-only line.
+        // OFFICER/ADMIN can pick a queued suggestion, type a custom topic, or
+        // clear the topic in both PREP and LIVE. In PREP the full picker is
+        // expanded inline; once LIVE it collapses to a compact read-only line
+        // with an Edit/Add toggle that reveals the same picker on demand so the
+        // running console stays tidy. Members only ever see the read-only line.
         const topicReadOnly = (
           <div
             className="hna-mono"
@@ -674,8 +690,135 @@ export function RunNetPage() {
           </div>
         );
 
+        // Small "Clear topic" affordance — shown when a topic is set, in the
+        // PREP header and (inside the editor) in the LIVE state. Only one topic
+        // card renders at a time so the shared testid never collides.
+        const clearTopicButton = (
+          <button
+            type="button"
+            className="hna-roster__btn"
+            data-testid="topic-clear-button"
+            onClick={clearTopic}
+            disabled={topicBusy}
+            aria-label="Clear topic"
+            title="Clear topic"
+          >
+            Clear topic
+          </button>
+        );
+
+        // The picker controls — OPEN suggestions (with the RECOMMENDED chip) and
+        // the custom-topic input. Reused verbatim by the PREP card and the LIVE
+        // inline editor so the pick / custom flows stay identical in both states.
+        const topicPickerControls = (
+          <>
+            <SectionDivider>SUGGESTIONS</SectionDivider>
+            {recommendedTopics.length === 0 ? (
+              <div
+                className="hna-empty"
+                data-testid="topic-suggestions-empty"
+                style={{ padding: 'var(--space-2) 0' }}
+              >
+                <p className="hna-empty__body" style={{ margin: 0 }}>
+                  No open topic suggestions.
+                </p>
+              </div>
+            ) : (
+              <ul
+                data-testid="topic-suggestions"
+                style={{ listStyle: 'none', padding: 0, margin: 0 }}
+              >
+                {recommendedTopics.map((s) => (
+                  <li
+                    key={s.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 0',
+                      borderBottom: '1px solid var(--color-border)',
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {s.recommended && (
+                        <span
+                          className="hna-chip hna-mono"
+                          data-testid="topic-recommended-chip"
+                          style={{
+                            marginRight: 6,
+                            fontSize: 10,
+                            letterSpacing: '0.12em',
+                          }}
+                        >
+                          RECOMMENDED
+                        </span>
+                      )}
+                      {s.title}
+                      {s.createdByCallsign && (
+                        <span
+                          className="hna-mono"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 11,
+                            color: 'var(--color-fg-muted)',
+                          }}
+                        >
+                          {displayCallsign(s.createdByCallsign)}
+                        </span>
+                      )}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={topicBusy}
+                      data-testid={`topic-use-${s.id}`}
+                      onClick={() => applySuggestion(s)}
+                    >
+                      Use
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <SectionDivider>CUSTOM TOPIC</SectionDivider>
+            <div
+              className="hna-field"
+              style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}
+            >
+              <div style={{ flex: 1 }}>
+                <label htmlFor="custom-topic-input">Custom topic</label>
+                <Input
+                  id="custom-topic-input"
+                  value={customTopic}
+                  onChange={(e) => setCustomTopic(e.target.value)}
+                  placeholder="e.g. Field Day planning"
+                  maxLength={200}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void setCustomTopicTitle();
+                    }
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={topicBusy || customTopic.trim().length === 0}
+                data-testid="topic-set-custom-button"
+                onClick={setCustomTopicTitle}
+              >
+                Set
+              </Button>
+            </div>
+          </>
+        );
+
         const topicBlock =
           isPrep && canManageControl ? (
+            // PREP (officer): the full picker is expanded inline — the operator
+            // is setting the topic before going live.
             <Card>
               <header className="hna-section-caption">
                 <h2 className="hna-section-caption__title">
@@ -686,19 +829,7 @@ export function RunNetPage() {
                     [ TOPIC ]
                   </span>
                 </h2>
-                {currentTopic && (
-                  <button
-                    type="button"
-                    className="hna-roster__btn"
-                    data-testid="topic-clear-button"
-                    onClick={clearTopic}
-                    disabled={topicBusy}
-                    aria-label="Clear topic"
-                    title="Clear topic"
-                  >
-                    Clear topic
-                  </button>
-                )}
+                {currentTopic && clearTopicButton}
               </header>
 
               <div
@@ -719,106 +850,72 @@ export function RunNetPage() {
                 <div style={{ marginTop: 2 }}>{topicReadOnly}</div>
               </div>
 
-              <SectionDivider>SUGGESTIONS</SectionDivider>
-              {recommendedTopics.length === 0 ? (
+              {topicPickerControls}
+            </Card>
+          ) : !isPrep && canManageControl ? (
+            // LIVE (officer): compact read-only line + an Edit/Add toggle. The
+            // full picker is only revealed while actively editing so the running
+            // console stays tidy; it collapses again after a change.
+            <Card>
+              <header className="hna-section-caption">
+                <h2 className="hna-section-caption__title">
+                  <span
+                    className="hna-cap hna-cap--accent"
+                    style={{ margin: 0 }}
+                  >
+                    [ TOPIC ]
+                  </span>
+                </h2>
+                <button
+                  type="button"
+                  className="hna-roster__btn"
+                  data-testid="topic-live-edit-toggle"
+                  onClick={() => setLiveTopicEditorOpen((v) => !v)}
+                  aria-expanded={liveTopicEditorOpen}
+                  aria-label={
+                    liveTopicEditorOpen
+                      ? 'Close topic editor'
+                      : currentTopic
+                        ? 'Edit topic'
+                        : 'Add topic'
+                  }
+                  title={
+                    liveTopicEditorOpen
+                      ? 'Close topic editor'
+                      : currentTopic
+                        ? 'Edit topic'
+                        : 'Add topic'
+                  }
+                >
+                  {liveTopicEditorOpen
+                    ? 'Done'
+                    : currentTopic
+                      ? 'Edit topic'
+                      : 'Add topic'}
+                </button>
+              </header>
+
+              <div data-testid="topic-current">{topicReadOnly}</div>
+
+              {liveTopicEditorOpen && (
                 <div
-                  className="hna-empty"
-                  data-testid="topic-suggestions-empty"
-                  style={{ padding: 'var(--space-2) 0' }}
+                  data-testid="topic-live-editor"
+                  style={{ marginTop: 'var(--space-3)' }}
                 >
-                  <p className="hna-empty__body" style={{ margin: 0 }}>
-                    No open topic suggestions.
-                  </p>
-                </div>
-              ) : (
-                <ul
-                  data-testid="topic-suggestions"
-                  style={{ listStyle: 'none', padding: 0, margin: 0 }}
-                >
-                  {recommendedTopics.map((s) => (
-                    <li
-                      key={s.id}
+                  {currentTopic && (
+                    <div
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 0',
-                        borderBottom: '1px solid var(--color-border)',
+                        justifyContent: 'flex-end',
+                        marginBottom: 'var(--space-2)',
                       }}
                     >
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        {s.recommended && (
-                          <span
-                            className="hna-chip hna-mono"
-                            data-testid="topic-recommended-chip"
-                            style={{
-                              marginRight: 6,
-                              fontSize: 10,
-                              letterSpacing: '0.12em',
-                            }}
-                          >
-                            RECOMMENDED
-                          </span>
-                        )}
-                        {s.title}
-                        {s.createdByCallsign && (
-                          <span
-                            className="hna-mono"
-                            style={{
-                              marginLeft: 6,
-                              fontSize: 11,
-                              color: 'var(--color-fg-muted)',
-                            }}
-                          >
-                            {displayCallsign(s.createdByCallsign)}
-                          </span>
-                        )}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={topicBusy}
-                        data-testid={`topic-use-${s.id}`}
-                        onClick={() => applySuggestion(s)}
-                      >
-                        Use
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <SectionDivider>CUSTOM TOPIC</SectionDivider>
-              <div
-                className="hna-field"
-                style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}
-              >
-                <div style={{ flex: 1 }}>
-                  <label htmlFor="prep-custom-topic">Custom topic</label>
-                  <Input
-                    id="prep-custom-topic"
-                    value={customTopic}
-                    onChange={(e) => setCustomTopic(e.target.value)}
-                    placeholder="e.g. Field Day planning"
-                    maxLength={200}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void setCustomTopicTitle();
-                      }
-                    }}
-                  />
+                      {clearTopicButton}
+                    </div>
+                  )}
+                  {topicPickerControls}
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={topicBusy || customTopic.trim().length === 0}
-                  data-testid="topic-set-custom-button"
-                  onClick={setCustomTopicTitle}
-                >
-                  Set
-                </Button>
-              </div>
+              )}
             </Card>
           ) : currentTopic ? (
             <Card>

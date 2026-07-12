@@ -75,10 +75,11 @@ function makeMockFetch(opts: {
   role: string;
   live: boolean;
   topics?: typeof recommendedTopics;
+  initialTopic?: string | null;
 }) {
   let live = opts.live;
   // Mutable so a PATCH that sets a topic is reflected on the next GET refresh.
-  let topicTitle: string | null = null;
+  let topicTitle: string | null = opts.initialTopic ?? null;
   const calls: { url: string; method: string; body?: unknown }[] = [];
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -329,5 +330,161 @@ describe('RunNetPage prep/draft state', () => {
     expect(await screen.findByTestId('prep-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('topic-current')).not.toBeInTheDocument();
     expect(screen.queryByTestId('topic-use-t1')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunNetPage live topic editor', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a compact "Add topic" affordance for OFFICERs in LIVE with no topic, picker hidden until opened', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      topics: recommendedTopics,
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    // Live UI settled.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    // Compact display + "Add topic" toggle (no topic set yet).
+    const toggle = await screen.findByTestId('topic-live-edit-toggle');
+    expect(toggle).toHaveTextContent('Add topic');
+    expect(screen.getByTestId('topic-readonly')).toHaveTextContent(
+      'No topic set yet.',
+    );
+    // The picker stays hidden until the officer opens the editor.
+    expect(screen.queryByTestId('topic-suggestions')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Custom topic')).not.toBeInTheDocument();
+  });
+
+  it('labels the toggle "Edit topic" when a topic is already set in LIVE', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      topics: recommendedTopics,
+      initialTopic: 'Existing topic',
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    const toggle = await screen.findByTestId('topic-live-edit-toggle');
+    expect(toggle).toHaveTextContent('Edit topic');
+    expect(screen.getByTestId('topic-readonly')).toHaveTextContent(
+      'Existing topic',
+    );
+  });
+
+  it('opening the LIVE editor reveals the picker (suggestions + custom input)', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      topics: recommendedTopics,
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const toggle = await screen.findByTestId('topic-live-edit-toggle');
+    await userEvent.click(toggle);
+    // Picker appears inline: suggestions (with the recommended chip) + custom.
+    expect(await screen.findByTestId('topic-suggestions')).toBeInTheDocument();
+    expect(screen.getByText('Field Day planning')).toBeInTheDocument();
+    expect(screen.getAllByTestId('topic-recommended-chip')).toHaveLength(1);
+    expect(screen.getByLabelText('Custom topic')).toBeInTheDocument();
+    // Toggle now offers to collapse the editor.
+    expect(toggle).toHaveTextContent('Done');
+  });
+
+  it('using a suggestion in LIVE PATCHes topicTitle+topicId, marks it USED, and collapses the editor', async () => {
+    const { fn, calls } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      topics: recommendedTopics,
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const toggle = await screen.findByTestId('topic-live-edit-toggle');
+    await userEvent.click(toggle);
+    const useBtn = await screen.findByTestId('topic-use-t1');
+    await userEvent.click(useBtn);
+    await waitFor(() => {
+      const patch = calls.find(
+        (c) => c.method === 'PATCH' && c.url.endsWith('/api/sessions/s1'),
+      );
+      expect(patch?.body).toEqual({
+        topicTitle: 'Field Day planning',
+        topicId: 't1',
+      });
+    });
+    // Suggestion marked USED.
+    expect(
+      calls.find(
+        (c) =>
+          c.method === 'PATCH' && c.url.endsWith('/api/topics/t1/status'),
+      )?.body,
+    ).toEqual({ status: 'USED' });
+    // Editor collapses back to the compact display; new topic shows read-only.
+    await waitFor(() => {
+      expect(screen.queryByTestId('topic-live-editor')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('topic-readonly')).toHaveTextContent(
+      'Field Day planning',
+    );
+  });
+
+  it('the custom-topic input in LIVE PATCHes topicTitle only and collapses the editor', async () => {
+    const { fn, calls } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      topics: recommendedTopics,
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const toggle = await screen.findByTestId('topic-live-edit-toggle');
+    await userEvent.click(toggle);
+    const input = await screen.findByLabelText('Custom topic');
+    await userEvent.type(input, 'Grid square hunting');
+    await userEvent.click(screen.getByTestId('topic-set-custom-button'));
+    await waitFor(() => {
+      const patch = calls.find(
+        (c) => c.method === 'PATCH' && c.url.endsWith('/api/sessions/s1'),
+      );
+      expect(patch?.body).toEqual({ topicTitle: 'Grid square hunting' });
+    });
+    const patch = calls.find(
+      (c) => c.method === 'PATCH' && c.url.endsWith('/api/sessions/s1'),
+    );
+    expect(patch?.body).not.toHaveProperty('topicId');
+    // Editor collapsed after the change.
+    await waitFor(() => {
+      expect(screen.queryByTestId('topic-live-editor')).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not show the live topic edit affordance for MEMBER role', async () => {
+    const { fn } = makeMockFetch({
+      role: 'MEMBER',
+      live: true,
+      topics: recommendedTopics,
+      initialTopic: 'Members read this',
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    // Read-only topic is visible, but no edit toggle / picker for members.
+    expect(screen.getByTestId('topic-readonly')).toHaveTextContent(
+      'Members read this',
+    );
+    expect(
+      screen.queryByTestId('topic-live-edit-toggle'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('topic-suggestions')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Custom topic')).not.toBeInTheDocument();
   });
 });
