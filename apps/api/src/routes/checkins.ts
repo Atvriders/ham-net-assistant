@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { CheckInInput } from '@hna/shared';
+import { CheckInInput, roleAtLeast } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
@@ -64,10 +64,12 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
     const me = req.user!;
-    const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
+    // Net Control (and above) can edit any check-in while running the net;
+    // everyone else is limited to their own entry within a 5-minute window.
+    const canManage = roleAtLeast(me.role, 'NET_CONTROL');
     const ownRecent =
       ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
-    if (!isOfficer && !ownRecent) {
+    if (!canManage && !ownRecent) {
       throw new HttpError(403, 'FORBIDDEN', 'Cannot edit this check-in');
     }
     const body = req.body as typeof CheckInInput._type;
@@ -99,10 +101,12 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     });
     if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
     const me = req.user!;
-    const isOfficer = me.role === 'OFFICER' || me.role === 'ADMIN';
+    // Net Control (and above) can delete any check-in while running the net;
+    // everyone else is limited to their own entry within a 5-minute window.
+    const canManage = roleAtLeast(me.role, 'NET_CONTROL');
     const ownRecent =
       ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
-    if (!isOfficer && !ownRecent) {
+    if (!canManage && !ownRecent) {
       throw new HttpError(403, 'FORBIDDEN', 'Cannot delete this check-in');
     }
     await prisma.checkIn.update({

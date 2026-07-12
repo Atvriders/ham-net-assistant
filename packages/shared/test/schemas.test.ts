@@ -3,6 +3,7 @@ import {
   Callsign, RegisterInput, RepeaterInput, NetInput, CheckInInput,
   ReminderMinutes, parseReminderMinutes, DEFAULT_REMINDER_MINUTES,
   NetScript, NetScriptInput,
+  Role, ROLE_RANK, ROLE_LABEL, roleAtLeast,
 } from '../src/index.js';
 
 describe('Callsign', () => {
@@ -245,5 +246,47 @@ describe('NetScript', () => {
       updatedAt: '2026-05-21T12:00:00.000Z',
     });
     expect(parsed.createdById).toBeNull();
+  });
+});
+
+describe('Role rank + NET_CONTROL', () => {
+  it('Role enum includes NET_CONTROL alongside the legacy roles', () => {
+    expect(Role.options).toEqual(['MEMBER', 'NET_CONTROL', 'OFFICER', 'ADMIN']);
+    expect(Role.parse('NET_CONTROL')).toBe('NET_CONTROL');
+  });
+
+  it('ranks MEMBER < NET_CONTROL < OFFICER < ADMIN', () => {
+    expect(ROLE_RANK.MEMBER).toBe(0);
+    expect(ROLE_RANK.NET_CONTROL).toBe(1);
+    expect(ROLE_RANK.OFFICER).toBe(2);
+    expect(ROLE_RANK.ADMIN).toBe(3);
+    expect(ROLE_RANK.MEMBER)
+      .toBeLessThan(ROLE_RANK.NET_CONTROL);
+    expect(ROLE_RANK.NET_CONTROL)
+      .toBeLessThan(ROLE_RANK.OFFICER);
+    expect(ROLE_RANK.OFFICER)
+      .toBeLessThan(ROLE_RANK.ADMIN);
+  });
+
+  it('roleAtLeast: NET_CONTROL clears NET_CONTROL/MEMBER but not OFFICER/ADMIN', () => {
+    expect(roleAtLeast('NET_CONTROL', 'NET_CONTROL')).toBe(true);
+    expect(roleAtLeast('NET_CONTROL', 'MEMBER')).toBe(true);
+    expect(roleAtLeast('NET_CONTROL', 'OFFICER')).toBe(false);
+    expect(roleAtLeast('NET_CONTROL', 'ADMIN')).toBe(false);
+  });
+
+  it('roleAtLeast: MEMBER fails the NET_CONTROL bar (no-access guarantee)', () => {
+    expect(roleAtLeast('MEMBER', 'NET_CONTROL')).toBe(false);
+    expect(roleAtLeast('MEMBER', 'MEMBER')).toBe(true);
+  });
+
+  it('roleAtLeast: OFFICER and ADMIN outrank NET_CONTROL', () => {
+    expect(roleAtLeast('OFFICER', 'NET_CONTROL')).toBe(true);
+    expect(roleAtLeast('ADMIN', 'NET_CONTROL')).toBe(true);
+  });
+
+  it('exposes a human-readable "Net Control" label', () => {
+    expect(ROLE_LABEL.NET_CONTROL).toBe('Net Control');
+    expect(ROLE_LABEL.OFFICER).toBe('Officer');
   });
 });

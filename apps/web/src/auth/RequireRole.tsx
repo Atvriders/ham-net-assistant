@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import type { Role } from '@hna/shared';
+import { ROLE_RANK, type Role } from '@hna/shared';
 import { useAuth } from './AuthProvider.js';
 import { Card } from '../components/ui/Card.js';
 
-const ORDER: Record<Role, number> = { MEMBER: 0, OFFICER: 1, ADMIN: 2 };
-
+// Lowercase labels for the "This area is for {label}s." sentence below.
 const ROLE_LABEL: Record<Role, string> = {
   MEMBER: 'member',
+  NET_CONTROL: 'net control operator',
   OFFICER: 'officer',
   ADMIN: 'admin',
 };
@@ -20,7 +20,7 @@ export function RequireRole({
   const loc = useLocation();
   if (loading) return <div>Loading…</div>;
   if (!user) return <Navigate to="/login" replace state={{ from: loc }} />;
-  if (ORDER[user.role] < ORDER[min]) {
+  if (ROLE_RANK[user.role] < ROLE_RANK[min]) {
     return (
       <div
         className="hna-container"

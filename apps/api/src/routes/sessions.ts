@@ -46,7 +46,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   // can prep (set topic, edit script, coordinate over chat) but the net is not
   // yet "on the air": no Discord 🟢 announcement, no check-ins accepted. The
   // separate POST /api/sessions/:id/start route transitions PREP → LIVE.
-  nested.post('/', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+  nested.post('/', requireRole('NET_CONTROL'), asyncHandler(async (req, res) => {
     const { netId } = req.params as { netId: string };
     const body = req.body && Object.keys(req.body).length > 0
       ? StartSessionInput.parse(req.body)
@@ -136,7 +136,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   // Fires the Discord 🟢 announcement (moved here from the create route).
   // Validates that the session exists, is not soft-deleted, has not already
   // gone live (liveAt must be null), and has not already ended.
-  flat.post('/:id/start', requireRole('OFFICER'), asyncHandler(async (req, res) => {
+  flat.post('/:id/start', requireRole('NET_CONTROL'), asyncHandler(async (req, res) => {
     const session = await prisma.netSession.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
@@ -259,7 +259,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.status(204).end();
   }));
 
-  flat.patch('/:id', requireRole('OFFICER'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
+  flat.patch('/:id', requireRole('NET_CONTROL'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
     const body = req.body as typeof NetSessionUpdate._type;
     const before = await prisma.netSession.findUnique({
       where: { id: req.params.id, deletedAt: null },

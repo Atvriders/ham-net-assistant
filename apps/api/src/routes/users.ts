@@ -43,10 +43,11 @@ export function usersRouter(prisma: PrismaClient): Router {
   }));
 
   // Roster of users eligible to be Net Control. Used by the active-session
-  // "change control" picker (the picker itself is gated to OFFICER+ in the UI
-  // and the PATCH that applies the change is gated to OFFICER+ on the API).
-  // Any member can *be* Net Control, so the candidate list is the full roster.
-  router.get('/control-candidates', requireRole('OFFICER'), asyncHandler(async (_req, res) => {
+  // "change control" picker. Gated to NET_CONTROL+ (the run-the-net set) since
+  // reassigning control is part of running the net; the PATCH that applies the
+  // change is likewise NET_CONTROL. Any member can *be* Net Control, so the
+  // candidate list is the full roster.
+  router.get('/control-candidates', requireRole('NET_CONTROL'), asyncHandler(async (_req, res) => {
     const list = await prisma.user.findMany({
       select: { id: true, callsign: true, name: true, role: true },
       orderBy: { callsign: 'asc' },

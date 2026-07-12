@@ -1,5 +1,5 @@
 import type { Request, RequestHandler } from 'express';
-import type { Role } from '@hna/shared';
+import { ROLE_RANK, type Role } from '@hna/shared';
 import { verifyToken, COOKIE_NAME } from '../lib/jwt.js';
 import { HttpError } from './error.js';
 
@@ -32,12 +32,14 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
   next();
 };
 
-const ORDER: Record<Role, number> = { MEMBER: 0, OFFICER: 1, ADMIN: 2 };
-
+// Rank-based (not string-equality) gate. A NET_CONTROL user passes
+// requireRole('NET_CONTROL') and requireRole('MEMBER') but fails
+// requireRole('OFFICER'); officers/admins outrank NET_CONTROL and pass it.
+// Ordering lives in the shared ROLE_RANK map (MEMBER<NET_CONTROL<OFFICER<ADMIN).
 export function requireRole(min: Role): RequestHandler {
   return (req, _res, next) => {
     if (!req.user) throw new HttpError(401, 'UNAUTHENTICATED', 'Login required');
-    if (ORDER[req.user.role] < ORDER[min]) {
+    if (ROLE_RANK[req.user.role] < ROLE_RANK[min]) {
       throw new HttpError(403, 'FORBIDDEN', `Requires ${min} role`);
     }
     next();

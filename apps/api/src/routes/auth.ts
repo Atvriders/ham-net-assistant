@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { RegisterInput, LoginInput, PublicUser } from '@hna/shared';
+import { RegisterInput, LoginInput, PublicUser, type Role } from '@hna/shared';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { signToken, COOKIE_NAME, COOKIE_OPTS } from '../lib/jwt.js';
 import { env } from '../env.js';
@@ -66,7 +66,7 @@ export function authRouter(prisma: PrismaClient): Router {
         });
         const token = signToken({
           sub: user.id,
-          role: user.role as 'MEMBER' | 'OFFICER' | 'ADMIN',
+          role: user.role as Role,
         });
         res.cookie(COOKIE_NAME, token, COOKIE_OPTS);
         res.status(201).json(PublicUser.parse(toPublic(user)));
@@ -90,7 +90,7 @@ export function authRouter(prisma: PrismaClient): Router {
       }
       const token = signToken({
         sub: user.id,
-        role: user.role as 'MEMBER' | 'OFFICER' | 'ADMIN',
+        role: user.role as Role,
       });
       res.cookie(COOKIE_NAME, token, COOKIE_OPTS);
       res.json(PublicUser.parse(toPublic(user)));
@@ -128,7 +128,7 @@ function toPublic(u: {
     email: u.email,
     name: u.name,
     callsign: u.callsign,
-    role: u.role as 'MEMBER' | 'OFFICER' | 'ADMIN',
+    role: u.role as Role,
     collegeSlug: u.collegeSlug,
   };
 }

@@ -81,9 +81,12 @@ export function topicsRouter(prisma: PrismaClient): Router {
     }),
   );
 
+  // Marking a suggestion USED/DISMISSED is part of running a net (a control op
+  // picks a topic from the queue), so it drops to NET_CONTROL. Officers/admins
+  // still outrank NET_CONTROL and pass this gate.
   router.patch(
     '/:id/status',
-    requireRole('OFFICER'),
+    requireRole('NET_CONTROL'),
     validateBody(UpdateTopicStatusInput),
     asyncHandler(async (req, res) => {
       try {
