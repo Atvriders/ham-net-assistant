@@ -63,10 +63,11 @@ describe('ConsoleField', () => {
     expect(canvas!.style.pointerEvents).toBe('none');
     expect(canvas!.style.position).toBe('fixed');
     expect(canvas!.style.zIndex).toBe('-1');
-    // Fills the viewport via relative sizing (no hardcoded px width that
-    // could create horizontal overflow).
-    expect(canvas!.style.width).toBe('100%');
-    expect(canvas!.style.height).toBe('100%');
+    // resize() pins the CSS box to the buffer's CSS-pixel size (innerWidth/
+    // innerHeight) so drawing stays 1:1 with pointer coordinates even when a
+    // classic scrollbar makes `100%` resolve narrower than innerWidth.
+    expect(canvas!.style.width).toBe(`${window.innerWidth}px`);
+    expect(canvas!.style.height).toBe(`${window.innerHeight}px`);
   });
 
   it('renders nothing at all under prefers-reduced-motion: reduce', () => {

@@ -181,6 +181,13 @@ export function ConsoleField(): React.ReactElement | null {
       vh = window.innerHeight;
       canvas.width = Math.round(vw * dpr);
       canvas.height = Math.round(vh * dpr);
+      // Pin the CSS box to the buffer's CSS-pixel size. With `width: 100%` on
+      // a fixed element the box resolves to documentElement.clientWidth
+      // (excludes classic scrollbars) while innerWidth includes them, which
+      // would compress drawing horizontally and misalign glow dots from the
+      // 24px grid intersections whenever a classic scrollbar is present.
+      canvas.style.width = `${vw}px`;
+      canvas.style.height = `${vh}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
