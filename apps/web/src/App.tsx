@@ -17,6 +17,7 @@ import { TopicsPage } from './pages/TopicsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { OfficerToolsPage } from './pages/OfficerToolsPage.js';
 import { Clock } from './components/ui/Clock.js';
+import { ConsoleField } from './components/ConsoleField.js';
 import { NetStatusIndicator } from './components/NetStatusIndicator.js';
 import { displayCallsign } from './lib/format.js';
 
@@ -203,6 +204,11 @@ export function App() {
       <AuthProvider>
         <ThemeProvider>
           <div className="hna-shell">
+            {/* Interactive phosphor background — fixed, z-index:-1, pointer-
+                events:none. Sits above the body's static graph-paper grid
+                (which propagates to the root canvas) and below all shell
+                content, the sticky nav, and modal backdrops. */}
+            <ConsoleField />
             <NavBar />
             <main className="hna-shell__main">
               <Routes>
