@@ -51,7 +51,7 @@ export function discordRouter(prisma: PrismaClient): Router {
     requireRole('ADMIN'),
     validateBody(ConfigUpdateInput),
     asyncHandler(async (req, res) => {
-      const body = req.body as typeof ConfigUpdateInput._type;
+      const body = req.body as z.infer<typeof ConfigUpdateInput>;
       if (body.enabled !== undefined) {
         await setSetting(prisma, 'discord.enabled', String(body.enabled));
       }

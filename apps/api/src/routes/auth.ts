@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { z } from 'zod';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RegisterInput, LoginInput, PublicUser, type Role } from '@hna/shared';
 import { hashPassword, verifyPassword } from '../lib/password.js';
@@ -22,7 +23,7 @@ export function authRouter(prisma: PrismaClient): Router {
     '/register',
     validateBody(RegisterInput),
     asyncHandler(async (req, res) => {
-      const input = req.body as typeof RegisterInput._type;
+      const input = req.body as z.infer<typeof RegisterInput>;
       if (env.REGISTRATION_CODE && input.inviteCode !== env.REGISTRATION_CODE) {
         throw new HttpError(403, 'FORBIDDEN', 'Invalid invite code');
       }
@@ -83,7 +84,7 @@ export function authRouter(prisma: PrismaClient): Router {
     '/login',
     validateBody(LoginInput),
     asyncHandler(async (req, res) => {
-      const input = req.body as typeof LoginInput._type;
+      const input = req.body as z.infer<typeof LoginInput>;
       const user = await prisma.user.findUnique({ where: { email: input.email } });
       if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
         throw new HttpError(401, 'UNAUTHENTICATED', 'Invalid credentials');

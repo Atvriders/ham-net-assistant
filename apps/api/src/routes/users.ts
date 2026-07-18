@@ -22,7 +22,7 @@ export function usersRouter(prisma: PrismaClient): Router {
   const router = Router();
 
   router.patch('/me', requireAuth, validateBody(UpdateMeInput.strict()), asyncHandler(async (req, res) => {
-    const body = req.body as typeof UpdateMeInput._type;
+    const body = req.body as z.infer<typeof UpdateMeInput>;
     const updated = await prisma.user.update({
       where: { id: req.user!.id },
       data: {
@@ -102,7 +102,7 @@ export function usersRouter(prisma: PrismaClient): Router {
     try {
       const updated = await prisma.user.update({
         where: { id: req.params.id },
-        data: { role: (req.body as typeof UpdateRoleInput._type).role },
+        data: { role: (req.body as z.infer<typeof UpdateRoleInput>).role },
         select: publicSelect,
       });
       res.json(PublicUser.parse(updated));

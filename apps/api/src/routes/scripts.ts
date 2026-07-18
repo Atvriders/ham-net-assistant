@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { z } from 'zod';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { NetScriptInput, ScriptCategory } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
@@ -65,7 +66,7 @@ export function scriptsRouter(prisma: PrismaClient): Router {
     requireRole('OFFICER'),
     validateBody(NetScriptInput),
     asyncHandler(async (req, res) => {
-      const body = req.body as typeof NetScriptInput._type;
+      const body = req.body as z.infer<typeof NetScriptInput>;
       const created = await prisma.netScript.create({
         data: {
           title: body.title,
@@ -84,7 +85,7 @@ export function scriptsRouter(prisma: PrismaClient): Router {
     requireRole('OFFICER'),
     validateBody(NetScriptInput),
     asyncHandler(async (req, res) => {
-      const body = req.body as typeof NetScriptInput._type;
+      const body = req.body as z.infer<typeof NetScriptInput>;
       const existing = await prisma.netScript.findFirst({
         where: { id: req.params.id, deletedAt: null },
       });

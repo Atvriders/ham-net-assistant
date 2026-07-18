@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import {
   NetInput,
@@ -72,7 +73,7 @@ async function assertRepeatersExist(prisma: PrismaClient, ids: string[]): Promis
  * supplied values; impromptu nets fall back to sentinels since the scheduler
  * never touches them.
  */
-function schedulingFields(body: typeof NetInput._type): {
+function schedulingFields(body: z.infer<typeof NetInput>): {
   kind: string;
   dayOfWeek: number;
   startLocal: string;
@@ -146,7 +147,7 @@ export function netsRouter(prisma: PrismaClient): Router {
   }));
 
   router.post('/', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
-    const body = req.body as typeof NetInput._type;
+    const body = req.body as z.infer<typeof NetInput>;
     const linkIds = normalizeLinkedIds(body.linkedRepeaterIds, body.repeaterId);
     await assertRepeatersExist(prisma, linkIds);
     const sched = schedulingFields(body);
@@ -173,7 +174,7 @@ export function netsRouter(prisma: PrismaClient): Router {
   }));
 
   router.patch('/:id', requireRole('OFFICER'), validateBody(NetUpdate), asyncHandler(async (req, res) => {
-    const body = req.body as typeof NetUpdate._type;
+    const body = req.body as z.infer<typeof NetUpdate>;
     const netId = req.params.id as string;
     const existing = await prisma.net.findUnique({ where: { id: netId } });
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Net not found');

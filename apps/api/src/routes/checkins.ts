@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { CheckInInput, roleAtLeast } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
@@ -27,7 +28,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         'Net is preparing — wait for the control op to start it',
       );
     }
-    const body = req.body as typeof CheckInInput._type;
+    const body = req.body as z.infer<typeof CheckInInput>;
     const matched = await prisma.user.findFirst({
       where: { callsign: body.callsign },
       orderBy: { createdAt: 'asc' },
@@ -72,7 +73,7 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (!canManage && !ownRecent) {
       throw new HttpError(403, 'FORBIDDEN', 'Cannot edit this check-in');
     }
-    const body = req.body as typeof CheckInInput._type;
+    const body = req.body as z.infer<typeof CheckInInput>;
     // If the new callsign maps to a registered member, relink userId;
     // otherwise clear userId (it's now a visitor entry).
     const matched = await prisma.user.findFirst({

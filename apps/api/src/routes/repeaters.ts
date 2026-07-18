@@ -17,7 +17,7 @@ const SuggestQuery = z.union([
   }),
 ]);
 
-type RepeaterSuggestion = typeof RepeaterInput._type;
+type RepeaterSuggestion = z.infer<typeof RepeaterInput>;
 
 // Many upstream databases 403 requests that arrive without a recognizable
 // User-Agent. Node 20's native fetch sends no UA header at all by default.
@@ -353,7 +353,7 @@ export function repeatersRouter(prisma: PrismaClient): Router {
   );
 
   router.post('/', requireRole('OFFICER'), validateBody(RepeaterInput), asyncHandler(async (req, res) => {
-    const body = req.body as typeof RepeaterInput._type;
+    const body = req.body as z.infer<typeof RepeaterInput>;
     const created = await prisma.repeater.create({
       data: {
         name: body.name,
@@ -370,7 +370,7 @@ export function repeatersRouter(prisma: PrismaClient): Router {
   }));
 
   router.patch('/:id', requireRole('OFFICER'), validateBody(RepeaterInput), asyncHandler(async (req, res) => {
-    const body = req.body as typeof RepeaterInput._type;
+    const body = req.body as z.infer<typeof RepeaterInput>;
     try {
       const updated = await prisma.repeater.update({
         where: { id: req.params.id },

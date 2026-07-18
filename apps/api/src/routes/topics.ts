@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { TopicSuggestionInput, UpdateTopicStatusInput } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
@@ -69,7 +70,7 @@ export function topicsRouter(prisma: PrismaClient): Router {
     requireAuth,
     validateBody(TopicSuggestionInput),
     asyncHandler(async (req, res) => {
-      const body = req.body as typeof TopicSuggestionInput._type;
+      const body = req.body as z.infer<typeof TopicSuggestionInput>;
       const created = await prisma.topicSuggestion.create({
         data: {
           title: body.title,
@@ -93,7 +94,7 @@ export function topicsRouter(prisma: PrismaClient): Router {
         const updated = await prisma.topicSuggestion.update({
           where: { id: req.params.id },
           data: {
-            status: (req.body as typeof UpdateTopicStatusInput._type).status,
+            status: (req.body as z.infer<typeof UpdateTopicStatusInput>).status,
           },
         });
         res.json(updated);

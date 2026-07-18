@@ -260,7 +260,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   }));
 
   flat.patch('/:id', requireRole('NET_CONTROL'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {
-    const body = req.body as typeof NetSessionUpdate._type;
+    const body = req.body as z.infer<typeof NetSessionUpdate>;
     const before = await prisma.netSession.findUnique({
       where: { id: req.params.id, deletedAt: null },
       select: { id: true, endedAt: true, netId: true, startedAt: true },

@@ -98,7 +98,7 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user) throw new HttpError(401, 'UNAUTHENTICATED', 'User no longer exists');
-    const body = req.body as typeof MessageInput._type;
+    const body = req.body as z.infer<typeof MessageInput>;
     const created = await prisma.sessionMessage.create({
       data: {
         sessionId,
