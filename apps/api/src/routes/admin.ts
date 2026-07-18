@@ -339,7 +339,7 @@ export function adminRouter(prisma: PrismaClient): Router {
   }));
 
   router.post('/duplicate-sessions/merge', requireRole('ADMIN'), asyncHandler(async (req, res) => {
-    const parsed = MergeInput.safeParse(req.body);
+    const parsed = MergeInput.safeParse(req.body ?? {});
     if (!parsed.success) {
       throw new HttpError(400, 'VALIDATION', 'Invalid merge body');
     }

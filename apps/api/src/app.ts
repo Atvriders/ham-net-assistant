@@ -25,6 +25,9 @@ import { mountStatic } from './static.js';
 
 export function buildApp(prisma: PrismaClient): Express {
   const app = express();
+  // Express 5 changed the default query parser from 'extended' to 'simple';
+  // pin the v4 behavior explicitly so query-string semantics can't drift.
+  app.set('query parser', 'extended');
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
   app.use(loadUser);

@@ -77,7 +77,7 @@ export function scriptImportRouter(): Router {
   const router = Router();
 
   router.post('/url', requireAuth, asyncHandler(async (req, res) => {
-    const { url } = ImportUrlInput.parse(req.body);
+    const { url } = ImportUrlInput.parse(req.body ?? {});
     const parsed = await assertPublicUrl(url);
     const target = rewriteGoogleDocsUrl(parsed);
     const remote = await fetch(target.toString(), {
