@@ -13,9 +13,15 @@ export function initDb(): Promise<void> {
   if (initialized) return initialized;
   initialized = (async () => {
     try {
-      await prisma.$executeRawUnsafe('PRAGMA journal_mode=WAL');
-      await prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000');
-      await prisma.$executeRawUnsafe('PRAGMA synchronous=NORMAL');
+      // Must be $queryRawUnsafe, not $executeRawUnsafe: `PRAGMA
+      // journal_mode=WAL` and `PRAGMA busy_timeout=N` RETURN a result row
+      // (the new mode / current timeout), and Prisma's execute path rejects
+      // SQLite statements that return results ("Execute returned results,
+      // which is not allowed in SQLite.") — which silently left prod
+      // running without WAL or a busy timeout.
+      await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL');
+      await prisma.$queryRawUnsafe('PRAGMA busy_timeout=5000');
+      await prisma.$queryRawUnsafe('PRAGMA synchronous=NORMAL');
     } catch (e) {
       console.warn('[db] failed to apply SQLite pragmas', e);
     }
