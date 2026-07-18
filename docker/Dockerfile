@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 # --- base: debian slim instead of alpine ---
-FROM node:22-slim AS base
+# bookworm pinned explicitly: Prisma 6's engine binaryTarget is
+# debian-openssl-3.0.x, and node's un-suffixed `-slim` default can move to a
+# newer Debian (node:26-slim is already trixie/openssl-3.5).
+FROM node:24-bookworm-slim AS base
 WORKDIR /app
 # build tools for native deps (argon2) — debian package names
 RUN apt-get update \
@@ -29,11 +32,11 @@ RUN npm -w @hna/api run build
 RUN npm -w @hna/web run build
 
 # --- runtime: slim image with only what api needs ---
-FROM node:22-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# libssl3 is in node:22-slim already; add ca-certs + gosu for step-down.
+# libssl3 is in the bookworm-slim base already; add ca-certs + gosu for step-down.
 # wget intentionally omitted — healthcheck uses node's built-in http to avoid
 # pulling an extra package into the final layer.
 RUN apt-get update \
