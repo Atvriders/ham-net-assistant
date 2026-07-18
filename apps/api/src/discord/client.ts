@@ -203,7 +203,7 @@ export async function sendDiscordOrThrow(
     channel = await activeClient.channels.fetch(cfg.channelId);
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
-    throw new Error(`Channel fetch failed: ${msg}. Verify the channel ID is correct and the bot has been invited to that server with View Channel permission.`);
+    throw new Error(`Channel fetch failed: ${msg}. Verify the channel ID is correct and the bot has been invited to that server with View Channel permission.`, { cause: e });
   }
   if (!channel) {
     throw new Error(`Channel ${cfg.channelId} not found. The bot may not be in the server, or the ID is wrong.`);
@@ -217,7 +217,7 @@ export async function sendDiscordOrThrow(
   } catch (e) {
     const err = e as Error & { code?: number };
     const code = err.code ? ` (code ${err.code})` : '';
-    throw new Error(`Send failed${code}: ${err.message ?? String(e)}. Common causes: bot lacks Send Messages permission on this channel, MESSAGE CONTENT INTENT not enabled in the developer portal, or invalid token.`);
+    throw new Error(`Send failed${code}: ${err.message ?? String(e)}. Common causes: bot lacks Send Messages permission on this channel, MESSAGE CONTENT INTENT not enabled in the developer portal, or invalid token.`, { cause: e });
   }
 }
 
@@ -273,7 +273,7 @@ export async function postToDiscordOrThrow(
     channel = await activeClient.channels.fetch(cfg.channelId);
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
-    throw new Error(`Could not fetch channel ${cfg.channelId}: ${msg}. Bot may not be in the server, or the channel ID is wrong.`);
+    throw new Error(`Could not fetch channel ${cfg.channelId}: ${msg}. Bot may not be in the server, or the channel ID is wrong.`, { cause: e });
   }
   if (!channel) {
     throw new Error(`Channel ${cfg.channelId} not found. Check the channel ID and that the bot is in the server.`);
@@ -290,7 +290,7 @@ export async function postToDiscordOrThrow(
   } catch (e) {
     const err = e as Error & { code?: number };
     const msg = err?.message ?? String(e);
-    throw new Error(`Send failed: ${msg}. The bot probably lacks Send Messages permission in that channel.`);
+    throw new Error(`Send failed: ${msg}. The bot probably lacks Send Messages permission in that channel.`, { cause: e });
   }
 }
 

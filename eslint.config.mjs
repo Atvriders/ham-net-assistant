@@ -43,6 +43,15 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // react-hooks v7 promoted two React-Compiler advisory rules into
+      // `recommended`. They flag long-standing, working patterns here
+      // (modal reset-on-open prop→state syncs; Date.now() freshness windows
+      // evaluated during render) whose "fixes" are structural redesigns —
+      // out of scope for a toolchain wave. Deferred deliberately, like the
+      // Prisma 7 migration: adopt rule-by-rule in a dedicated refactor pass.
+      // Every rule that was enforced before eslint 10 remains enforced.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/purity': 'off',
     },
   },
   prettier,
