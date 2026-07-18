@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite';
+// defineConfig comes from vitest/config (not vite) so the `test` block below
+// is typed — vite 7's own UserConfig no longer carries it.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 

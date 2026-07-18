@@ -6,15 +6,18 @@ import { defineConfig } from 'vitest/config';
 // is too tight — a single test that does several awaited API round-trips can
 // legitimately take longer. Raise the per-test and per-hook ceilings.
 //
-// Serialize file-level execution (singleFork + fileParallelism:false) so the
-// better-sqlite3 / Prisma native-handle teardown races don't pile up across
-// parallel workers — that race produced a SIGABRT (exit 134) on Node 22 in
-// CI run 347 AFTER all assertions had already passed. teardownTimeout gives
-// each file's afterAll() room to $disconnect() Prisma cleanly.
+// Serialize file-level execution (maxWorkers:1 + fileParallelism:false) so
+// the better-sqlite3 / Prisma native-handle teardown races don't pile up
+// across parallel workers — that race produced a SIGABRT (exit 134) on
+// Node 22 in CI run 347 AFTER all assertions had already passed.
+// teardownTimeout gives each file's afterAll() room to $disconnect() Prisma
+// cleanly. (vitest 4 removed poolOptions; `forks + singleFork:true` is now
+// expressed as `pool:'forks' + maxWorkers:1`. Default isolation is kept
+// deliberately — do NOT set isolate:false.)
 export default defineConfig({
   test: {
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    maxWorkers: 1,
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 60000,
