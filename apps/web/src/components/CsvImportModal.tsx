@@ -1,4 +1,4 @@
-import React, { useId, useState, type JSX } from 'react';
+import React, { useId, useState } from 'react';
 import type { RepeaterInput } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
 import { Modal } from './ui/Modal.js';
@@ -19,7 +19,7 @@ export function CsvImportModal({
   open,
   onClose,
   onImported,
-}: CsvImportModalProps): JSX.Element {
+}: CsvImportModalProps): React.JSX.Element {
   const [rawText, setRawText] = useState('');
   const [rows, setRows] = useState<BuiltRow[]>([]);
   const [sourceHint, setSourceHint] = useState<'chirp' | 'generic' | null>(null);

@@ -125,8 +125,13 @@ describe('NetStatusIndicator', () => {
     rows = [liveSession('s5', 'Fresh Net')];
 
     const live = await screen.findByTestId('net-status-live');
-    expect(live).toHaveAttribute('data-pinging', 'true');
-    expect(live.className).toContain('is-pinging');
+    // The pulse is applied by the 0→1 transition effect, which under React 19
+    // can commit a tick after the chip itself appears — assert eventually.
+    // (The pulse stays up for 2400ms, far beyond waitFor's window.)
+    await waitFor(() => {
+      expect(live).toHaveAttribute('data-pinging', 'true');
+      expect(live.className).toContain('is-pinging');
+    });
     // Best-effort Web Notification fired with the net name.
     expect(ctor).toHaveBeenCalledTimes(1);
     expect(ctor).toHaveBeenCalledWith('Net started', { body: 'Fresh Net' });
@@ -153,8 +158,11 @@ describe('NetStatusIndicator', () => {
     rows = [liveSession('s6', 'Quiet Net')];
 
     const live = await screen.findByTestId('net-status-live');
-    // In-app pulse still fires...
-    expect(live.className).toContain('is-pinging');
+    // In-app pulse still fires (eventually — see the transition-effect note
+    // in the granted-permission test)...
+    await waitFor(() => {
+      expect(live.className).toContain('is-pinging');
+    });
     // ...but no desktop Notification when permission was denied.
     expect(ctor).not.toHaveBeenCalled();
   });

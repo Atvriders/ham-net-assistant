@@ -204,6 +204,14 @@ export function ScriptEditor({ value, onChange, id }: Props) {
   // fire every time we programmatically set the editor content.
   const settingFromProp = useRef(false);
 
+  // Markdown strings this editor has emitted via onChange whose round-trip
+  // through the parent's state hasn't been observed yet. React 19 can run
+  // the value-sync effect AFTER the user's next keystroke has already
+  // advanced the editor — treating that stale echo as an external change
+  // would setContent() backwards and eat the keystroke. Any `value` found
+  // in this queue is our own edit coming back, never an external update.
+  const pendingEchoes = useRef<string[]>([]);
+
   // Initial content normalized to markdown — handles legacy HTML scripts.
   // Intentionally captured once on mount; subsequent `value` changes are
   // applied via the useEffect below to avoid resetting the editor on every
@@ -246,6 +254,7 @@ export function ScriptEditor({ value, onChange, id }: Props) {
         markdown: { getMarkdown: () => string };
       };
       const md = storage.markdown.getMarkdown();
+      pendingEchoes.current.push(md);
       onChange(md);
     },
   });
@@ -264,6 +273,13 @@ export function ScriptEditor({ value, onChange, id }: Props) {
       markdown?: { getMarkdown: () => string };
     };
     if (!storage.markdown) return;
+    // Echo of our own onChange (possibly stale — the editor may already be
+    // several keystrokes ahead): consume it and leave the editor alone.
+    const echoIdx = pendingEchoes.current.indexOf(value);
+    if (echoIdx !== -1) {
+      pendingEchoes.current.splice(0, echoIdx + 1);
+      return;
+    }
     const current = storage.markdown.getMarkdown();
     const next = toMarkdown(value);
     if (current === next) return;
