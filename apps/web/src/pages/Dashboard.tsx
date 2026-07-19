@@ -187,9 +187,11 @@ export function Dashboard() {
                   <div className="hna-net-row">
                     <div className="hna-net-row__when">
                       {isPrep ? (
-                        <span
+                        <Link
+                          to={`/run/${s.id}`}
                           className="hna-mono"
                           data-testid="dash-prep-chip"
+                          title={`Open the prep console for ${s.net.name}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -198,10 +200,12 @@ export function Dashboard() {
                             letterSpacing: '0.14em',
                             textTransform: 'uppercase',
                             color: 'var(--color-warn, #d49016)',
+                            textDecoration: 'underline',
+                            textUnderlineOffset: 3,
                           }}
                         >
                           PREP
-                        </span>
+                        </Link>
                       ) : (
                         <span className="hna-live-label">
                           <LiveDot label="Live" /> &nbsp;LIVE
