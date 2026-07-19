@@ -530,6 +530,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   margin: 0 auto;
   padding: var(--space-6) var(--space-5);
 }
+/* The run-net console (RunNetPage) gets a wide rack: the live operator
+ * screen was squeezed into the shared 1280px column with huge dead
+ * margins on big monitors. Scoped via :has() on the page's root class
+ * so every other page keeps the calibrated 1280px reading width. */
+.hna-shell__main:has(.hna-runnet-page) {
+  max-width: min(96vw, 1850px);
+}
 .hna-shell__footer {
   border-top: var(--border-w) solid var(--color-border);
   padding: var(--space-4) var(--space-5);
@@ -580,6 +587,12 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 .hna-clock__seconds {
   color: var(--color-fg-muted);
+}
+.hna-clock__meridiem {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-fg);
 }
 .hna-clock__tz {
   font-size: 10px;
@@ -1449,6 +1462,38 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 
 /* ------------------------------------------------------------------
+ * 5-minute announcement banner (PREP stage, weekly nets only).
+ *
+ * Hard warn-colored blink between the outlined and the solid state —
+ * an unmissable "make the announcement now" cue on the console. Under
+ * prefers-reduced-motion the blink is replaced by the static solid
+ * high-contrast state (see the reduced-motion block at the bottom).
+ * ------------------------------------------------------------------ */
+.hna-fivemin {
+  margin: var(--space-4) 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-warn, #d49016);
+  background: color-mix(in srgb, var(--color-warn, #d49016) 14%, transparent);
+  border: var(--border-w-strong) solid var(--color-warn, #d49016);
+  border-radius: var(--radius-sm);
+  animation: hna-fivemin-flash 1200ms linear infinite;
+}
+@keyframes hna-fivemin-flash {
+  0%, 49% {
+    background: color-mix(in srgb, var(--color-warn, #d49016) 14%, transparent);
+    color: var(--color-warn, #d49016);
+  }
+  50%, 100% {
+    background: var(--color-warn, #d49016);
+    color: var(--color-bg);
+  }
+}
+
+/* ------------------------------------------------------------------
  * PREP-state two-column layout (roster | chat+script).
  * Operator is preparing; script center isn't the priority yet.
  * ------------------------------------------------------------------ */
@@ -1501,10 +1546,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
  * ------------------------------------------------------------------ */
 .hna-runnet-live {
   display: grid;
-  /* 1024 — 1599px default: script dominant + roster aside, chat below. */
+  /* 1024 — 1599px default: script dominant + roster aside, chat below.
+   * The roster cap is generous (440px) so the check-in log's NAME
+   * column has real room — the page column itself is wide (see the
+   * .hna-shell__main:has(.hna-runnet-page) rule). */
   grid-template-columns:
     minmax(0, 1fr)
-    minmax(280px, 380px);
+    minmax(300px, 440px);
   grid-template-areas:
     'script roster'
     'chat   chat';
@@ -1541,8 +1589,8 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   .hna-runnet-live {
     grid-template-columns:
       minmax(0, 1fr)
-      minmax(300px, 380px)
-      minmax(320px, 460px);
+      minmax(320px, 460px)
+      minmax(340px, 500px);
     grid-template-areas: 'script roster chat';
   }
 }
@@ -1663,7 +1711,17 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 .hna-roster__row {
   display: grid;
-  grid-template-columns: 44px minmax(80px, auto) minmax(0, 1fr) auto auto;
+  /* idx | callsign | name | time | actions. The callsign column caps at
+   * its own max-content (the mode chip stacks BELOW the callsign, see
+   * .hna-roster__cs) and the NAME column carries a real 96px floor so
+   * it can never collapse to a one-letter ellipsis; time/actions are
+   * max-content so they never overlap neighboring cells. */
+  grid-template-columns:
+    44px
+    minmax(84px, max-content)
+    minmax(96px, 1fr)
+    max-content
+    max-content;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -1679,14 +1737,30 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   font-variant-numeric: tabular-nums;
 }
 .hna-roster__cs {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  /* Column-stack: callsign line on top, mode chip (if any) beneath.
+   * Keeping the chip out of the inline flow stops it inflating this
+   * grid column — the old inline chip pushed over the time cell and
+   * starved the name column down to one letter. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--color-primary);
+}
+.hna-roster__cs-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.hna-roster__mode-chip {
+  font-size: 9px;
+  padding: 1px 4px;
 }
 .hna-roster__name {
   font-family: var(--font-sans);
@@ -1710,6 +1784,7 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   letter-spacing: 0.04em;
   color: var(--color-fg-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .hna-roster__actions {
   display: inline-flex;
@@ -1744,7 +1819,11 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 @media (max-width: 640px) {
   .hna-roster__row {
-    grid-template-columns: 36px minmax(60px, auto) minmax(0, 1fr) auto;
+    grid-template-columns:
+      36px
+      minmax(64px, max-content)
+      minmax(0, 1fr)
+      max-content;
   }
   .hna-roster__time { display: none; }
 }
@@ -2310,6 +2389,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   }
   .hna-netstatus__live.is-pinging {
     animation: none !important;
+  }
+  /* No flashing — hold the 5-minute announcement in its static
+   * high-contrast (solid warn) state instead. */
+  .hna-fivemin {
+    animation: none !important;
+    background: var(--color-warn, #d49016);
+    color: var(--color-bg);
   }
   .hna-btn::after { transition: none !important; }
   .hna-nav-link::after { transition: none !important; }

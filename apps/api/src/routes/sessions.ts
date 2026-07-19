@@ -60,6 +60,17 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     const existing = await findSameDaySession(prisma, netId, new Date());
     if (existing) {
       if (existing.endedAt === null) {
+        // Adopt an unclaimed session: if the same-day row has no control
+        // operator (typically because the auto-open scheduler created it with
+        // controlOpId = null), the presser becomes net control. A session that
+        // already has a control op keeps it — pressing "Open net" never steals
+        // control from the current operator (use "change net control" for
+        // that). The null-guard in the WHERE makes this race-safe: two
+        // simultaneous pressers can't both win.
+        await prisma.netSession.updateMany({
+          where: { id: existing.id, controlOpId: null },
+          data: { controlOpId: req.user!.id },
+        });
         // Reuse the active session (prep or live).
         const reused = await prisma.netSession.findUnique({
           where: { id: existing.id },
@@ -152,7 +163,15 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     }
     const updated = await prisma.netSession.update({
       where: { id: session.id },
-      data: { liveAt: new Date() },
+      data: {
+        liveAt: new Date(),
+        // The opener keeps control: START never reassigns an existing control
+        // operator (someone else pressing Start must not steal the net). Only
+        // when the session has no control op at all (legacy/edge rows — the
+        // open route and dedupe path normally assign one) does the starter
+        // become control, so a live net is never left control-less.
+        ...(session.controlOpId === null ? { controlOpId: req.user!.id } : {}),
+      },
       include: {
         topic: true,
         checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },

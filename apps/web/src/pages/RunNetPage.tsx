@@ -23,6 +23,7 @@ import {
 import { scriptToHtml } from '../lib/scriptFormat.js';
 import { SanitizedHtml } from '../components/SanitizedHtml.js';
 import { ChatBox } from '../components/ChatBox.js';
+import { FiveMinuteAnnouncement } from '../components/FiveMinuteAnnouncement.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 import { NetEditModal, netToInput } from '../components/NetEditModal.js';
 
@@ -537,7 +538,10 @@ export function RunNetPage() {
   const currentTopic = session.topicTitle ?? session.topic?.title ?? null;
 
   return (
-    <div>
+    // hna-runnet-page widens the shell's content column for this page only
+    // (see the `.hna-shell__main:has(.hna-runnet-page)` rule in ui.css) —
+    // the live console uses most of the viewport instead of the 1280px cap.
+    <div className="hna-runnet-page">
       {/* ===== Page header ===== */}
       <header className="hna-page-header">
         <p className="hna-page-marker">// 04 — RUNNING NET</p>
@@ -709,6 +713,15 @@ export function RunNetPage() {
           )}
         </div>
       </div>
+
+      {/* ===== 5-minute announcement (PREP, weekly nets only) =====
+       *
+       * Flashing warn strip shown while prepping when the wall clock is
+       * within 5 minutes of the net's scheduled start (computed in the
+       * net's own IANA timezone). Unmounted the moment the session goes
+       * LIVE; the component itself hides once the window passes and
+       * renders nothing for impromptu nets. */}
+      {isPrep && <FiveMinuteAnnouncement net={net} />}
 
       {/* ===== Rack =====
        *
@@ -1215,13 +1228,18 @@ export function RunNetPage() {
                   >
                     <span className="hna-roster__idx">#{String(ord).padStart(2, '0')}</span>
                     <span className="hna-roster__cs">
-                      <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
-                      {displayCallsign(ci.callsign)}
+                      <span className="hna-roster__cs-line">
+                        <OnlineDot online={isOnlineByCallsign(ci.callsign)} />
+                        {displayCallsign(ci.callsign)}
+                      </span>
+                      {/* The mode chip rides on its own line UNDER the
+                       * callsign — inline it inflated the callsign column
+                       * until the badge painted over the time cell and the
+                       * name column collapsed to one letter. */}
                       {ci.mode === 'echolink' && (
                         <span
-                          className="hna-chip"
+                          className="hna-chip hna-roster__mode-chip"
                           data-testid="echolink-chip"
-                          style={{ marginLeft: 6 }}
                           aria-label="Checked in via EchoLink"
                         >
                           ECHOLINK

@@ -480,6 +480,103 @@ describe('sessions', () => {
   });
 });
 
+describe('net control assignment on open/start', () => {
+  let openerId: string;      // user A — the officer from beforeAll (W1AW)
+  let netctlB: string;       // cookie for user B, promoted to NET_CONTROL
+  let netctlBId: string;
+
+  beforeAll(async () => {
+    const a = await prisma.user.findFirst({ where: { callsign: 'W1AW' } });
+    openerId = a!.id;
+    // Register user B, promote to NET_CONTROL directly in the DB, then
+    // re-login so the cookie's JWT carries the new role (mirrors the
+    // PATCH-controlOpId test above).
+    const email = 'netctl-b@x.co';
+    const reg = await request(app).post('/api/auth/register').send({
+      email, password: 'hunter2hunter2', name: 'Net Control B', callsign: 'W3NCB',
+    });
+    netctlBId = reg.body.id;
+    await prisma.user.update({ where: { id: netctlBId }, data: { role: 'NET_CONTROL' } });
+    const login = await request(app).post('/api/auth/login')
+      .send({ email, password: 'hunter2hunter2' });
+    netctlB = login.headers['set-cookie'][0];
+  });
+
+  it('opening a net sets controlOp to the opener', async () => {
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(res.status).toBe(201);
+    expect(res.body.controlOpId).toBe(openerId);
+    expect(res.body.controlOp.callsign).toBe('W1AW');
+  });
+
+  it('open dedupe onto an auto-opened session (controlOpId null) assigns the presser', async () => {
+    // Simulate the auto-open scheduler: PREP session, no human control op.
+    const auto = await prisma.netSession.create({
+      data: {
+        netId, startedAt: new Date(), liveAt: null, controlOpId: null, autoOpened: true,
+      },
+    });
+    const res = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(auto.id);
+    expect(res.body.reused).toBe(true);
+    expect(res.body.controlOpId).toBe(openerId);
+    expect(res.body.controlOp.callsign).toBe('W1AW');
+  });
+
+  it('open dedupe does NOT reassign control when user B presses open on A\'s session', async () => {
+    const first = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(first.status).toBe(201);
+    expect(first.body.controlOpId).toBe(openerId);
+    // User B (NET_CONTROL) presses "Open net" on the same day — the session is
+    // reused and control stays with A. B is not left out: "change net control"
+    // is the explicit path for taking over.
+    const second = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', netctlB);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.reused).toBe(true);
+    expect(second.body.controlOpId).toBe(openerId);
+  });
+
+  it('user A opens, user B starts → control remains user A', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.status).toBe(201);
+    expect(open.body.controlOpId).toBe(openerId);
+    const start = await request(app)
+      .post(`/api/sessions/${open.body.id}/start`).set('Cookie', netctlB);
+    expect(start.status).toBe(200);
+    expect(start.body.liveAt).not.toBeNull();
+    expect(start.body.controlOpId).toBe(openerId);
+    expect(start.body.controlOp.callsign).toBe('W1AW');
+  });
+
+  it('start on a control-less session falls back to assigning the starter', async () => {
+    // Edge/legacy path: a PREP session with no control op at all (e.g.
+    // auto-opened and started without anyone pressing "Open net" first).
+    const orphan = await prisma.netSession.create({
+      data: {
+        netId, startedAt: new Date(), liveAt: null, controlOpId: null, autoOpened: true,
+      },
+    });
+    const start = await request(app)
+      .post(`/api/sessions/${orphan.id}/start`).set('Cookie', netctlB);
+    expect(start.status).toBe(200);
+    expect(start.body.controlOpId).toBe(netctlBId);
+    expect(start.body.controlOp.callsign).toBe('W3NCB');
+  });
+
+  it('explicit "change net control" (PATCH controlOpId) still reassigns after open', async () => {
+    const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    expect(open.body.controlOpId).toBe(openerId);
+    const patch = await request(app).patch(`/api/sessions/${open.body.id}`)
+      .set('Cookie', netctlB)
+      .send({ controlOpId: netctlBId });
+    expect(patch.status).toBe(200);
+    expect(patch.body.controlOpId).toBe(netctlBId);
+    expect(patch.body.controlOp.callsign).toBe('W3NCB');
+  });
+});
+
 describe('session prep gates', () => {
   it('check-in to a PREP session returns 409 CONFLICT', async () => {
     const open = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);

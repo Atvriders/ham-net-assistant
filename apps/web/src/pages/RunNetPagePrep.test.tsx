@@ -31,7 +31,11 @@ const net = {
 };
 
 /** Build a session payload in PREP (liveAt null) or LIVE (liveAt set) state. */
-function makeSession(opts: { live: boolean; topicTitle?: string | null }) {
+function makeSession(opts: {
+  live: boolean;
+  topicTitle?: string | null;
+  net?: typeof net;
+}) {
   const startedAt = new Date().toISOString();
   return {
     id: 's1',
@@ -44,7 +48,7 @@ function makeSession(opts: { live: boolean; topicTitle?: string | null }) {
     topic: null,
     autoOpened: false,
     checkIns: [],
-    net,
+    net: opts.net ?? net,
   };
 }
 
@@ -76,6 +80,7 @@ function makeMockFetch(opts: {
   live: boolean;
   topics?: typeof recommendedTopics;
   initialTopic?: string | null;
+  net?: typeof net;
 }) {
   let live = opts.live;
   // Mutable so a PATCH that sets a topic is reflected on the next GET refresh.
@@ -110,7 +115,7 @@ function makeMockFetch(opts: {
       return json(opts.topics ?? []);
     if (url.endsWith('/api/sessions/s1/start') && method === 'POST') {
       live = true;
-      return json(makeSession({ live: true, topicTitle }));
+      return json(makeSession({ live: true, topicTitle, net: opts.net }));
     }
     // PATCH a topic suggestion's status (mark USED) — captured in `calls`.
     if (/\/api\/topics\/[^/]+\/status$/.test(url) && method === 'PATCH') {
@@ -119,10 +124,10 @@ function makeMockFetch(opts: {
     if (url.endsWith('/api/sessions/s1') && method === 'PATCH') {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       if ('topicTitle' in body) topicTitle = body.topicTitle || null;
-      return json(makeSession({ live, topicTitle }));
+      return json(makeSession({ live, topicTitle, net: opts.net }));
     }
     if (url.endsWith('/api/sessions/s1'))
-      return json(makeSession({ live, topicTitle }));
+      return json(makeSession({ live, topicTitle, net: opts.net }));
     return json([]);
   });
   return { fn, calls };
@@ -486,5 +491,74 @@ describe('RunNetPage live topic editor', () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId('topic-suggestions')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Custom topic')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunNetPage 5-minute announcement banner', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** UTC `HH:mm` for `minutes` from now — pairs with `timezone: 'UTC'`. */
+  function startLocalMinutesFromNow(minutes: number): string {
+    const d = new Date(Date.now() + minutes * 60_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  }
+
+  it('shows the banner in PREP when a weekly start is within 5 minutes', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: false,
+      net: { ...net, startLocal: startLocalMinutesFromNow(3), timezone: 'UTC' },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const banner = await screen.findByTestId('five-minute-banner');
+    expect(banner).toHaveTextContent('5-MINUTE ANNOUNCEMENT');
+    expect(banner).toHaveTextContent('NET STARTS AT');
+  });
+
+  it('does not show the banner when the start is farther out', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: false,
+      net: { ...net, startLocal: startLocalMinutesFromNow(45), timezone: 'UTC' },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    expect(await screen.findByTestId('prep-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+  });
+
+  it('never shows the banner for impromptu nets', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: false,
+      net: {
+        ...net,
+        kind: 'impromptu',
+        startLocal: startLocalMinutesFromNow(3),
+        timezone: 'UTC',
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    expect(await screen.findByTestId('prep-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+  });
+
+  it('does not show the banner once the session is LIVE, even inside the window', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      net: { ...net, startLocal: startLocalMinutesFromNow(3), timezone: 'UTC' },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
   });
 });

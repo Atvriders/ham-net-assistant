@@ -37,9 +37,19 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** Format a Date as local `HH:MM:SS`. */
+/** 12-hour clock parts: hour 1-12 (no leading zero) + AM/PM meridiem. */
+function to12h(d: Date): { hour: number; meridiem: 'AM' | 'PM' } {
+  const h24 = d.getHours();
+  return {
+    hour: ((h24 + 11) % 12) + 1,
+    meridiem: h24 >= 12 ? 'PM' : 'AM',
+  };
+}
+
+/** Format a Date as local 12-hour `H:MM:SS AM|PM`. */
 function formatTime(d: Date): string {
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const { hour, meridiem } = to12h(d);
+  return `${hour}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${meridiem}`;
 }
 
 export interface ClockProps {
@@ -56,13 +66,13 @@ export interface ClockProps {
 /**
  * Live local-time readout for the app shell.
  *
- * Ticks every second as a calibrated mono `HH:MM:SS`, followed by the short
- * local timezone label (e.g. `CST`). The seconds field and the tz label are
- * wrapped in their own spans so the shell's responsive rules can hide them on
- * narrow viewports without the clock ever overflowing the nav.
+ * Ticks every second as a calibrated mono 12-hour `H:MM:SS AM|PM`, followed
+ * by the short local timezone label (e.g. `CST`). The seconds field and the
+ * tz label are wrapped in their own spans so the shell's responsive rules can
+ * hide them on narrow viewports without the clock ever overflowing the nav.
  *
  * Accessibility: carries an `aria-label` of "Current local time" and exposes
- * the full `HH:MM:SS TZ` string via the title attribute.
+ * the full `H:MM:SS AM|PM TZ` string via the title attribute.
  */
 export function Clock({ compact = false, hideTz = false }: ClockProps) {
   const [now, setNow] = React.useState(() => new Date());
@@ -74,7 +84,7 @@ export function Clock({ compact = false, hideTz = false }: ClockProps) {
     return () => clearInterval(id);
   }, []);
 
-  const hh = pad(now.getHours());
+  const { hour, meridiem } = to12h(now);
   const mm = pad(now.getMinutes());
   const ss = pad(now.getSeconds());
   const full = `${formatTime(now)}${tz ? ` ${tz}` : ''}`;
@@ -87,11 +97,12 @@ export function Clock({ compact = false, hideTz = false }: ClockProps) {
       title={full}
     >
       <span className="hna-clock__time">
-        {hh}:{mm}
+        {hour}:{mm}
         {!compact && (
           <span className="hna-clock__seconds">:{ss}</span>
         )}
       </span>
+      <span className="hna-clock__meridiem">{meridiem}</span>
       {!hideTz && tz && (
         <span className="hna-clock__tz" aria-hidden="true">
           {tz}

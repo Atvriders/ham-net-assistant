@@ -57,6 +57,34 @@ export function formatStartLocal12h(startLocal: string): string {
   return `${hour}:${String(minute).padStart(2, '0')} ${meridiem}`;
 }
 
+/**
+ * Signed minutes until a net's `HH:mm` wall-clock start **as observed in the
+ * given IANA timezone**, relative to `now` (default: the real clock).
+ *
+ * Positive = the start is still ahead today; negative = it already passed.
+ * The value is fractional (seconds count), and it is normalized into
+ * (-720, 720] so a start just after midnight still reads as "N minutes away"
+ * from just before midnight (and vice versa) — pure time-of-day math, no
+ * calendar day involved. The Intl "hour 24 at midnight" quirk is handled by
+ * `wallClockInTimeZone`. Returns null when `startLocal` is malformed.
+ */
+export function minutesUntilNetStart(
+  startLocal: string,
+  timeZone: string,
+  now: Date = new Date(),
+): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(startLocal);
+  if (!m) return null;
+  const startMins = Number(m[1]) * 60 + Number(m[2]);
+  const wall = wallClockInTimeZone(now, timeZone);
+  const nowMins =
+    wall.getHours() * 60 + wall.getMinutes() + wall.getSeconds() / 60;
+  let diff = startMins - nowMins;
+  if (diff <= -720) diff += 1440;
+  else if (diff > 720) diff -= 1440;
+  return diff;
+}
+
 export function nextOccurrence(
   dayOfWeek: number,
   startLocal: string,
