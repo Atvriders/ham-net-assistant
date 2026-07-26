@@ -494,17 +494,17 @@ describe('RunNetPage live topic editor', () => {
   });
 });
 
+/** UTC `HH:mm` for `minutes` from now — pairs with `timezone: 'UTC'`. */
+function startLocalMinutesFromNow(minutes: number): string {
+  const d = new Date(Date.now() + minutes * 60_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
 describe('RunNetPage 5-minute announcement banner', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-
-  /** UTC `HH:mm` for `minutes` from now — pairs with `timezone: 'UTC'`. */
-  function startLocalMinutesFromNow(minutes: number): string {
-    const d = new Date(Date.now() + minutes * 60_000);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
-  }
 
   it('shows the banner in PREP when a weekly start is within 5 minutes', async () => {
     const { fn } = makeMockFetch({
@@ -560,5 +560,59 @@ describe('RunNetPage 5-minute announcement banner', () => {
       expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunNetPage auto-start countdown strip', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the countdown in PREP when the weekly start is farther than 5 minutes out', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: false,
+      net: { ...net, startLocal: startLocalMinutesFromNow(45), timezone: 'UTC' },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const strip = await screen.findByTestId('prep-countdown');
+    expect(strip).toHaveTextContent('AUTO-START IN');
+    // Calm state — the flashing 5-minute treatment hasn't kicked in yet.
+    expect(strip).not.toHaveClass('hna-fivemin');
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+    // The manual START button stays available throughout.
+    expect(screen.getByTestId('start-net-button')).toBeInTheDocument();
+  });
+
+  it('shows no countdown for impromptu nets', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: false,
+      net: {
+        ...net,
+        kind: 'impromptu',
+        startLocal: startLocalMinutesFromNow(45),
+        timezone: 'UTC',
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    expect(await screen.findByTestId('prep-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('prep-countdown')).not.toBeInTheDocument();
+  });
+
+  it('shows no countdown once the session is LIVE', async () => {
+    const { fn } = makeMockFetch({
+      role: 'OFFICER',
+      live: true,
+      net: { ...net, startLocal: startLocalMinutesFromNow(45), timezone: 'UTC' },
+    });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('prep-countdown')).not.toBeInTheDocument();
   });
 });

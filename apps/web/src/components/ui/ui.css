@@ -1480,6 +1480,9 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   background: color-mix(in srgb, var(--color-warn, #d49016) 14%, transparent);
   border: var(--border-w-strong) solid var(--color-warn, #d49016);
   border-radius: var(--radius-sm);
+  /* The strip carries the live MM:SS auto-start countdown — tabular digits
+   * keep it from wiggling as it ticks. */
+  font-variant-numeric: tabular-nums;
   animation: hna-fivemin-flash 1200ms linear infinite;
 }
 @keyframes hna-fivemin-flash {
@@ -1491,6 +1494,26 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
     background: var(--color-warn, #d49016);
     color: var(--color-bg);
   }
+}
+
+/* Calm state of the same PREP strip — "// AUTO-START IN MM:SS" while the
+ * scheduled start is still more than five minutes out, and "// STARTING…"
+ * during the post-start grace while the server auto-starts the session.
+ * Same geometry as .hna-fivemin so nothing jumps when the five-minute
+ * flash treatment kicks in; no animation, so nothing extra is needed
+ * under prefers-reduced-motion. */
+.hna-prep-countdown {
+  margin: var(--space-4) 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  border: var(--border-w) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------------
@@ -1767,9 +1790,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   font-size: 14px;
   color: var(--color-fg);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap to a second line instead of ellipsizing so the full name always
+   * fits (the row may grow taller). overflow-wrap keeps a single very long
+   * word from inflating the column past its minmax() track — the grid's
+   * other cells (idx/callsign/time/actions) are never crushed. The name
+   * cell also carries title={fullName} so hover reveals it regardless. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .hna-roster__name small {
   display: block;

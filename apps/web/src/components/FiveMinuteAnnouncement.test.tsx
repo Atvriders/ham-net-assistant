@@ -115,3 +115,88 @@ describe('FiveMinuteAnnouncement', () => {
     expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
   });
 });
+
+describe('FiveMinuteAnnouncement auto-start countdown', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows a seconds-aware countdown outside the 5-minute window (calm strip, no flash class)', () => {
+    // 20:00 start, now 19:20:28 → 39m32s remaining.
+    render(
+      <FiveMinuteAnnouncement net={weeklyUtc} now={at('2026-07-18T19:20:28Z')} />,
+    );
+    const strip = screen.getByTestId('prep-countdown');
+    expect(strip).toHaveTextContent('// AUTO-START IN 39:32');
+    expect(strip).not.toHaveClass('hna-fivemin');
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+  });
+
+  it('ticks toward zero every second and carries the countdown into the flashing 5-minute banner', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-18T19:55:28Z'));
+    render(<FiveMinuteAnnouncement net={weeklyUtc} />);
+    // 4m32s out — inside the window, so the flashing banner hosts the countdown.
+    const banner = screen.getByTestId('five-minute-banner');
+    expect(banner).toHaveTextContent('AUTO-START IN 04:32');
+    expect(banner).toHaveTextContent('5-MINUTE ANNOUNCEMENT');
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByTestId('five-minute-banner')).toHaveTextContent(
+      'AUTO-START IN 04:31',
+    );
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByTestId('five-minute-banner')).toHaveTextContent(
+      'AUTO-START IN 04:01',
+    );
+  });
+
+  it('shows STARTING… at zero and fires onStartDue exactly once', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-18T19:59:58Z'));
+    const onStartDue = vi.fn();
+    render(<FiveMinuteAnnouncement net={weeklyUtc} onStartDue={onStartDue} />);
+    // Still 2 seconds out — countdown visible, callback not yet fired.
+    expect(screen.getByTestId('five-minute-banner')).toHaveTextContent(
+      'AUTO-START IN 00:02',
+    );
+    expect(onStartDue).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    const strip = screen.getByTestId('prep-countdown');
+    expect(strip).toHaveTextContent('// STARTING…');
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+    expect(onStartDue).toHaveBeenCalledTimes(1);
+    // Ticking on through the grace window must not re-fire the callback.
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByTestId('prep-countdown')).toHaveTextContent(
+      '// STARTING…',
+    );
+    expect(onStartDue).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the strip once the grace window passes (manual start is the fallback)', () => {
+    // 15 minutes after the 20:00 start — grace expired, server missed it.
+    render(
+      <FiveMinuteAnnouncement net={weeklyUtc} now={at('2026-07-18T20:15:00Z')} />,
+    );
+    expect(screen.queryByTestId('prep-countdown')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('five-minute-banner')).not.toBeInTheDocument();
+  });
+
+  it('renders no countdown for impromptu nets', () => {
+    render(
+      <FiveMinuteAnnouncement
+        net={{ kind: 'impromptu', startLocal: '20:00', timezone: 'UTC' }}
+        now={at('2026-07-18T19:30:00Z')}
+      />,
+    );
+    expect(screen.queryByTestId('prep-countdown')).not.toBeInTheDocument();
+  });
+});

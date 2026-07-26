@@ -150,6 +150,8 @@ export function RunNetPage() {
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
+  const rosterListRef = useRef<HTMLUListElement>(null);
+  const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   const nameRef = useRef<string>('');
   useEffect(() => {
@@ -220,6 +222,27 @@ export function RunNetPage() {
       });
     return () => ctrl.abort();
   }, [topicQueueActive, topicQueueNonce]);
+
+  // The LOG lists check-ins oldest-first, so a new check-in appends at the
+  // BOTTOM. When one arrives, nudge the newest row into view (the roster has
+  // no inner scroll container — the page scrolls — so a long log would
+  // otherwise hide the row that was just added). Skips the initial load so
+  // opening the page doesn't jump, and never fires on deletes/undo.
+  // null until the session payload has actually loaded — seeding the counter
+  // with 0 during the loading render would make the first loaded payload look
+  // like an "increase" and scroll the page on open.
+  const checkInCount = session ? session.checkIns.length : null;
+  useEffect(() => {
+    if (checkInCount === null) return;
+    const prev = prevCheckInCountRef.current;
+    prevCheckInCountRef.current = checkInCount;
+    if (prev === null || checkInCount <= prev) return;
+    const lastRow = rosterListRef.current?.lastElementChild;
+    // scrollIntoView is missing in jsdom — guard rather than polyfill.
+    if (lastRow && typeof lastRow.scrollIntoView === 'function') {
+      lastRow.scrollIntoView({ block: 'nearest' });
+    }
+  }, [checkInCount]);
 
   // Dismiss the overflow menu when clicking outside it.
   useEffect(() => {
@@ -525,9 +548,12 @@ export function RunNetPage() {
   const repeaterFreq = `${net.repeater.frequency.toFixed(3)} MHz`;
   const scriptCategoryLabel =
     SCRIPT_CATEGORY_LABELS[net.scriptCategory ?? 'general'] ?? 'General';
-  // Reversed for display (newest first) — index counter shows the original
-  // check-in order ("#01" is the first person to check in).
-  const checkInsNewestFirst = session.checkIns;
+  // The API returns check-ins newest-first (desc); the LOG displays them
+  // OLDEST-FIRST — "#01" (first to check in) at the top, the newest appended
+  // at the bottom. Copy-then-reverse so the session payload itself is never
+  // mutated: undoLastAction and the callsign-Backspace shortcut still read
+  // `session.checkIns[0]` as the most recent check-in.
+  const checkInsOldestFirst = [...session.checkIns].reverse();
   const totalCheckIns = session.checkIns.length;
   // PREP vs LIVE state: liveAt is null while opened-but-not-started. Once set
   // (via POST /sessions/:id/start) the row is live and check-ins are accepted.
@@ -714,14 +740,20 @@ export function RunNetPage() {
         </div>
       </div>
 
-      {/* ===== 5-minute announcement (PREP, weekly nets only) =====
+      {/* ===== Auto-start countdown / 5-minute announcement (PREP, weekly
+       * nets only) =====
        *
-       * Flashing warn strip shown while prepping when the wall clock is
-       * within 5 minutes of the net's scheduled start (computed in the
-       * net's own IANA timezone). Unmounted the moment the session goes
-       * LIVE; the component itself hides once the window passes and
-       * renders nothing for impromptu nets. */}
-      {isPrep && <FiveMinuteAnnouncement net={net} />}
+       * One strip: a per-second "// AUTO-START IN MM:SS" countdown to the
+       * scheduled start (the server auto-starts the PREP session at that
+       * time), which flips to the flashing 5-minute-announcement treatment
+       * inside the last five minutes and to "// STARTING…" at zero. All
+       * times are computed in the net's own IANA timezone. `onStartDue`
+       * refetches the session the moment the countdown hits zero so the
+       * console flips to LIVE without waiting for the next poll tick — the
+       * client never starts the session itself. Unmounted the moment the
+       * session goes LIVE (so the 1s tick never runs while LIVE); the
+       * component renders nothing for impromptu nets. */}
+      {isPrep && <FiveMinuteAnnouncement net={net} onStartDue={refresh} />}
 
       {/* ===== Rack =====
        *
@@ -1197,12 +1229,13 @@ export function RunNetPage() {
 
             <ul
               className="hna-roster"
+              ref={rosterListRef}
               role="log"
               aria-live="polite"
               aria-relevant="additions"
               aria-label="Check-in log"
             >
-              {checkInsNewestFirst.length === 0 && (
+              {checkInsOldestFirst.length === 0 && (
                 <li
                   className="hna-empty"
                   style={{ padding: 'var(--space-4) 0' }}
@@ -1213,10 +1246,10 @@ export function RunNetPage() {
                   </p>
                 </li>
               )}
-              {checkInsNewestFirst.map((ci, displayIdx) => {
-                // displayIdx is newest-first; convert to 1-based original
-                // check-in order ("#01" is first to check in).
-                const ord = totalCheckIns - displayIdx;
+              {checkInsOldestFirst.map((ci, displayIdx) => {
+                // displayIdx is oldest-first, so the 1-based check-in order
+                // is direct: "#01" (first to check in) sits at the top.
+                const ord = displayIdx + 1;
                 const recent =
                   Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
                 const canEdit = canModify(ci);
@@ -1246,7 +1279,10 @@ export function RunNetPage() {
                         </span>
                       )}
                     </span>
-                    <span className="hna-roster__name">
+                    {/* title always reveals the full name on hover; the CSS
+                     * lets the cell wrap to a second line so it also fits
+                     * visibly (see .hna-roster__name in ui.css). */}
+                    <span className="hna-roster__name" title={ci.nameAtCheckIn}>
                       {ci.nameAtCheckIn}
                       {ci.comment && <small>{ci.comment}</small>}
                     </span>

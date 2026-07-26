@@ -10,6 +10,7 @@ import { redactScriptsForRole } from '../lib/scriptGate.js';
 import { findSameDaySession } from '../lib/sessionDedupe.js';
 import { postToDiscord } from '../discord/client.js';
 import { withCheckInMode } from '../lib/checkinMode.js';
+import { startSession } from '../lib/startSession.js';
 
 /**
  * Normalize the checkIns array on a session-shaped object so each row carries
@@ -161,44 +162,21 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     if (session.liveAt) {
       throw new HttpError(409, 'CONFLICT', 'Session is already live');
     }
-    const updated = await prisma.netSession.update({
-      where: { id: session.id },
-      data: {
-        liveAt: new Date(),
-        // The opener keeps control: START never reassigns an existing control
-        // operator (someone else pressing Start must not steal the net). Only
-        // when the session has no control op at all (legacy/edge rows — the
-        // open route and dedupe path normally assign one) does the starter
-        // become control, so a live net is never left control-less.
-        ...(session.controlOpId === null ? { controlOpId: req.user!.id } : {}),
-      },
-      include: {
-        topic: true,
-        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
-        net: {
-          include: {
-            repeater: true,
-            links: { include: { repeater: true } },
-          },
-        },
-        controlOp: { select: { callsign: true, name: true } },
-      },
-    });
+    // Shared core (also used by the auto-start scheduler): guard-update
+    // PREP → LIVE, human null-fallback for controlOpId (the opener keeps
+    // control — START never reassigns an existing control operator; only a
+    // control-less session adopts the starter), and the Discord 🟢
+    // announcement on a successful transition.
+    const { transitioned, session: updated } = await startSession(prisma, session.id, req.user!.id);
+    if (!transitioned) {
+      // Lost the race between the pre-checks above and the guard-update
+      // (e.g. the auto-start scheduler fired in between). Same contract as
+      // the pre-check: the session is already live.
+      throw new HttpError(409, 'CONFLICT', 'Session is already live');
+    }
+    if (!updated) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
     liftSessionCheckInModes(updated);
     res.status(200).json(updated);
-    // Fire-and-forget Discord "now live" notification — moved from the
-    // session-create route so the 🟢 ping happens at the actual START moment.
-    void (async () => {
-      try {
-        const repeater = updated.net?.repeater;
-        const freq = repeater?.frequency != null ? `${repeater.frequency.toFixed(3)} MHz` : '';
-        const repeaterName = repeater?.name ? ` (${repeater.name})` : '';
-        const topicLine = updated.topicTitle ? ` · Topic: ${updated.topicTitle}` : '';
-        const content =
-          `🟢 **${updated.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
-        await postToDiscord(prisma, content);
-      } catch { /* ignore */ }
-    })();
   }));
 
   flat.get('/', asyncHandler(async (req, res) => {

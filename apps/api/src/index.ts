@@ -5,6 +5,7 @@ import { reconcileDiscord, loadDiscordConfig } from './discord/client.js';
 import { handleInboundDiscordMessage } from './discord/bridge.js';
 import { startReminderScheduler } from './discord/reminders.js';
 import { startAutoOpenScheduler } from './lib/autoOpenScheduler.js';
+import { startAutoStartScheduler } from './lib/autoStartScheduler.js';
 
 const app = buildApp(prisma);
 app.listen(env.PORT, () => {
@@ -26,6 +27,12 @@ void (async () => {
   // doesn't depend on Discord being connected. Kept out of the test app
   // (buildApp) so tests drive autoOpenTick with a fixed clock instead.
   startAutoOpenScheduler(prisma);
+  // Auto-start scheduler: transitions an open PREP session to LIVE when the
+  // weekly net's scheduled start time arrives (15-min grace window), exactly
+  // as if START were pressed — including the Discord 🟢 announcement, which
+  // no-ops cleanly when Discord isn't connected. Also kept out of buildApp so
+  // tests drive autoStartTick with a fixed clock instead.
+  startAutoStartScheduler(prisma);
   try {
     const cfg = await loadDiscordConfig(prisma);
     if (!cfg.enabled) return;
