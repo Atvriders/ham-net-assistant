@@ -27,3 +27,15 @@ apps/api/test-*.db*
 *.sqlite
 *.sqlite3
 data/
+
+# Deployment compose files. The tracked docker-compose.yml is a TEMPLATE: it
+# resolves JWT_SECRET from the environment and refuses to start without one,
+# precisely so no signing key is ever published here. An operator running a
+# real server may prefer a self-contained copy with the values inline — these
+# names keep that copy out of the repo. A committed signing key would let
+# anyone mint an ADMIN session for that club.
+docker-compose.server.yml
+docker-compose.deploy.yml
+docker-compose.local.yml
+docker-compose.*.local.yml
+docker-compose.override.yml
