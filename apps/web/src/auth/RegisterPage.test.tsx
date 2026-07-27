@@ -102,3 +102,51 @@ describe('RegisterPage password rule', () => {
     expect(password).toHaveAccessibleDescription(new RegExp(`${min} characters`));
   });
 });
+
+describe('RegisterPage invite code', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Same harness as makeFetch(), but with a club that requires a join code. */
+  function fetchRequiringInvite() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url.endsWith('/auth/me')) {
+        return json({ error: { code: 'UNAUTHORIZED', message: 'no' } }, 401);
+      }
+      if (url.endsWith('/auth/config')) return json({ inviteCodeRequired: true });
+      return json({});
+    });
+  }
+
+  it('tells the applicant where to get the code, via the field description', async () => {
+    vi.stubGlobal('fetch', fetchRequiringInvite());
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Continue without callsign/ }),
+    );
+
+    const invite = await screen.findByLabelText('Invite code');
+    // Tied to the input with aria-describedby, so a screen reader reads the
+    // hint when the field is focused rather than it being loose page text.
+    await waitFor(() =>
+      expect(invite).toHaveAccessibleDescription(/ask a club officer/i),
+    );
+  });
+
+  it('shows no invite field when the club has open registration', async () => {
+    vi.stubGlobal('fetch', makeFetch()); // inviteCodeRequired: false
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Continue without callsign/ }),
+    );
+    await screen.findByLabelText('Password');
+    expect(screen.queryByLabelText('Invite code')).toBeNull();
+  });
+});

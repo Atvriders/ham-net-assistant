@@ -46,6 +46,7 @@ export function RegisterPage() {
   const passwordId = useId();
   const passwordHintId = useId();
   const inviteId = useId();
+  const inviteHintId = useId();
   const callsignDisplayId = useId();
 
   useEffect(() => {
@@ -322,8 +323,17 @@ export function RegisterPage() {
                 id={inviteId}
                 value={form.inviteCode}
                 onChange={(e) => update('inviteCode')(e.target.value)}
+                aria-describedby={inviteHintId}
                 required
               />
+              {/* Without this, a prospective member who doesn't have the code
+                  has no idea what the field wants or where to get one — the
+                  club shares it at meetings and on the air, not on this page. */}
+              <p id={inviteHintId} className="hna-help">
+                The shared code your club gives out — ask a club officer, or
+                check the club&rsquo;s announcement channel. It is not your
+                callsign or password.
+              </p>
             </div>
           )}
           {err && (
