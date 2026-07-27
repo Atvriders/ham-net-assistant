@@ -97,7 +97,7 @@ jobs:
       # specific CVE is a reviewed, documented edit to docker/.trivyignore
       # (required justification + expiry format is in that file).
       - name: Scan image for HIGH/CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         env:
           # Trivy pulls its vulnerability DB from ghcr.io, which rate-limits
           # anonymous pulls hard enough to flake the job. Use the workflow token.
