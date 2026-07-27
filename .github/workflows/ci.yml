@@ -82,7 +82,7 @@ jobs:
       # exact image the push step would publish. The push step below rebuilds
       # from BuildKit's cache inside this same job, so this costs one build.
       - name: Build image for scanning
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -112,7 +112,7 @@ jobs:
           trivyignores: docker/.trivyignore
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
