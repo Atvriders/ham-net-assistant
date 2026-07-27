@@ -2,6 +2,15 @@
   "name": "@hna/web",
   "version": "0.1.0",
   "private": true,
+  "description": "Ham-Net-Assistant single-page frontend — React 19 + Vite 7 + react-router 7, themed per college.",
+  "license": "MIT",
+  "author": "Atvriders",
+  "homepage": "https://github.com/Atvriders/ham-net-assistant#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atvriders/ham-net-assistant.git",
+    "directory": "apps/web"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

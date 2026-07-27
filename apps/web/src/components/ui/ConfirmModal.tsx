@@ -59,7 +59,15 @@ export function ConfirmModal({
           borderTop: '1px solid var(--color-border)',
         }}
       >
-        <Button variant="secondary" onClick={onClose}>
+        {/*
+          Initial focus goes to the *safe* action on a destructive confirm.
+          Modal now honours `autoFocus` instead of overriding it with the
+          [ESC] chip, so parking focus on "Delete" would make a stray Enter or
+          Space — the keypress that opened this dialog, repeated — destroy the
+          net, session or repeater with no undo. Non-destructive confirms keep
+          focus on the proceed button, which is the expected default there.
+        */}
+        <Button variant="secondary" onClick={onClose} autoFocus={destructive}>
           {cancelLabel}
         </Button>
         <Button
@@ -67,7 +75,7 @@ export function ConfirmModal({
           onClick={() => {
             onConfirm();
           }}
-          autoFocus
+          autoFocus={!destructive}
         >
           {confirmLabel}
         </Button>

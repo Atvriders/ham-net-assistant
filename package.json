@@ -2,6 +2,17 @@
   "name": "ham-net-assistant",
   "private": true,
   "version": "0.1.0",
+  "description": "Net-management web app for college amateur-radio clubs: repeaters, scheduled nets, live check-ins, FCC-friendly logs, participation stats, and a Discord bridge.",
+  "license": "MIT",
+  "author": "Atvriders",
+  "homepage": "https://github.com/Atvriders/ham-net-assistant#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atvriders/ham-net-assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Atvriders/ham-net-assistant/issues"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -11,11 +22,12 @@
     "@types/node": "^24.0.0",
     "@types/express": "^5.0.0"
   },
+  "//test": "The JWT_SECRET in the `test` script is a throwaway 64-hex value, never used by any deployment. It has to satisfy apps/api/src/env.ts (>= 32 chars, no placeholder words such as 'secret' or 'change-me'): the previous `dev-test-secret-long-enough` is now rejected, and any test file that reaches env.ts without importing test/helpers.ts first would abort the whole suite.",
   "scripts": {
     "dev:api": "npm -w @hna/api run dev",
     "dev:web": "npm -w @hna/web run dev",
     "build": "npm -w @hna/shared run build && npm -w @hna/api run build && npm -w @hna/web run build",
-    "test": "JWT_SECRET=dev-test-secret-long-enough npm -w @hna/shared run test && JWT_SECRET=dev-test-secret-long-enough npm -w @hna/api run test && npm -w @hna/web run test",
+    "test": "JWT_SECRET=6d1c05e7f38b49a2ce7014b8d5f3a96201e8b7c4d90f523a6e18cb47f0d29a35 npm -w @hna/shared run test && JWT_SECRET=6d1c05e7f38b49a2ce7014b8d5f3a96201e8b7c4d90f523a6e18cb47f0d29a35 npm -w @hna/api run test && npm -w @hna/web run test",
     "typecheck": "npm -w @hna/shared run typecheck && npm -w @hna/api run typecheck && npm -w @hna/web run typecheck",
     "lint": "eslint . --max-warnings=0"
   },

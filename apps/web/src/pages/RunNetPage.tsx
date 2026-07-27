@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
 import { roleAtLeast } from '@hna/shared';
-import { apiFetch, isAbortError, ApiErrorException } from '../api/client.js';
+import {
+  apiFetch,
+  isAbortError,
+  ApiErrorException,
+  errorMessage,
+} from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Modal } from '../components/ui/Modal.js';
@@ -75,6 +80,62 @@ function topicErrorMessage(e: unknown): string {
     : (e as Error)?.message || 'Topic update failed';
 }
 
+/**
+ * Publish the measured heights of the two pieces of sticky chrome the console
+ * stacks against — the app-shell nav and this page's status strip — as the
+ * `--nav-h` / `--runnet-status-h` custom properties on <html>.
+ *
+ * WHY: those offsets used to be the constants 56px and 88px. Below 1024px
+ * there is no hamburger and `.hna-shell__tail` wraps, so the real nav is
+ * 150-230px tall — the status strip (and with it START NET / Take control /
+ * END NET) slid underneath the opaque nav as soon as a phone operator
+ * scrolled, i.e. the controls for running a live net vanished. Measuring
+ * tracks wrapping, viewport resize and theme swaps (a theme changes the nav's
+ * fonts and therefore its height) instead of guessing.
+ */
+function useStickyChromeVars(statusEl: HTMLElement | null) {
+  useEffect(() => {
+    const root = document.documentElement;
+    const nav = document.querySelector<HTMLElement>('.hna-shell__nav');
+    const targets: Array<[HTMLElement, string]> = [];
+    if (nav) targets.push([nav, '--nav-h']);
+    if (statusEl) targets.push([statusEl, '--runnet-status-h']);
+    if (targets.length === 0) return;
+
+    const apply = () => {
+      for (const [el, prop] of targets) {
+        const h = Math.round(el.getBoundingClientRect().height);
+        // A zero height means "not laid out" — the element is display:none, or
+        // we're in jsdom, which has no layout engine at all. Leaving the
+        // property unset keeps the CSS fallback in theme-vars.css rather than
+        // collapsing the offset to 0 and hiding the strip under the nav.
+        if (h > 0) root.style.setProperty(prop, `${h}px`);
+      }
+    };
+    const clear = () => {
+      for (const [, prop] of targets) root.style.removeProperty(prop);
+    };
+
+    apply();
+    // ResizeObserver is missing in jsdom and in a few old mobile browsers.
+    // Degrade to resize events: still correct on rotate/resize, just blind to
+    // content-driven reflows of the nav itself.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', apply);
+      return () => {
+        window.removeEventListener('resize', apply);
+        clear();
+      };
+    }
+    const ro = new ResizeObserver(apply);
+    for (const [el] of targets) ro.observe(el);
+    return () => {
+      ro.disconnect();
+      clear();
+    };
+  }, [statusEl]);
+}
+
 /** Elapsed `T+HH:MM:SS` mono counter that ticks every second. */
 function ElapsedTimer({ startIso }: { startIso: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -103,11 +164,22 @@ export function RunNetPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const nav = useNavigate();
   const { user } = useAuth();
-  const { data: session, refresh } = useAutoFetch<SessionResponse>(
+  const {
+    data: session,
+    error: sessionError,
+    refresh,
+  } = useAutoFetch<SessionResponse>(
     sessionId ? `/sessions/${sessionId}` : null,
     { intervalMs: 3000 },
   );
   const [net, setNet] = useState<NetFull | null>(null);
+  // Failure of the /nets fallback below. Tracked separately from the session
+  // fetch because a session can load fine while its net lookup 404s — without
+  // this the page would sit on "Loading session…" forever.
+  const [netError, setNetError] = useState<string | null>(null);
+  // Bumped by the error card's Retry button to re-run the /nets fallback (the
+  // session itself is re-fetched by `refresh`).
+  const [netLoadNonce, setNetLoadNonce] = useState(0);
   const [callsign, setCallsign] = useState('');
   const [name, setName] = useState('');
   const [comment, setComment] = useState('');
@@ -150,7 +222,12 @@ export function RunNetPage() {
   const { isOnlineByCallsign } = usePresence();
   const inputRef = useRef<HTMLInputElement>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
+  const overflowBtnRef = useRef<HTMLButtonElement>(null);
   const rosterListRef = useRef<HTMLUListElement>(null);
+  // Callback ref (state, not useRef) so the measuring effect re-runs when the
+  // status strip mounts — it only exists once the session payload has loaded.
+  const [statusEl, setStatusEl] = useState<HTMLDivElement | null>(null);
+  useStickyChromeVars(statusEl);
   const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   const nameRef = useRef<string>('');
@@ -164,18 +241,25 @@ export function RunNetPage() {
     if (!session) return;
     if (session.net) {
       setNet(session.net);
+      setNetError(null);
       return;
     }
     const ctrl = new AbortController();
     apiFetch<NetFull[]>('/nets', { signal: ctrl.signal })
       .then((nets) => {
-        setNet(nets.find((x) => x.id === session.netId) ?? null);
+        const match = nets.find((x) => x.id === session.netId) ?? null;
+        setNet(match);
+        // A session whose net is gone is a dead end, not a slow load — say so
+        // instead of spinning.
+        setNetError(
+          match ? null : 'This session references a net that no longer exists.',
+        );
       })
       .catch((e) => {
-        if (!isAbortError(e)) console.warn('net load failed', e);
+        if (!isAbortError(e)) setNetError(errorMessage(e));
       });
     return () => ctrl.abort();
-  }, [session]);
+  }, [session, netLoadNonce]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -244,7 +328,14 @@ export function RunNetPage() {
     }
   }, [checkInCount]);
 
-  // Dismiss the overflow menu when clicking outside it.
+  // Dismiss the overflow disclosure on an outside click or Escape.
+  //
+  // It is a disclosure (a button that reveals a small panel), NOT an ARIA
+  // menu: role="menu" promises roving tabindex + arrow-key navigation +
+  // typeahead, none of which this ever implemented, so screen-reader users
+  // were told to press keys that did nothing. Escape-to-close with focus
+  // returned to the trigger is the part that genuinely matters, and it is the
+  // whole keyboard contract a disclosure owes.
   useEffect(() => {
     if (!overflowOpen) return;
     function onDoc(e: MouseEvent) {
@@ -256,8 +347,19 @@ export function RunNetPage() {
         setOverflowOpen(false);
       }
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      setOverflowOpen(false);
+      // Focus would otherwise be stranded on the removed panel and fall back
+      // to <body>, costing a keyboard operator their place in the strip.
+      overflowBtnRef.current?.focus();
+    }
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [overflowOpen]);
 
   const reassignAction = useAsyncAction(async (newControlOpId: string) => {
@@ -517,12 +619,14 @@ export function RunNetPage() {
   // immediately open this review modal — a documented footgun per the
   // accessibility audit. Removed entirely; the "End net" button remains.
 
+  // Note: a bare Backspace in an empty callsign field used to delete the most
+  // recent check-in with no confirmation. Removed rather than wrapped in a
+  // dialog: over-backspacing a mistyped callsign is the single most common
+  // keystroke in this field, the deletion was silent and un-signposted, and
+  // the same operation already has a labelled, guarded Undo button two rows
+  // below. Adding a confirm dialog would only have made the accidental path
+  // interrupt the operator mid-net instead of removing it.
   function onCallsignKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === 'Backspace' && callsign === '') {
-      e.preventDefault();
-      void undoLastAction.run();
-      return;
-    }
     if (e.key === 'Enter') {
       e.preventDefault();
       // If callsign is valid but name is empty, jump to the name field instead
@@ -536,7 +640,58 @@ export function RunNetPage() {
     }
   }
 
-  if (!session || !net) return <div style={{ padding: 24 }}>Loading session…</div>;
+  // Non-happy load paths. Only reached before the console has ever rendered:
+  // once `session` is populated a failing poll leaves the last good payload on
+  // screen, because yanking a live console away from the operator over one
+  // dropped request would be worse than a stale elapsed timer.
+  if (!session || !net) {
+    const loadError = !sessionId
+      ? 'This link has no session id.'
+      : !session
+        ? sessionError
+        : netError;
+    if (loadError) {
+      // A deleted or mistyped session id 404s. Without this the net-control
+      // operator sat on "Loading session…" forever with no error and no way
+      // to retry — the exact state a live net cannot afford.
+      return (
+        <div className="hna-runnet-page">
+          <header className="hna-page-header">
+            <p className="hna-page-marker">// 04 — RUNNING NET</p>
+            <h1 className="hna-page-title">Session unavailable</h1>
+          </header>
+          <Card>
+            <div className="hna-empty" data-testid="runnet-load-error">
+              <p className="hna-empty__title" role="alert">
+                Couldn&rsquo;t load this session.
+              </p>
+              <p className="hna-empty__body">{loadError}</p>
+              <div className="hna-empty__actions">
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setNetError(null);
+                    setNetLoadNonce((n) => n + 1);
+                    void refresh();
+                  }}
+                >
+                  Retry
+                </Button>
+                <Button variant="secondary" onClick={() => nav('/')}>
+                  Back to dashboard
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+    return (
+      <div style={{ padding: 24 }} data-testid="runnet-loading">
+        Loading session…
+      </div>
+    );
+  }
 
   const suggestions =
     callsign.length > 0
@@ -551,8 +706,8 @@ export function RunNetPage() {
   // The API returns check-ins newest-first (desc); the LOG displays them
   // OLDEST-FIRST — "#01" (first to check in) at the top, the newest appended
   // at the bottom. Copy-then-reverse so the session payload itself is never
-  // mutated: undoLastAction and the callsign-Backspace shortcut still read
-  // `session.checkIns[0]` as the most recent check-in.
+  // mutated: undoLastAction still reads `session.checkIns[0]` as the most
+  // recent check-in.
   const checkInsOldestFirst = [...session.checkIns].reverse();
   const totalCheckIns = session.checkIns.length;
   // PREP vs LIVE state: liveAt is null while opened-but-not-started. Once set
@@ -579,7 +734,12 @@ export function RunNetPage() {
       </header>
 
       {/* ===== Status strip (sticky) ===== */}
-      <div className="hna-runnet-status" role="region" aria-label="Net status">
+      <div
+        className="hna-runnet-status"
+        role="region"
+        aria-label="Net status"
+        ref={setStatusEl}
+      >
         <div className="hna-runnet-status__facts">
           <span className="hna-runnet-status__name">{net.name}</span>
           {session.controlOp && (
@@ -706,21 +866,21 @@ export function RunNetPage() {
             <div className="hna-overflow" ref={overflowMenuRef}>
               <button
                 type="button"
+                ref={overflowBtnRef}
                 className="hna-overflow__btn"
                 aria-label="More actions"
-                aria-haspopup="true"
                 aria-expanded={overflowOpen}
+                aria-controls="run-overflow-panel"
                 title="More actions"
                 onClick={() => setOverflowOpen((v) => !v)}
               >
                 ⋯
               </button>
               {overflowOpen && (
-                <div className="hna-overflow__menu" role="menu">
+                <div className="hna-overflow__menu" id="run-overflow-panel">
                   <Button
                     variant="ghost"
                     size="sm"
-                    role="menuitem"
                     onClick={() => {
                       setOverflowOpen(false);
                       setEditNetOpen(true);

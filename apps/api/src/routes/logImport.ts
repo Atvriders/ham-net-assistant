@@ -8,8 +8,7 @@ import { HttpError } from '../middleware/error.js';
 import { validateBody } from '../middleware/validate.js';
 import { parseLogText, type ParsedSession } from '../lib/parseLog.js';
 import { enrichEmptyNames } from '../lib/callsignNameLookup.js';
-import dns from 'node:dns/promises';
-import net from 'node:net';
+import { safeFetch } from '../lib/safeFetch.js';
 
 const TextImportInput = z.object({
   text: z.string().min(1).max(200_000),
@@ -26,26 +25,6 @@ const UrlImportInput = z.object({
 });
 
 const MAX_DOC_BYTES = 4 * 1024 * 1024;
-
-async function assertPublicUrl(raw: string): Promise<URL> {
-  const u = new URL(raw);
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-    throw new HttpError(400, 'VALIDATION', 'url must be http or https');
-  }
-  const addrs = await dns.lookup(u.hostname, { all: true }).catch(() => []);
-  for (const a of addrs) {
-    const ip = a.address;
-    if (net.isIP(ip) === 4) {
-      if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(ip)) throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-      if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-    } else if (net.isIP(ip) === 6) {
-      if (ip === '::1' || /^fe80:/i.test(ip) || /^fc/i.test(ip) || /^fd/i.test(ip)) {
-        throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-      }
-    }
-  }
-  return u;
-}
 
 /** Rewrite Google Docs URLs to txt export so we get plain text, easy to parse. */
 function rewriteGoogleDocsToTxt(u: URL): URL {
@@ -83,11 +62,17 @@ export function logImportRouter(prisma: PrismaClient): Router {
 
   router.post('/url', requireRole('ADMIN'), validateBody(UrlImportInput), asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof UrlImportInput>;
-    const parsed = await assertPublicUrl(body.url);
-    const target = rewriteGoogleDocsToTxt(parsed);
-    const remote = await fetch(target.toString(), {
-      signal: AbortSignal.timeout(10000),
-      redirect: 'follow',
+    let submitted: URL;
+    try {
+      submitted = new URL(body.url);
+    } catch {
+      throw new HttpError(400, 'VALIDATION', 'Invalid URL');
+    }
+    const target = rewriteGoogleDocsToTxt(submitted);
+    // safeFetch owns the SSRF guard (this route used to carry a weaker private
+    // copy of it) and re-validates every redirect hop.
+    const { response: remote, finalUrl } = await safeFetch(target, {
+      timeoutMs: 10000,
       headers: {
         'User-Agent': 'HamNetAssistant/1.0',
         'Accept': 'text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*;q=0.6',
@@ -97,9 +82,9 @@ export function logImportRouter(prisma: PrismaClient): Router {
     const ct = (remote.headers.get('content-type') ?? '').toLowerCase();
     const buf = await readBoundedBody(remote);
     let text: string;
-    if (ct.includes('text/plain') || ct.includes('text/markdown') || target.pathname.endsWith('.txt') || target.pathname.endsWith('.md')) {
+    if (ct.includes('text/plain') || ct.includes('text/markdown') || finalUrl.pathname.endsWith('.txt') || finalUrl.pathname.endsWith('.md')) {
       text = buf.toString('utf8');
-    } else if (ct.includes('wordprocessingml.document') || target.pathname.endsWith('.docx')) {
+    } else if (ct.includes('wordprocessingml.document') || finalUrl.pathname.endsWith('.docx')) {
       const html = await mammoth.extractRawText({ buffer: buf });
       text = html.value;
     } else if (ct.includes('text/html')) {
@@ -171,87 +156,102 @@ async function runImport(
   if (dryRun) {
     return { parsed: sessions, errors, created: 0, skipped: [], sessionIds: [], enriched: totalEnriched };
   }
-  const skipped: ImportSummary['skipped'] = [];
-  const sessionIds: string[] = [];
-  const seenInBatch = new Set<string>();
+  // Resolve every callsign -> local user once, up front. Doing this inside the
+  // write transaction would multiply the time the SQLite write lock is held by
+  // the number of check-ins in the file, for reads that cannot change while we
+  // are importing.
+  const userIdByCallsign = await resolveUsersByCallsign(prisma, sessions);
 
-  for (const s of sessions) {
-    // Check for duplicate within this import batch
-    const dayKey = `${netId}|${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, '0')}-${String(s.date.getDate()).padStart(2, '0')}`;
-    if (seenInBatch.has(dayKey)) {
-      skipped.push({ rawDateLine: s.rawDateLine, reason: 'duplicate within import (same date)' });
-      continue;
-    }
-    seenInBatch.add(dayKey);
+  // All-or-nothing. Without the transaction, a process death partway through
+  // (OOM kill, container restart) left a NetSession row with only some of its
+  // check-ins — and because the dedupe check below matches on "a session for
+  // this net already exists on this date", re-running the import skipped the
+  // torn session forever instead of repairing it.
+  const { skipped, sessionIds } = await prisma.$transaction(
+    async (tx) => {
+      const skipped: ImportSummary['skipped'] = [];
+      const sessionIds: string[] = [];
+      const seenInBatch = new Set<string>();
 
-    // Skip duplicates: a session for this net on the same calendar date already exists.
-    const dayStart = new Date(s.date); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(s.date); dayEnd.setHours(23, 59, 59, 999);
-    const existing = await prisma.netSession.findFirst({
-      where: {
-        netId,
-        deletedAt: null,
-        startedAt: { gte: dayStart, lte: dayEnd },
-      },
-    });
-    if (existing) {
-      skipped.push({ rawDateLine: s.rawDateLine, reason: 'session already exists for this date' });
-      continue;
-    }
-    // Resolve control op
-    let controlOpId: string | null = null;
-    if (s.controlOp) {
-      const ctrl = await prisma.user.findFirst({
-        where: { callsign: s.controlOp.callsign },
-        orderBy: { createdAt: 'asc' },
-      });
-      controlOpId = ctrl?.id ?? null;
-    }
-    const ended = new Date(s.date.getTime() + 60 * 60 * 1000); // +1h placeholder
-    // Compose session notes from trailing date prose + any backup operators.
-    let notesSuffix = '';
-    if (s.notes) notesSuffix += s.notes;
-    if (s.backups.length) {
-      const list = s.backups
-        .map((b) => (b.name && b.name.trim() ? `${b.name.trim()} ${b.callsign}` : b.callsign))
-        .join(', ');
-      notesSuffix += (notesSuffix ? ' | ' : '') + `Backups: ${list}`;
-    }
-    const finalNotes = notesSuffix || 'Imported from log';
-    const created = await prisma.netSession.create({
-      data: {
-        netId,
-        startedAt: s.date,
-        endedAt: ended,
-        controlOpId,
-        topicTitle: s.topic,
-        notes: finalNotes,
-      },
-    });
-    // CheckIns
-    for (let i = 0; i < s.checkIns.length; i++) {
-      const ci = s.checkIns[i]!;
-      const userMatch = await prisma.user.findFirst({
-        where: { callsign: ci.callsign },
-        orderBy: { createdAt: 'asc' },
-      });
-      const checkedInAt = new Date(s.date.getTime() + (i + 1) * 1000);
-      // `nameAtCheckIn` is non-null in the schema; fall back to the callsign
-      // when the doc didn't record a name for this check-in.
-      const nameAtCheckIn = ci.name && ci.name.trim() ? ci.name.trim() : ci.callsign;
-      await prisma.checkIn.create({
-        data: {
-          sessionId: created.id,
-          callsign: ci.callsign,
-          nameAtCheckIn,
-          checkedInAt,
-          userId: userMatch?.id ?? null,
-          createdById: null,
-        },
-      });
-    }
-    sessionIds.push(created.id);
-  }
+      for (const s of sessions) {
+        // Check for duplicate within this import batch
+        const dayKey = `${netId}|${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, '0')}-${String(s.date.getDate()).padStart(2, '0')}`;
+        if (seenInBatch.has(dayKey)) {
+          skipped.push({ rawDateLine: s.rawDateLine, reason: 'duplicate within import (same date)' });
+          continue;
+        }
+        seenInBatch.add(dayKey);
+
+        // Skip duplicates: a session for this net on the same calendar date already exists.
+        const dayStart = new Date(s.date); dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(s.date); dayEnd.setHours(23, 59, 59, 999);
+        const existing = await tx.netSession.findFirst({
+          where: {
+            netId,
+            deletedAt: null,
+            startedAt: { gte: dayStart, lte: dayEnd },
+          },
+        });
+        if (existing) {
+          skipped.push({ rawDateLine: s.rawDateLine, reason: 'session already exists for this date' });
+          continue;
+        }
+        // Resolve control op
+        const controlOpId = s.controlOp
+          ? (userIdByCallsign.get(s.controlOp.callsign) ?? null)
+          : null;
+        const ended = new Date(s.date.getTime() + 60 * 60 * 1000); // +1h placeholder
+        // Compose session notes from trailing date prose + any backup operators.
+        let notesSuffix = '';
+        if (s.notes) notesSuffix += s.notes;
+        if (s.backups.length) {
+          const list = s.backups
+            .map((b) => (b.name && b.name.trim() ? `${b.name.trim()} ${b.callsign}` : b.callsign))
+            .join(', ');
+          notesSuffix += (notesSuffix ? ' | ' : '') + `Backups: ${list}`;
+        }
+        const finalNotes = notesSuffix || 'Imported from log';
+        const created = await tx.netSession.create({
+          data: {
+            netId,
+            startedAt: s.date,
+            endedAt: ended,
+            controlOpId,
+            topicTitle: s.topic,
+            notes: finalNotes,
+          },
+        });
+        // CheckIns
+        for (let i = 0; i < s.checkIns.length; i++) {
+          const ci = s.checkIns[i]!;
+          const checkedInAt = new Date(s.date.getTime() + (i + 1) * 1000);
+          // `nameAtCheckIn` is non-null in the schema; fall back to the callsign
+          // when the doc didn't record a name for this check-in.
+          const nameAtCheckIn = ci.name && ci.name.trim() ? ci.name.trim() : ci.callsign;
+          await tx.checkIn.create({
+            data: {
+              sessionId: created.id,
+              callsign: ci.callsign,
+              nameAtCheckIn,
+              checkedInAt,
+              userId: userIdByCallsign.get(ci.callsign) ?? null,
+              createdById: null,
+            },
+          });
+        }
+        sessionIds.push(created.id);
+      }
+      return { skipped, sessionIds };
+    },
+    {
+      // Explicit budget: the 5s Prisma default is a club-year-sized log away
+      // from aborting a legitimate import (each check-in is its own INSERT).
+      // maxWait covers a concurrent writer holding the SQLite lock at start.
+      maxWait: 10_000,
+      timeout: 120_000,
+    },
+  );
+
   return {
     parsed: sessions,
     errors,
@@ -260,4 +260,32 @@ async function runImport(
     sessionIds,
     enriched: totalEnriched,
   };
+}
+
+/**
+ * Map every callsign mentioned in the parsed log to the local user account that
+ * owns it. Callsigns are not unique in the User table (see the
+ * drop_user_callsign_unique migration), so oldest-account-wins — the same rule
+ * the per-row findFirst({ orderBy: createdAt asc }) used to apply.
+ */
+async function resolveUsersByCallsign(
+  prisma: PrismaClient,
+  sessions: ParsedSession[],
+): Promise<Map<string, string>> {
+  const callsigns = new Set<string>();
+  for (const s of sessions) {
+    if (s.controlOp) callsigns.add(s.controlOp.callsign);
+    for (const ci of s.checkIns) callsigns.add(ci.callsign);
+  }
+  if (callsigns.size === 0) return new Map();
+  const users = await prisma.user.findMany({
+    where: { callsign: { in: [...callsigns] } },
+    select: { id: true, callsign: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  const map = new Map<string, string>();
+  for (const u of users) {
+    if (!map.has(u.callsign)) map.set(u.callsign, u.id);
+  }
+  return map;
 }

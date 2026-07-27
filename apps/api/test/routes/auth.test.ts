@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
+import { hashPassword } from '../../src/lib/password.js';
 
 let app: Express;
 let prisma: PrismaClient;
@@ -97,6 +98,60 @@ describe('POST /api/auth/register', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
+
+  it('rejects a password under 12 characters', async () => {
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'shortpw@example.com', password: 'hunter22',
+      name: 'Shorty', callsign: 'KE0PW',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects an oversized email instead of persisting it', async () => {
+    // A 1MB body used to be stored verbatim in the email column.
+    const res = await request(app).post('/api/auth/register').send({
+      email: `${'a'.repeat(300)}@example.com`, password: 'hunter2hunter2',
+      name: 'Huge', callsign: 'KE0BIG',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('normalizes email case and whitespace', async () => {
+    const res = await request(app).post('/api/auth/register').send({
+      email: '  Mixed@Example.COM ', password: 'hunter2hunter2',
+      name: 'Mixed', callsign: 'KE0MIX',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.email).toBe('mixed@example.com');
+  });
+
+  it('refuses a second account that differs only in email casing', async () => {
+    // SQLite's unique index is BINARY, so without normalization this created
+    // a second account that shadowed the first member's history.
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'MIXED@example.com', password: 'hunter2hunter2',
+      name: 'Mixed Again', callsign: 'KE0MX2',
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('does not disclose which field is already taken', async () => {
+    const dupeEmail = await request(app).post('/api/auth/register').send({
+      email: 'alice@example.com', password: 'hunter2hunter2',
+      name: 'Not Alice', callsign: 'KE0UNQ',
+    });
+    const dupeCallsign = await request(app).post('/api/auth/register').send({
+      email: 'brand-new@example.com', password: 'hunter2hunter2',
+      name: 'Not Bob', callsign: 'KB0BOB',
+    });
+    expect(dupeEmail.status).toBe(409);
+    expect(dupeCallsign.status).toBe(409);
+    // Identical wording either way: the public sign-up form must not work as
+    // a "is this callsign/email a club member?" oracle.
+    expect(dupeEmail.body.error.message).toBe(dupeCallsign.body.error.message);
+  });
 });
 
 describe('POST /api/auth/login + /me + /logout', () => {
@@ -124,6 +179,33 @@ describe('POST /api/auth/login + /me + /logout', () => {
       email: 'alice@example.com', password: 'wrongwrongwrong',
     });
     expect(res.status).toBe(401);
+  });
+
+  it('accepts any casing of a registered email at login', async () => {
+    const res = await request(app).post('/api/auth/login').send({
+      email: '  ALICE@Example.com ', password: 'hunter2hunter2',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.email).toBe('alice@example.com');
+  });
+
+  it('still authenticates a legacy account stored with mixed-case email', async () => {
+    // Rows created before email normalization: the binary unique index means
+    // findUnique('legacy@x.co') misses them entirely.
+    await prisma.user.create({
+      data: {
+        email: 'Legacy@X.Co',
+        name: 'Legacy',
+        callsign: 'KL0GCY',
+        passwordHash: await hashPassword('hunter2hunter2'),
+        role: 'MEMBER',
+      },
+    });
+    const res = await request(app).post('/api/auth/login').send({
+      email: 'legacy@x.co', password: 'hunter2hunter2',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.callsign).toBe('KL0GCY');
   });
 
   it('rejects token with bogus role claim', async () => {

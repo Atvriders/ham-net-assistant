@@ -145,6 +145,61 @@ describe('session messages', () => {
   });
 });
 
+describe('session messages window', () => {
+  it('returns the NEWEST 400 messages, still in chronological order', async () => {
+    // Ordering ascending before `take` pinned the panel to the oldest 400 rows:
+    // once a session crossed the cap the chat silently froze — new messages
+    // never appeared even though POSTs kept returning 201. That is reachable by
+    // calendar time because the Discord bridge files inbound traffic into the
+    // newest never-ended session.
+    const base = Date.now() - 500 * 60 * 1000;
+    await prisma.sessionMessage.createMany({
+      data: Array.from({ length: 450 }, (_, i) => ({
+        sessionId,
+        callsign: 'KB0BOB',
+        nameAtMessage: 'Bob',
+        body: `msg-${String(i).padStart(3, '0')}`,
+        createdAt: new Date(base + i * 60 * 1000),
+      })),
+    });
+
+    const get = await request(app).get(`/api/sessions/${sessionId}/messages`)
+      .set('Cookie', member);
+    expect(get.status).toBe(200);
+    const bodies = get.body.map((m: { body: string }) => m.body);
+    expect(bodies).toHaveLength(400);
+    // Window is the tail: msg-050..msg-449, oldest 50 dropped.
+    expect(bodies[0]).toBe('msg-050');
+    expect(bodies[399]).toBe('msg-449');
+    expect(bodies).not.toContain('msg-049');
+    // Still ascending by createdAt, which is what ChatBox renders.
+    const times = get.body.map((m: { createdAt: string }) => new Date(m.createdAt).getTime());
+    expect([...times].sort((a, b) => a - b)).toEqual(times);
+  });
+
+  it('a message posted after the cap is reached is visible immediately', async () => {
+    const base = Date.now() - 500 * 60 * 1000;
+    await prisma.sessionMessage.createMany({
+      data: Array.from({ length: 420 }, (_, i) => ({
+        sessionId,
+        callsign: 'KB0BOB',
+        nameAtMessage: 'Bob',
+        body: `old-${i}`,
+        createdAt: new Date(base + i * 60 * 1000),
+      })),
+    });
+    const post = await request(app).post(`/api/sessions/${sessionId}/messages`)
+      .set('Cookie', member).send({ body: 'brand new' });
+    expect(post.status).toBe(201);
+
+    const get = await request(app).get(`/api/sessions/${sessionId}/messages`)
+      .set('Cookie', member);
+    const bodies = get.body.map((m: { body: string }) => m.body);
+    expect(bodies).toHaveLength(400);
+    expect(bodies[bodies.length - 1]).toBe('brand new');
+  });
+});
+
 describe('session messages 24h backfill', () => {
   // Each test in this block builds its own world (extra repeater/net/sessions)
   // so it stays independent of the outer suite's shared fixtures.

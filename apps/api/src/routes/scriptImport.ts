@@ -1,40 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import mammoth from 'mammoth';
-import { requireAuth } from '../middleware/auth.js';
+import { requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
-import dns from 'node:dns/promises';
-import net from 'node:net';
+import { safeFetch } from '../lib/safeFetch.js';
 
 const ImportUrlInput = z.object({
   url: z.string().url().max(2000),
 });
 
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB max on imported doc payloads
-
-/**
- * Very rough SSRF guard. Refuses private/loopback/link-local IPs.
- */
-async function assertPublicUrl(raw: string): Promise<URL> {
-  const u = new URL(raw);
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-    throw new HttpError(400, 'VALIDATION', 'url must be http or https');
-  }
-  const addrs = await dns.lookup(u.hostname, { all: true }).catch(() => []);
-  for (const a of addrs) {
-    const ip = a.address;
-    if (net.isIP(ip) === 4) {
-      if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(ip)) throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-      if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-    } else if (net.isIP(ip) === 6) {
-      if (ip === '::1' || /^fe80:/i.test(ip) || /^fc/i.test(ip) || /^fd/i.test(ip)) {
-        throw new HttpError(400, 'VALIDATION', 'private ip blocked');
-      }
-    }
-  }
-  return u;
-}
 
 /**
  * If the URL looks like a Google Docs document URL, return the docx export URL.
@@ -76,13 +52,26 @@ async function readBoundedBody(res: Response): Promise<Buffer> {
 export function scriptImportRouter(): Router {
   const router = Router();
 
-  router.post('/url', requireAuth, asyncHandler(async (req, res) => {
+  // OFFICER, not merely authenticated: this endpoint fetches an arbitrary URL
+  // and hands the body back, and self-registration is open by default, so any
+  // visitor could otherwise use the server as an HTTP client. The equivalent
+  // log-import route is ADMIN, and the only UI that reaches here (the script
+  // editor inside NetEditModal) is already OFFICER-gated in the web client.
+  router.post('/url', requireRole('OFFICER'), asyncHandler(async (req, res) => {
     const { url } = ImportUrlInput.parse(req.body ?? {});
-    const parsed = await assertPublicUrl(url);
-    const target = rewriteGoogleDocsUrl(parsed);
-    const remote = await fetch(target.toString(), {
-      signal: AbortSignal.timeout(10000),
-      redirect: 'follow',
+    let submitted: URL;
+    try {
+      submitted = new URL(url);
+    } catch {
+      // zod's .url() and WHATWG URL don't agree on every edge case; a parse
+      // failure here is the client's fault, not a 500.
+      throw new HttpError(400, 'VALIDATION', 'Invalid URL');
+    }
+    const target = rewriteGoogleDocsUrl(submitted);
+    // safeFetch re-validates the destination on every redirect hop; the old
+    // redirect:'follow' let an attacker-controlled 302 land on internal hosts.
+    const { response: remote, finalUrl } = await safeFetch(target, {
+      timeoutMs: 10000,
       headers: {
         'User-Agent': 'HamNetAssistant/1.0 (+https://github.com/Atvriders/ham-net-assistant)',
         'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain,text/html,*/*;q=0.8',
@@ -94,7 +83,7 @@ export function scriptImportRouter(): Router {
     const contentType = (remote.headers.get('content-type') ?? '').toLowerCase();
     const buffer = await readBoundedBody(remote);
 
-    if (contentType.includes('wordprocessingml.document') || contentType.includes('application/octet-stream') || target.pathname.endsWith('.docx')) {
+    if (contentType.includes('wordprocessingml.document') || contentType.includes('application/octet-stream') || finalUrl.pathname.endsWith('.docx')) {
       const result = await mammoth.convertToHtml(
         { buffer },
         { styleMap: mammothStyleMap, includeDefaultStyleMap: true },
@@ -108,7 +97,7 @@ export function scriptImportRouter(): Router {
       });
       return;
     }
-    if (contentType.includes('text/markdown') || contentType.includes('text/plain') || target.pathname.endsWith('.md') || target.pathname.endsWith('.txt')) {
+    if (contentType.includes('text/markdown') || contentType.includes('text/plain') || finalUrl.pathname.endsWith('.md') || finalUrl.pathname.endsWith('.txt')) {
       const text = buffer.toString('utf8');
       res.json({ content: text, contentType: 'text', markdown: text, source: 'text' });
       return;

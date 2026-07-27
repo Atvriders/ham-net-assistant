@@ -5,11 +5,13 @@ import { roleAtLeast } from '@hna/shared';
 import { apiFetch, errorMessage } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
+import { ConfirmModal } from '../components/ui/ConfirmModal.js';
 import { LiveDot } from '../components/ui/LiveDot.js';
 import { SectionDivider } from '../components/ui/SectionDivider.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { dayName, nextOccurrence } from '../lib/time.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { useAsyncAction } from '../lib/useAsyncAction.js';
 import { displayCallsign } from '../lib/format.js';
 
 interface NetWithRepeater extends Net {
@@ -70,6 +72,49 @@ function ShortCountdown({ target }: { target: Date }) {
   );
 }
 
+/**
+ * Stand-in for a section's empty state when the section's FIRST load failed.
+ *
+ * WHY: `data ?? []` makes a dead server and an empty club look identical, so a
+ * failed /nets call rendered "No weekly nets scheduled" plus the add-a-net
+ * pitch — an error wearing an empty state's clothes, telling officers their
+ * schedule was gone. Each section polls, so this self-heals on the next tick:
+ * the copy stays calm and `role="status"` announces politely rather than
+ * interrupting with an alert.
+ */
+function LoadFailureCard({
+  what,
+  detail,
+  testId,
+}: {
+  what: string;
+  detail: string;
+  testId: string;
+}) {
+  return (
+    <Card>
+      <div className="hna-empty" role="status" data-testid={testId}>
+        <p className="hna-empty__title">Couldn&rsquo;t load {what}.</p>
+        <p className="hna-empty__body">
+          This section retries on its own — it will fill in as soon as the
+          server answers.
+        </p>
+        <p
+          className="hna-mono"
+          style={{
+            fontSize: 11,
+            letterSpacing: '0.06em',
+            color: 'var(--color-fg-muted)',
+            marginTop: 'var(--space-2)',
+          }}
+        >
+          {detail}
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 export function Dashboard() {
   const { user } = useAuth();
   const nav = useNavigate();
@@ -114,29 +159,40 @@ export function Dashboard() {
       setBusySessionId(null);
     }
   }
-  const { data: netsData } = useAutoFetch<NetWithRepeater[]>('/nets', {
-    intervalMs: 10000,
-  });
-  const { data: sessionsData, refresh: refreshSessions } = useAutoFetch<
-    NetSession[]
-  >('/sessions', { intervalMs: 10000 });
-  const { data: activeSessionsData, refresh: refreshActive } = useAutoFetch<ActiveSessionRow[]>(
-    '/nets/active',
-    { intervalMs: 5000 },
+  const { data: netsData, error: netsError } = useAutoFetch<NetWithRepeater[]>(
+    '/nets',
+    { intervalMs: 10000 },
   );
+  const {
+    data: sessionsData,
+    error: sessionsError,
+    refresh: refreshSessions,
+  } = useAutoFetch<NetSession[]>('/sessions', { intervalMs: 10000 });
+  const {
+    data: activeSessionsData,
+    error: activeError,
+    refresh: refreshActive,
+  } = useAutoFetch<ActiveSessionRow[]>('/nets/active', { intervalMs: 5000 });
   const nets = netsData ?? [];
   const sessions = sessionsData ?? [];
   const activeSessions = activeSessionsData ?? [];
+  // "Never loaded AND currently failing" — a later failed poll keeps the last
+  // good rows on screen instead of blanking a section the operator is reading.
+  const netsFailed = netsData === null && netsError !== null;
+  const sessionsFailed = sessionsData === null && sessionsError !== null;
+  const activeFailed = activeSessionsData === null && activeError !== null;
 
-  async function deleteSession(id: string) {
-    if (!confirm('Delete this session and all its check-ins?')) return;
-    try {
-      await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
-      await refreshSessions();
-    } catch (e) {
-      alert((e as Error).message);
-    }
-  }
+  // Session delete uses the app's own ConfirmModal — the console shouldn't
+  // switch to a browser chrome dialog (unstyled, unblockable, and invisible to
+  // anyone running the app in a kiosk) for one action out of dozens.
+  const [confirmDeleteSessionId, setConfirmDeleteSessionId] = React.useState<
+    string | null
+  >(null);
+  const deleteSessionAction = useAsyncAction(async (id: string) => {
+    await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+    setConfirmDeleteSessionId(null);
+    await refreshSessions();
+  });
 
   const weeklyNets = nets.filter((n) => (n.kind ?? 'weekly') === 'weekly');
   const upcoming = [...weeklyNets]
@@ -167,7 +223,13 @@ export function Dashboard() {
             {actionErr}
           </p>
         )}
-        {activeSessions.length === 0 ? (
+        {activeFailed ? (
+          <LoadFailureCard
+            what="live nets"
+            detail={activeError ?? ''}
+            testId="dash-active-error"
+          />
+        ) : activeSessions.length === 0 ? (
           <Card>
             <div className="hna-empty">
               <p className="hna-empty__title">No nets are live.</p>
@@ -332,6 +394,12 @@ export function Dashboard() {
               </div>
             </div>
           </Card>
+        ) : netsFailed ? (
+          <LoadFailureCard
+            what="the net schedule"
+            detail={netsError ?? ''}
+            testId="dash-nets-error"
+          />
         ) : (
           <Card>
             <div className="hna-empty">
@@ -390,7 +458,13 @@ export function Dashboard() {
         <h2 id="dash-recent" className="hna-cap">
           [ RECENT ]
         </h2>
-        {sessions.length === 0 ? (
+        {sessionsFailed ? (
+          <LoadFailureCard
+            what="recent sessions"
+            detail={sessionsError ?? ''}
+            testId="dash-recent-error"
+          />
+        ) : sessions.length === 0 ? (
           <Card>
             <div className="hna-empty">
               <p className="hna-empty__title">No sessions logged yet.</p>
@@ -432,7 +506,10 @@ export function Dashboard() {
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => deleteSession(s.id)}
+                      onClick={() => {
+                        deleteSessionAction.reset();
+                        setConfirmDeleteSessionId(s.id);
+                      }}
                       aria-label="Delete session"
                     >
                       Delete
@@ -444,6 +521,37 @@ export function Dashboard() {
           </div>
         )}
       </section>
+
+      <ConfirmModal
+        open={confirmDeleteSessionId !== null}
+        title="Delete session"
+        message={
+          <>
+            Delete this session and all its check-ins?
+            {deleteSessionAction.error && (
+              <span
+                className="hna-input-error"
+                role="alert"
+                style={{ display: 'block', marginTop: 8 }}
+              >
+                {deleteSessionAction.error}
+              </span>
+            )}
+          </>
+        }
+        confirmLabel="Delete"
+        onClose={() => {
+          setConfirmDeleteSessionId(null);
+          deleteSessionAction.reset();
+        }}
+        onConfirm={() => {
+          // Stays open and shows the reason on failure — the old window.alert
+          // dismissed the context along with the message.
+          if (confirmDeleteSessionId) {
+            void deleteSessionAction.run(confirmDeleteSessionId);
+          }
+        }}
+      />
     </div>
   );
 }

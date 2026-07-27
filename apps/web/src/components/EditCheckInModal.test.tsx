@@ -83,4 +83,59 @@ describe('EditCheckInModal mode round-trip', () => {
     });
     expect(onSaved).toHaveBeenCalled();
   });
+
+  it('announces a rejected callsign in an alert region', async () => {
+    // Previously this message was a plain red <div>: screen-reader users got
+    // no signal at all that Save had refused, and colour was the only visual
+    // cue that the line was an error.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(
+      <EditCheckInModal
+        open
+        checkIn={makeCheckIn('rf')}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const callsign = screen.getByLabelText('Callsign');
+    await userEvent.clear(callsign);
+    await userEvent.type(callsign, 'A');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Invalid callsign');
+    expect(alert).toHaveClass('hna-form-error');
+  });
+
+  it('keeps initial focus on the autoFocus callsign field', async () => {
+    // The dialog's focus trap used to steal focus back to the [ESC] chip.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(
+      <EditCheckInModal
+        open
+        checkIn={makeCheckIn('rf')}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText('Callsign')).toHaveFocus();
+    });
+  });
 });

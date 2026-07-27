@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
 
 let app: Express; let prisma: PrismaClient; let dbFile: string;
@@ -21,6 +21,38 @@ describe('presence heartbeat', () => {
   it('rejects an unauthenticated heartbeat', async () => {
     const res = await request(app).post('/api/presence/heartbeat');
     expect(res.status).toBe(401);
+  });
+
+  it('answers 401 (not 500) for a deleted account', async () => {
+    // The tab keeps beating every 45s after an officer deletes the member;
+    // this used to be an endless stream of 500s with nothing the client could
+    // act on.
+    const gone = await request(app).post('/api/auth/register').send({
+      email: 'gone@x.co', password: 'hunter2hunter2', name: 'Gone', callsign: 'KG0ONE',
+    });
+    const goneCookie = gone.headers['set-cookie'][0];
+    await prisma.user.delete({ where: { id: gone.body.id } });
+    const res = await request(app).post('/api/presence/heartbeat').set('Cookie', goneCookie);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('answers 401 when the account disappears mid-request', async () => {
+    // Same outcome for the narrow race where the row survives loadUser's read
+    // and is gone by the time the write lands (Prisma raises P2025).
+    const spy = vi.spyOn(prisma.user, 'update').mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+    try {
+      const res = await request(app).post('/api/presence/heartbeat').set('Cookie', cookie);
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('updates lastSeenAt for the current user', async () => {

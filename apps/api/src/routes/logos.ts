@@ -1,74 +1,27 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import dns from 'node:dns';
 import { requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
+import { safeFetch } from '../lib/safeFetch.js';
 
+/**
+ * SVG stays on the list on purpose: club logos are overwhelmingly vector, the
+ * shipped themes ship .svg, and dropping it would break every existing upload.
+ * The exposure it creates (SVG is script-capable, served from the app's own
+ * origin) is closed at the response instead — see the CSP + nosniff headers on
+ * the GET handler. Uploads are ADMIN-only to begin with.
+ */
 const ALLOWED_EXT = new Set(['.svg', '.png', '.jpg', '.jpeg']);
 const MAX_BYTES = 512 * 1024;
 
-export function isPrivateIp(addr: string, family: number): boolean {
-  if (family === 4) {
-    const parts = addr.split('.').map((n) => parseInt(n, 10));
-    if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) {
-      return true;
-    }
-    const [a, b] = parts as [number, number, number, number];
-    if (a === 0) return true;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    return false;
-  }
-  if (family === 6) {
-    const lower = addr.toLowerCase();
-    // Strip zone id
-    const a = lower.split('%')[0] ?? lower;
-    if (a === '::1') return true;
-    if (a === '::') return true;
-    // fe80::/10
-    if (/^fe[89ab][0-9a-f]?:/.test(a)) return true;
-    // fc00::/7 (fc.. or fd..)
-    if (/^f[cd][0-9a-f]{2}:/.test(a)) return true;
-    // IPv4-mapped ::ffff:a.b.c.d
-    const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
-    if (m && m[1]) return isPrivateIp(m[1], 4);
-    return false;
-  }
-  return true;
-}
-
-async function assertPublicUrl(urlStr: string): Promise<URL> {
-  let parsed: URL;
-  try {
-    parsed = new URL(urlStr);
-  } catch {
-    throw new HttpError(400, 'VALIDATION', 'Invalid URL');
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new HttpError(400, 'VALIDATION', 'url must use http:// or https://');
-  }
-  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
-  let addrs: { address: string; family: number }[];
-  try {
-    addrs = await dns.promises.lookup(hostname, { all: true });
-  } catch (e) {
-    throw new HttpError(400, 'VALIDATION', `DNS lookup failed: ${(e as Error).message}`);
-  }
-  if (addrs.length === 0) {
-    throw new HttpError(400, 'VALIDATION', 'DNS lookup returned no addresses');
-  }
-  for (const a of addrs) {
-    if (isPrivateIp(a.address, a.family)) {
-      throw new HttpError(400, 'VALIDATION', 'URL resolves to a private/blocked address');
-    }
-  }
-  return parsed;
-}
+/**
+ * Theme slugs name a file on disk, so the shape is the security boundary.
+ * Express percent-decodes route params before we see them, so a request for
+ * `/api/themes/..%2Fx/logo` arrives here as the slug `../x`.
+ */
+const SLUG_RE = /^[a-z][a-z0-9-]{0,40}$/;
 
 const MIME_BY_EXT: Record<string, string> = {
   '.svg': 'image/svg+xml',
@@ -77,11 +30,30 @@ const MIME_BY_EXT: Record<string, string> = {
   '.jpeg': 'image/jpeg',
 };
 
+let warnedRelativeLogoDir = false;
+
+/**
+ * LOGO_DIR is read straight from the environment because it is (still) missing
+ * from the zod env schema in env.ts — validate and normalize it here so a bad
+ * value cannot quietly do damage. A relative LOGO_DIR in the container is the
+ * dangerous case: uploads land next to the code instead of in the /data volume
+ * and vanish on the next image pull, so say so loudly once.
+ */
 function logoDir(): string {
-  return (
-    process.env.LOGO_DIR ||
-    (process.env.NODE_ENV === 'production' ? '/data/logos' : './data/logos')
-  );
+  const configured = process.env.LOGO_DIR?.trim();
+  if (configured) {
+    if (!path.isAbsolute(configured) && !warnedRelativeLogoDir) {
+      warnedRelativeLogoDir = true;
+      console.warn(
+        `[logos] LOGO_DIR="${configured}" is relative; uploads will be written to ` +
+          `${path.resolve(configured)} and are NOT on the /data volume.`,
+      );
+    }
+    return path.resolve(configured);
+  }
+  return process.env.NODE_ENV === 'production'
+    ? '/data/logos'
+    : path.resolve(process.cwd(), 'data/logos');
 }
 
 function ensureDir(): string {
@@ -90,13 +62,45 @@ function ensureDir(): string {
   return dir;
 }
 
+/**
+ * Resolve `<dir>/<slug><ext>` and refuse anything that lands outside the logo
+ * directory. Belt and braces with the router.param slug check: this is the last
+ * gate before a filesystem call, so a future caller that skips the router (or a
+ * slug pattern that gets loosened) still cannot walk the tree.
+ */
+function safeLogoPath(dir: string, slug: string, ext: string): string | null {
+  if (!SLUG_RE.test(slug)) return null;
+  const root = path.resolve(dir);
+  const abs = path.resolve(root, `${slug}${ext}`);
+  if (abs !== path.join(root, `${slug}${ext}`) || !abs.startsWith(root + path.sep)) return null;
+  return abs;
+}
+
 function findExisting(slug: string): { abs: string; ext: string } | null {
-  const dir = ensureDir();
+  // Read path: no mkdir. A GET must not create directories (it runs on the
+  // unauthenticated theme list) and must not 500 when the volume is read-only.
+  const dir = logoDir();
   for (const ext of ALLOWED_EXT) {
-    const abs = path.join(dir, `${slug}${ext}`);
-    if (fs.existsSync(abs)) return { abs, ext };
+    const abs = safeLogoPath(dir, slug, ext);
+    if (abs && fs.existsSync(abs)) return { abs, ext };
   }
   return null;
+}
+
+/**
+ * Write `<slug><ext>` and drop the same slug's other extensions, so a theme
+ * never ends up with two logo files and a find-order-dependent answer.
+ */
+function writeLogo(slug: string, ext: string, bytes: Buffer): void {
+  const dir = ensureDir();
+  const abs = safeLogoPath(dir, slug, ext);
+  if (!abs) throw new HttpError(400, 'VALIDATION', 'Invalid theme slug');
+  for (const other of ALLOWED_EXT) {
+    if (other === ext) continue;
+    const stale = safeLogoPath(dir, slug, other);
+    if (stale && fs.existsSync(stale)) fs.unlinkSync(stale);
+  }
+  fs.writeFileSync(abs, bytes);
 }
 
 export function uploadedLogoUrl(slug: string): string | null {
@@ -109,6 +113,19 @@ export function uploadedLogoUrl(slug: string): string | null {
 export function logosRouter(): Router {
   const router = Router();
 
+  // One gate for every :slug handler. The pattern used to live only in the POST
+  // handler, so the unauthenticated GET and the ADMIN DELETE both accepted
+  // traversal slugs — a filesystem existence oracle and an arbitrary-image
+  // unlink. Validating in router.param means a handler added later cannot
+  // forget to do it.
+  router.param('slug', (_req, _res, next, value) => {
+    if (typeof value !== 'string' || !SLUG_RE.test(value)) {
+      next(new HttpError(400, 'VALIDATION', 'Invalid theme slug'));
+      return;
+    }
+    next();
+  });
+
   router.get(
     '/:slug/logo',
     asyncHandler(async (req, res) => {
@@ -117,6 +134,12 @@ export function logosRouter(): Router {
       if (!hit) throw new HttpError(404, 'NOT_FOUND', 'No uploaded logo for this theme');
       res.setHeader('Content-Type', MIME_BY_EXT[hit.ext] ?? 'application/octet-stream');
       res.setHeader('Cache-Control', 'public, max-age=300');
+      // Logos may be SVG, which is active content: an admin-uploaded (or
+      // upstream-tampered) file opened at this same-origin URL could otherwise
+      // run script against the app. `sandbox` with no allow-scripts kills that,
+      // and nosniff stops a mislabelled body being re-typed as HTML.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
       fs.createReadStream(hit.abs).pipe(res);
     }),
   );
@@ -126,21 +149,22 @@ export function logosRouter(): Router {
     requireRole('ADMIN'),
     asyncHandler(async (req, res) => {
       const { slug } = req.params as { slug: string };
-      if (!/^[a-z][a-z0-9-]{0,40}$/.test(slug)) {
-        throw new HttpError(400, 'VALIDATION', 'Invalid theme slug');
-      }
 
       if (req.is('application/json')) {
         const body = req.body as { url?: unknown };
         const urlRaw = typeof body.url === 'string' ? body.url : '';
-        const validated = await assertPublicUrl(urlRaw);
         let remote: Response;
         try {
-          remote = await fetch(validated.toString(), {
-            signal: AbortSignal.timeout(5000),
-            redirect: 'error',
-          });
+          // maxRedirects: 0 keeps the previous redirect:'error' strictness —
+          // a logo URL that bounces is more likely an SSRF probe than a CDN.
+          ({ response: remote } = await safeFetch(urlRaw, {
+            timeoutMs: 5000,
+            maxRedirects: 0,
+          }));
         } catch (e) {
+          // Guard rejections already carry the right status/message; only
+          // transport failures need wrapping.
+          if (e instanceof HttpError) throw e;
           throw new HttpError(400, 'VALIDATION', `Failed to fetch url: ${(e as Error).message}`);
         }
         if (!remote.ok) {
@@ -181,14 +205,7 @@ export function logosRouter(): Router {
         if (fileBytes.length > MAX_BYTES) {
           throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
         }
-        const dir = ensureDir();
-        for (const e of ALLOWED_EXT) {
-          if (e === jext) continue;
-          const other = path.join(dir, `${slug}${e}`);
-          if (fs.existsSync(other)) fs.unlinkSync(other);
-        }
-        const abs = path.join(dir, `${slug}${jext}`);
-        fs.writeFileSync(abs, fileBytes);
+        writeLogo(slug, jext, fileBytes);
         res.status(201).json({
           uploadedLogoUrl: uploadedLogoUrl(slug),
           uploadedAt: new Date().toISOString(),
@@ -241,14 +258,7 @@ export function logosRouter(): Router {
         throw new HttpError(413, 'VALIDATION', `File too large (max ${MAX_BYTES} bytes)`);
       }
 
-      const dir = ensureDir();
-      for (const e of ALLOWED_EXT) {
-        if (e === ext) continue;
-        const other = path.join(dir, `${slug}${e}`);
-        if (fs.existsSync(other)) fs.unlinkSync(other);
-      }
-      const abs = path.join(dir, `${slug}${ext}`);
-      fs.writeFileSync(abs, fileBytes);
+      writeLogo(slug, ext, fileBytes);
       res.status(201).json({
         uploadedLogoUrl: uploadedLogoUrl(slug),
         uploadedAt: new Date().toISOString(),

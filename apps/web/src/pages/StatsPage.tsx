@@ -107,6 +107,10 @@ export function StatsPage() {
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const [editing, setEditing] = useState<SessionRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SessionRow | null>(null);
+  // Delete failures render in-page: window.alert is unstyled, blocks the tab,
+  // and is invisible in a kiosk browser — the same reason every other native
+  // dialog in the app was replaced.
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [memberSort, setMemberSort] = useState<'count' | 'callsign' | 'name'>('count');
 
   function exportCsv() {
@@ -130,11 +134,12 @@ export function StatsPage() {
     if (!confirmDelete) return;
     const id = confirmDelete.id;
     setConfirmDelete(null);
+    setDeleteErr(null);
     try {
       await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
       await refresh();
     } catch (e) {
-      window.alert((e as Error).message);
+      setDeleteErr((e as Error).message);
     }
   }
 
@@ -598,6 +603,12 @@ export function StatsPage() {
           </Card>
         ))}
       </div>
+
+      {deleteErr && (
+        <p className="hna-input-error" role="alert" data-testid="stats-delete-error">
+          Couldn&rsquo;t delete that session: {deleteErr}
+        </p>
+      )}
 
       <EditSessionModal
         open={editing !== null}

@@ -5,7 +5,7 @@ import type { PrismaClient } from '@prisma/client';
 import { makeTestApp, cleanupTestDb } from '../helpers.js';
 
 let app: Express; let prisma: PrismaClient; let dbFile: string;
-let officer: string;
+let officer: string; let member: string;
 let sessionId: string;
 
 beforeAll(async () => {
@@ -14,6 +14,12 @@ beforeAll(async () => {
     email: 'a@x.co', password: 'hunter2hunter2', name: 'Alice', callsign: 'W1AW',
   });
   officer = a.headers['set-cookie'][0];
+  // Second registration is a plain MEMBER — the exports carry the whole club's
+  // participation history, so they must stay officer-only.
+  const m = await request(app).post('/api/auth/register').send({
+    email: 'm@x.co', password: 'hunter2hunter2', name: 'Bob', callsign: 'KB0BOB',
+  });
+  member = m.headers['set-cookie'][0];
   const r = await request(app).post('/api/repeaters').set('Cookie', officer)
     .send({ name: 'R1', frequency: 146.76, offsetKhz: -600, mode: 'FM' });
   const n = await request(app).post('/api/nets').set('Cookie', officer).send({
@@ -36,6 +42,36 @@ describe('stats', () => {
   it('GET /api/stats/participation requires auth', async () => {
     const res = await request(app).get('/api/stats/participation');
     expect(res.status).toBe(401);
+  });
+
+  it('GET /api/stats/participation rejects a MEMBER with 403', async () => {
+    const res = await request(app).get('/api/stats/participation').set('Cookie', member);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('GET /api/stats/export.csv requires auth', async () => {
+    const res = await request(app).get('/api/stats/export.csv');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/stats/export.csv rejects a MEMBER with 403', async () => {
+    const res = await request(app).get('/api/stats/export.csv').set('Cookie', member);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+    // The refusal must not have streamed any of the log first.
+    expect(res.text).not.toMatch(/W1AW/);
+  });
+
+  it('GET /api/stats/export.pdf requires auth', async () => {
+    const res = await request(app).get('/api/stats/export.pdf');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/stats/export.pdf rejects a MEMBER with 403', async () => {
+    const res = await request(app).get('/api/stats/export.pdf').set('Cookie', member);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
   });
 
   it('GET /api/stats/participation returns totals', async () => {

@@ -1,3 +1,9 @@
+// Sessions are grouped into "net nights" using the NET's timezone, so pin the
+// server timezone to UTC: it keeps the atLocal() fixtures below deterministic
+// no matter where the suite runs, and it makes the UTC-midnight straddle test
+// a real regression check rather than a coincidence of the host clock.
+process.env.TZ = 'UTC';
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
@@ -130,6 +136,74 @@ describe('admin duplicate-sessions', () => {
 
     const dupAfter = await prisma.netSession.findUnique({ where: { id: dup.id } });
     expect(dupAfter?.deletedAt).not.toBeNull();
+  });
+
+  it('groups two sessions that straddle 00:00 UTC on one Chicago net night', async () => {
+    // 18:50 and 19:10 America/Chicago on Apr 29 — one net night, but either
+    // side of UTC midnight. Grouping by the server's day filed them under two
+    // dates, so the pair never surfaced as a duplicate and the merge tool
+    // could not reach the very rows it exists to clean up.
+    const before = await makeSession(netA, new Date('2026-04-29T23:50:00Z'), {
+      topicTitle: 'Before midnight',
+    });
+    const after = await makeSession(netA, new Date('2026-04-30T00:10:00Z'), {
+      topicTitle: 'After midnight',
+    });
+
+    const res = await request(app)
+      .get('/api/admin/duplicate-sessions')
+      .set('Cookie', admin);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    // Filed under the Chicago date, which is what an operator would call it.
+    expect(res.body[0].date).toBe('2026-04-29');
+    expect(res.body[0].sessions.map((s: { id: string }) => s.id)).toEqual([
+      before.id,
+      after.id,
+    ]);
+
+    // ...and the merge accepts them as same-day.
+    const merge = await request(app)
+      .post('/api/admin/duplicate-sessions/merge')
+      .set('Cookie', admin)
+      .send({ keepSessionId: before.id, mergeSessionIds: [after.id] });
+    expect(merge.status).toBe(200);
+  });
+
+  it('merge soft-deletes duplicate check-ins so they land in the trash', async () => {
+    // "Same callsign + same name" is a heuristic: a member who checks back in
+    // later in the net looks identical to a duplicate. A hard delete made that
+    // mistake unrecoverable while every other delete path in the app is
+    // restorable for 30 days.
+    const keeper = await makeSession(netA, atLocal(2026, 4, 25, 15, 0));
+    const dup = await makeSession(netA, atLocal(2026, 4, 25, 19, 55));
+    await addCheckIn(keeper.id, 'KB0BOB', 'Bob', atLocal(2026, 4, 25, 15, 5));
+    const doomed = await addCheckIn(dup.id, 'KB0BOB', 'Bob', atLocal(2026, 4, 25, 19, 58));
+
+    const res = await request(app)
+      .post('/api/admin/duplicate-sessions/merge')
+      .set('Cookie', admin)
+      .send({ keepSessionId: keeper.id, mergeSessionIds: [dup.id] });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.checkIn.findUnique({ where: { id: doomed.id } });
+    expect(row).not.toBeNull();
+    expect(row!.deletedAt).not.toBeNull();
+    // Re-parented onto the keeper so the trash entry doesn't dangle off a
+    // soft-deleted session.
+    expect(row!.sessionId).toBe(keeper.id);
+
+    const trash = await request(app).get('/api/admin/trash').set('Cookie', admin);
+    expect(trash.status).toBe(200);
+    expect(trash.body.checkIns.map((c: { id: string }) => c.id)).toContain(doomed.id);
+
+    // And it can be brought back.
+    const restore = await request(app)
+      .post(`/api/admin/trash/checkins/${doomed.id}/restore`)
+      .set('Cookie', admin);
+    expect(restore.status).toBe(200);
+    const restored = await prisma.checkIn.findUnique({ where: { id: doomed.id } });
+    expect(restored!.deletedAt).toBeNull();
   });
 
   it('POST merge with sessions on different nets returns 400', async () => {

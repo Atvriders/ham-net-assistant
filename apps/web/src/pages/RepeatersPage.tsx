@@ -1,12 +1,14 @@
 import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Repeater, RepeaterInput } from '@hna/shared';
-import { apiFetch, ApiErrorException, errorMessage } from '../api/client.js';
+import { apiFetch, ApiErrorException } from '../api/client.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
+import { useAsyncAction } from '../lib/useAsyncAction.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Input } from '../components/ui/Input.js';
 import { Modal } from '../components/ui/Modal.js';
+import { ConfirmModal } from '../components/ui/ConfirmModal.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { decodeGrid } from '../lib/grid.js';
 import { CsvImportModal } from '../components/CsvImportModal.js';
@@ -110,6 +112,7 @@ export function RepeatersPage() {
   const [attemptedSources, setAttemptedSources] = useState<string[]>([]);
 
   const [csvOpen, setCsvOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Repeater | null>(null);
 
   function openCreate() {
     setEditing(null);
@@ -158,18 +161,17 @@ export function RepeatersPage() {
     }
   }
 
-  async function del(id: string) {
-    if (!confirm('Delete this repeater?')) return;
-    setTopAlert(null);
-    try {
-      await apiFetch(`/repeaters/${id}`, { method: 'DELETE' });
-      await reload();
-    } catch (e) {
-      // The visible `err` only reflects the list GET; surface a failed delete
-      // in the page-level alert instead of letting it vanish.
-      setTopAlert(errorMessage(e));
-    }
-  }
+  // Repeater delete: the app's own ConfirmModal, not window.confirm — one
+  // console, one set of dialogs. The server refuses (409) when any net or
+  // logged session still points at the repeater and names the dependents in
+  // its message, so the failure is surfaced *inside* the still-open modal
+  // where the operator can read which nets are in the way. The page-level
+  // `err`/`topAlert` only cover the list GET and discovery.
+  const deleteAction = useAsyncAction(async (id: string) => {
+    await apiFetch(`/repeaters/${id}`, { method: 'DELETE' });
+    setConfirmDelete(null);
+    await reload();
+  });
 
   async function runDiscovery(query: string, openModal: boolean) {
     setSuggesting(true);
@@ -446,7 +448,13 @@ export function RepeatersPage() {
                     <Button variant="secondary" onClick={() => openEdit(r)}>
                       Edit
                     </Button>
-                    <Button variant="danger" onClick={() => del(r.id)}>
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        deleteAction.reset();
+                        setConfirmDelete(r);
+                      }}
+                    >
                       Delete
                     </Button>
                   </div>
@@ -456,6 +464,40 @@ export function RepeatersPage() {
           </div>
         </section>
       )}
+
+      <ConfirmModal
+        open={confirmDelete !== null}
+        title="Delete repeater"
+        message={
+          <>
+            Delete <strong>{confirmDelete?.name}</strong>
+            {confirmDelete ? ` (${confirmDelete.frequency.toFixed(3)} MHz)` : ''}?
+            <span style={{ display: 'block', marginTop: 8 }}>
+              A repeater that a net or a logged session still uses can&rsquo;t
+              be deleted — the server will list what depends on it. Point those
+              nets at another repeater first.
+            </span>
+            {deleteAction.error && (
+              <span
+                className="hna-input-error"
+                role="alert"
+                data-testid="repeater-delete-error"
+                style={{ display: 'block', marginTop: 8 }}
+              >
+                {deleteAction.error}
+              </span>
+            )}
+          </>
+        }
+        confirmLabel="Delete"
+        onClose={() => {
+          setConfirmDelete(null);
+          deleteAction.reset();
+        }}
+        onConfirm={() => {
+          if (confirmDelete) void deleteAction.run(confirmDelete.id);
+        }}
+      />
 
       <CsvImportModal
         open={csvOpen}

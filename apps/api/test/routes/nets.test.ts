@@ -269,6 +269,49 @@ describe('nets CRUD', () => {
     expect(u.body.dayOfWeek).toBe(c.body.dayOfWeek);
     expect(u.body.startLocal).toBe(c.body.startLocal);
   });
+  // Only linkedRepeaterIds used to be validated. An unknown PRIMARY repeaterId
+  // fell through to Prisma: create returned a 500 INTERNAL, and update reported
+  // "Net not found" — a 404 about the wrong object, for a net that exists.
+  it('rejects an unknown primary repeaterId on create with a 400 naming it', async () => {
+    const res = await request(app).post('/api/nets').set('Cookie', officer)
+      .send({ ...netBody(), repeaterId: 'ghost-repeater' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toContain('ghost-repeater');
+    // Nothing half-created.
+    const list = await request(app).get('/api/nets');
+    expect(list.body).toHaveLength(0);
+  });
+
+  it('rejects an unknown primary repeaterId on PATCH with a 400, not "Net not found"', async () => {
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ repeaterId: 'ghost-repeater' });
+    expect(u.status).toBe(400);
+    expect(u.body.error.code).toBe('VALIDATION');
+    expect(u.body.error.message).toContain('ghost-repeater');
+    // The net is untouched and still points at its real repeater.
+    const after = await request(app).get('/api/nets');
+    expect(after.body[0].repeaterId).toBe(repeaterId);
+  });
+
+  it('PATCH on a net that really is missing still returns 404', async () => {
+    const u = await request(app).patch('/api/nets/no-such-net').set('Cookie', officer)
+      .send({ name: 'Renamed' });
+    expect(u.status).toBe(404);
+    expect(u.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('PATCH to a valid different repeater still works', async () => {
+    const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: 'Rswap', frequency: 145.31, offsetKhz: -600, mode: 'FM' });
+    const c = await request(app).post('/api/nets').set('Cookie', officer).send(netBody());
+    const u = await request(app).patch(`/api/nets/${c.body.id}`).set('Cookie', officer)
+      .send({ repeaterId: r2.body.id });
+    expect(u.status).toBe(200);
+    expect(u.body.repeaterId).toBe(r2.body.id);
+  });
+
   it('dedupes links and excludes the primary repeater', async () => {
     const r2 = await request(app).post('/api/repeaters').set('Cookie', officer)
       .send({ name: 'Rd', frequency: 442.15, offsetKhz: 5000, mode: 'FM' });

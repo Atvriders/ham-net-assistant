@@ -5,8 +5,25 @@ import { requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { lookupCallsignName } from '../lib/callsignNameLookup.js';
+import { dayKeyInTz } from '../lib/sessionDedupe.js';
 
 const TRASH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Ceiling on how many check-in rows one backfill request pulls out of the DB.
+ * Without it the handler streamed the entire table into memory before doing
+ * any work.
+ */
+const BACKFILL_SCAN_LIMIT = 20_000;
+
+/**
+ * Ceiling on how many distinct callsigns one backfill request resolves. Each
+ * one costs an upstream FCC lookup, so an uncapped run held the HTTP request
+ * open for minutes (and the browser gave up long before the server did).
+ * Repaired rows stop matching the candidate filter, so re-running the tool
+ * walks the remaining backlog.
+ */
+const BACKFILL_CALLSIGN_LIMIT = 250;
 
 interface DuplicateSessionRow {
   id: string;
@@ -25,18 +42,24 @@ interface DuplicateGroup {
   sessions: DuplicateSessionRow[];
 }
 
-function localDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+/**
+ * The "net night" a session belongs to, keyed in the net's own timezone.
+ *
+ * This tool exists to clean up duplicate sessions, and the duplicates it has
+ * to find are precisely the ones created either side of 00:00 UTC on a US
+ * evening net. Grouping by the *server's* local day filed those two rows under
+ * two different dates, so the pair never appeared as a duplicate group at all
+ * and the merge button could not reach them.
+ */
+function sessionDayKey(startedAt: Date, timezone: string | null | undefined): string {
+  return dayKeyInTz(timezone || 'UTC', startedAt);
 }
 
 async function loadDuplicateGroups(prisma: PrismaClient): Promise<DuplicateGroup[]> {
   const all = await prisma.netSession.findMany({
     where: { deletedAt: null },
     include: {
-      net: { select: { name: true } },
+      net: { select: { name: true, timezone: true } },
       controlOp: { select: { callsign: true, name: true } },
       _count: { select: { checkIns: { where: { deletedAt: null } } } },
     },
@@ -45,7 +68,7 @@ async function loadDuplicateGroups(prisma: PrismaClient): Promise<DuplicateGroup
 
   const groupsMap = new Map<string, DuplicateGroup>();
   for (const s of all) {
-    const dateKey = localDateKey(s.startedAt);
+    const dateKey = sessionDayKey(s.startedAt, s.net.timezone);
     const key = `${s.netId}|${dateKey}`;
     let g = groupsMap.get(key);
     if (!g) {
@@ -90,6 +113,7 @@ async function mergeGroup(
     const ids = [keepSessionId, ...mergeSessionIds];
     const sessions = await tx.netSession.findMany({
       where: { id: { in: ids } },
+      include: { net: { select: { timezone: true } } },
     });
     if (sessions.length !== ids.length) {
       throw new HttpError(400, 'VALIDATION', 'One or more sessions not found');
@@ -103,19 +127,21 @@ async function mergeGroup(
     if (!keeper) {
       throw new HttpError(400, 'VALIDATION', 'Keeper session not found');
     }
-    const keeperDay = localDateKey(keeper.startedAt);
+    // Same-net is enforced first, so every row's day key can be compared in the
+    // keeper net's timezone.
+    const keeperDay = sessionDayKey(keeper.startedAt, keeper.net.timezone);
     for (const s of sessions) {
       if (s.netId !== keeper.netId) {
         throw new HttpError(400, 'VALIDATION', 'All sessions must belong to the same net');
       }
-      if (localDateKey(s.startedAt) !== keeperDay) {
+      if (sessionDayKey(s.startedAt, s.net.timezone) !== keeperDay) {
         throw new HttpError(400, 'VALIDATION', 'All sessions must fall on the same calendar day');
       }
     }
 
     // Re-parent check-ins. For each merged session, walk its check-ins; if a
     // check-in with the same callsign+nameAtCheckIn already exists on the
-    // keeper, hard-delete the duplicate and keep the earliest checkedInAt on
+    // keeper, soft-delete the duplicate and keep the earliest checkedInAt on
     // the keeper. Otherwise reassign the check-in to the keeper.
     let mergedCheckIns = 0;
     for (const mergeId of mergeSessionIds) {
@@ -140,7 +166,17 @@ async function mergeGroup(
               data: { checkedInAt: ci.checkedInAt },
             });
           }
-          await tx.checkIn.delete({ where: { id: ci.id } });
+          // Soft-delete, never hard-delete: "same callsign + same name" is a
+          // heuristic, and a legitimate second check-in (a member who came
+          // back later in the net, or two operators sharing a club call) looks
+          // exactly like a duplicate. Every other deletion path in the app is
+          // recoverable from the 30-day trash; an admin merge must be too.
+          // The updateMany below then re-parents it onto the keeper so the
+          // trash row doesn't dangle off a soft-deleted session.
+          await tx.checkIn.update({
+            where: { id: ci.id },
+            data: { deletedAt: new Date() },
+          });
         } else {
           await tx.checkIn.update({
             where: { id: ci.id },
@@ -420,35 +456,59 @@ export function adminRouter(prisma: PrismaClient): Router {
         };
       }
 
-      // Pull a wider candidate set and filter in JS — Prisma can't express
-      // a column-to-column comparison (nameAtCheckIn === callsign).
+      // Pull a bounded candidate set and filter in JS — Prisma can't express
+      // a column-to-column comparison (nameAtCheckIn === callsign). Ask for one
+      // row past the limit so we can tell the admin whether more remain.
       const candidates = await prisma.checkIn.findMany({
         where,
         select: { id: true, callsign: true, nameAtCheckIn: true },
+        orderBy: { checkedInAt: 'desc' },
+        take: BACKFILL_SCAN_LIMIT + 1,
       });
-      const filtered = candidates.filter((c) => {
+      const scanTruncated = candidates.length > BACKFILL_SCAN_LIMIT;
+      const filtered = candidates.slice(0, BACKFILL_SCAN_LIMIT).filter((c) => {
         const n = (c.nameAtCheckIn ?? '').trim();
         return n === '' || n === c.callsign;
       });
 
+      // Group by callsign before doing any work. The old loop issued one FCC
+      // lookup and one UPDATE per *row*, so a club with a few thousand
+      // imported check-ins meant thousands of round trips inside a single
+      // request; the same callsign now costs one lookup and one UPDATE
+      // regardless of how many nets that operator has been on.
+      const byCallsign = new Map<string, string[]>();
+      for (const c of filtered) {
+        const ids = byCallsign.get(c.callsign);
+        if (ids) ids.push(c.id);
+        else byCallsign.set(c.callsign, [c.id]);
+      }
+      const batch = [...byCallsign.entries()].slice(0, BACKFILL_CALLSIGN_LIMIT);
+      const capped = scanTruncated || byCallsign.size > BACKFILL_CALLSIGN_LIMIT;
+
       const cache = new Map<string, string | null>();
-      const scanned = filtered.length;
+      // `scanned` counts the check-in ROWS this run actually considered, so a
+      // capped run reports the work it did rather than the size of the backlog.
+      const scanned = batch.reduce((n, [, ids]) => n + ids.length, 0);
       let updated = 0;
+      // Distinct callsigns the FCC lookup resolved (not rows) — with grouping
+      // one lookup can repair many rows, which is the point.
       let lookedUp = 0;
 
-      const queue = [...filtered];
+      const queue = [...batch];
       async function worker(): Promise<void> {
         while (queue.length > 0) {
-          const c = queue.shift();
-          if (!c) return;
-          const found = await lookupCallsignName(prisma, c.callsign, cache);
+          const entry = queue.shift();
+          if (!entry) return;
+          const [callsign, ids] = entry;
+          const found = await lookupCallsignName(prisma, callsign, cache);
           if (found) {
             lookedUp += 1;
-            await prisma.checkIn.update({
-              where: { id: c.id },
+            // One UPDATE per callsign instead of one per row.
+            const repaired = await prisma.checkIn.updateMany({
+              where: { id: { in: ids } },
               data: { nameAtCheckIn: found },
             });
-            updated += 1;
+            updated += repaired.count;
           }
         }
       }
@@ -457,7 +517,10 @@ export function adminRouter(prisma: PrismaClient): Router {
         await Promise.all(Array.from({ length: workerCount }, () => worker()));
       }
 
-      res.json({ scanned, updated, lookedUp });
+      // `capped` tells the admin UI "there is more backlog — run it again".
+      // Newest-first ordering means a repeated run makes visible progress on
+      // the log people are actually looking at.
+      res.json({ scanned, updated, lookedUp, capped });
     }),
   );
 

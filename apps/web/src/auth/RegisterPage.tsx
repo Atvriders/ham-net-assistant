@@ -44,6 +44,7 @@ export function RegisterPage() {
   const nameId = useId();
   const emailId = useId();
   const passwordId = useId();
+  const passwordHintId = useId();
   const inviteId = useId();
   const callsignDisplayId = useId();
 
@@ -294,15 +295,25 @@ export function RegisterPage() {
           </div>
           <div className="hna-field">
             <label htmlFor={passwordId}>Password</label>
+            {/*
+              minLength must track `Password` in @hna/shared (currently min 12).
+              If it is lower the browser happily submits a short password and the
+              only feedback is the API's 400 VALIDATION — the user gets a generic
+              server error instead of the field telling them the rule up front.
+            */}
             <Input
               id={passwordId}
               type="password"
               autoComplete="new-password"
               value={form.password}
-              minLength={8}
+              minLength={12}
+              aria-describedby={passwordHintId}
               onChange={(e) => update('password')(e.target.value)}
               required
             />
+            <p id={passwordHintId} className="hna-help">
+              At least 12 characters.
+            </p>
           </div>
           {inviteCodeRequired === true && (
             <div className="hna-field">

@@ -107,6 +107,11 @@ model Net {
   sessions   NetSession[]
   links      NetLink[]
   reminders  NetReminder[]
+
+  /// Repeater -> nets is walked on every repeater stats/detail request
+  /// (checkIn.count({ where: { session: { net: { repeaterId } } } })) and by the
+  /// cascade when a repeater is deleted. Without it both are table scans.
+  @@index([repeaterId])
 }
 
 /// Tracks which reminders have already been sent for a specific net occurrence,
@@ -182,6 +187,12 @@ model NetSession {
   messages    SessionMessage[]
   deletedAt   DateTime?
 
+  /// netId is the single hottest predicate in the app (session list per net,
+  /// active-session lookup, the import/auto-open same-day dedupe). Composite
+  /// with startedAt because every one of those either range-filters or orders
+  /// by it; SQLite still uses this index for netId-only lookups (leftmost
+  /// prefix), so a separate single-column index would only cost write time.
+  @@index([netId, startedAt])
   @@index([startedAt])
   @@index([deletedAt])
 }

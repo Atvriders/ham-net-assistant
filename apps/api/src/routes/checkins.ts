@@ -3,10 +3,63 @@ import type { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { CheckInInput, roleAtLeast } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, type AuthUser } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { withCheckInMode } from '../lib/checkinMode.js';
+
+/**
+ * How long a plain member may keep correcting their own check-in. Past this,
+ * only NET_CONTROL and above can touch the row — the log is the club's record
+ * of who was on the air, not a scratchpad.
+ */
+const MEMBER_EDIT_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * PATCH body. `CheckInInput` (used by POST) requires callsign + nameAtCheckIn;
+ * PATCH accepts any subset and merges it onto the stored row, matching the
+ * partial-update semantics of /nets and /users. Full-body PATCHes from the
+ * current web client keep working unchanged.
+ */
+const CheckInPatch = CheckInInput.partial();
+
+/**
+ * Load a live check-in and authorize `me` to change it, or throw.
+ *
+ * Net Control and above may fix any row, including one on a finished net — the
+ * Stats page's log-correction flow depends on that. A plain member gets a
+ * deliberately narrow window: their own entry, inside MEMBER_EDIT_WINDOW_MS,
+ * and only while the net is still running. Without the ended-session check a
+ * member who checked in during the last minutes of a net could still rewrite
+ * or delete their line out of a log the control op had already closed.
+ */
+async function loadEditableCheckIn(
+  prisma: PrismaClient,
+  id: string,
+  me: AuthUser,
+  action: 'edit' | 'delete',
+) {
+  const ci = await prisma.checkIn.findFirst({
+    where: { id, deletedAt: null },
+    include: { session: { select: { endedAt: true } } },
+  });
+  if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
+  if (roleAtLeast(me.role, 'NET_CONTROL')) return ci;
+  const ownRecent =
+    ci.createdById === me.id
+    && Date.now() - ci.checkedInAt.getTime() < MEMBER_EDIT_WINDOW_MS;
+  if (!ownRecent) {
+    throw new HttpError(403, 'FORBIDDEN', `Cannot ${action} this check-in`);
+  }
+  if (ci.session.endedAt) {
+    throw new HttpError(
+      403,
+      'FORBIDDEN',
+      `Cannot ${action} a check-in once the net has ended`,
+    );
+  }
+  return ci;
+}
 
 export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Router } {
   const nested = Router({ mergeParams: true });
@@ -59,57 +112,41 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.json({ callsign, name: last?.nameAtCheckIn ?? null });
   }));
 
-  flat.patch('/:id', requireAuth, validateBody(CheckInInput), asyncHandler(async (req, res) => {
-    const ci = await prisma.checkIn.findFirst({
-      where: { id: req.params.id, deletedAt: null },
-    });
-    if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
-    const me = req.user!;
-    // Net Control (and above) can edit any check-in while running the net;
-    // everyone else is limited to their own entry within a 5-minute window.
-    const canManage = roleAtLeast(me.role, 'NET_CONTROL');
-    const ownRecent =
-      ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
-    if (!canManage && !ownRecent) {
-      throw new HttpError(403, 'FORBIDDEN', 'Cannot edit this check-in');
+  flat.patch('/:id', requireAuth, validateBody(CheckInPatch), asyncHandler(async (req, res) => {
+    const ci = await loadEditableCheckIn(prisma, req.params.id as string, req.user!, 'edit');
+    const body = req.body as z.infer<typeof CheckInPatch>;
+    // Resolve the member link from the supplied callsign: if it maps to a
+    // registered member, point at them; otherwise clear it (the row is a
+    // visitor entry). A partial PATCH that omits callsign leaves the link
+    // exactly as it was rather than re-deriving it from a field the caller
+    // never mentioned.
+    let userId: string | null | undefined;
+    if (body.callsign !== undefined) {
+      const matched = await prisma.user.findFirst({
+        where: { callsign: body.callsign },
+        orderBy: { createdAt: 'asc' },
+      });
+      userId = matched?.id ?? null;
     }
-    const body = req.body as z.infer<typeof CheckInInput>;
-    // If the new callsign maps to a registered member, relink userId;
-    // otherwise clear userId (it's now a visitor entry).
-    const matched = await prisma.user.findFirst({
-      where: { callsign: body.callsign },
-      orderBy: { createdAt: 'asc' },
-    });
     const updated = await prisma.checkIn.update({
       where: { id: ci.id },
       data: {
+        // Preserve-on-omit throughout: undefined leaves the stored value in
+        // place, so a caller sending only `mode` doesn't blank the name (and an
+        // officer fixing a name doesn't clobber the participation method
+        // recorded at check-in time).
         callsign: body.callsign,
         nameAtCheckIn: body.nameAtCheckIn,
-        comment: body.comment === undefined ? undefined : body.comment,
-        userId: matched?.id ?? null,
-        // Preserve-on-omit: undefined leaves the existing mode unchanged so
-        // officers fixing a name don't accidentally clobber the participation
-        // method recorded at check-in time.
-        mode: body.mode === undefined ? undefined : body.mode,
+        comment: body.comment,
+        userId,
+        mode: body.mode,
       },
     });
     res.json(withCheckInMode(updated));
   }));
 
   flat.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
-    const ci = await prisma.checkIn.findFirst({
-      where: { id: req.params.id, deletedAt: null },
-    });
-    if (!ci) throw new HttpError(404, 'NOT_FOUND', 'Check-in not found');
-    const me = req.user!;
-    // Net Control (and above) can delete any check-in while running the net;
-    // everyone else is limited to their own entry within a 5-minute window.
-    const canManage = roleAtLeast(me.role, 'NET_CONTROL');
-    const ownRecent =
-      ci.createdById === me.id && Date.now() - ci.checkedInAt.getTime() < 5 * 60 * 1000;
-    if (!canManage && !ownRecent) {
-      throw new HttpError(403, 'FORBIDDEN', 'Cannot delete this check-in');
-    }
+    const ci = await loadEditableCheckIn(prisma, req.params.id as string, req.user!, 'delete');
     await prisma.checkIn.update({
       where: { id: ci.id },
       data: { deletedAt: new Date() },

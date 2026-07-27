@@ -3,6 +3,7 @@ import {
   nextOccurrence,
   wallClockIn,
   instantFromWallClock,
+  InvalidTimezoneError,
 } from '../../src/discord/reminders.js';
 
 describe('wallClockIn', () => {
@@ -25,6 +26,38 @@ describe('wallClockIn', () => {
     expect(w.day).toBe(7);
     expect(w.hour).toBe(20);
     expect(w.weekday).toBe(6); // Saturday
+  });
+});
+
+describe('wallClockIn timezone failure mode', () => {
+  // Callers must be able to tell "this one net is misconfigured" from "the
+  // scheduler has a bug", and must never be handed a plausible-looking wrong
+  // time — a silent UTC fallback would announce and auto-start nets hours off.
+  it.each(['CDT', 'Eastern', 'UTC-6', ' America/Chicago ', ''])(
+    'throws a typed InvalidTimezoneError for %s',
+    (tz) => {
+      expect(() => wallClockIn(tz, new Date('2026-06-22T12:00:00Z')))
+        .toThrow(InvalidTimezoneError);
+    },
+  );
+
+  it('carries the offending zone and the underlying RangeError', () => {
+    try {
+      wallClockIn('CDT', new Date('2026-06-22T12:00:00Z'));
+      expect.unreachable('wallClockIn should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(InvalidTimezoneError);
+      expect((e as InvalidTimezoneError).timezone).toBe('CDT');
+      expect((e as InvalidTimezoneError).message).toContain('CDT');
+      expect((e as Error).cause).toBeInstanceOf(RangeError);
+    }
+  });
+
+  it('propagates through the helpers built on it', () => {
+    expect(() => instantFromWallClock('CDT', 2026, 6, 22, 12, 0))
+      .toThrow(InvalidTimezoneError);
+    expect(() => nextOccurrence(1, '20:00', 'CDT', Date.now()))
+      .toThrow(InvalidTimezoneError);
   });
 });
 

@@ -19,5 +19,14 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // Raised from the 5s/1s defaults because Testing Library's *ByRole queries
+    // walk the whole accessibility tree, and the net editor renders the full
+    // IANA timezone list (~400 <option> nodes). That is fine in a browser but
+    // slow in jsdom, and on a shared/throttled CI runner the default budget
+    // produced intermittent failures in tests that were otherwise correct.
+    // These are ceilings, not waits: passing tests still finish immediately.
+    // (Testing Library's own findBy/waitFor budget is set alongside this in
+    // src/test-setup.ts — vitest's testTimeout does not govern it.)
+    testTimeout: 15000,
   },
 });

@@ -46,6 +46,40 @@ export function parseReminderMinutes(raw: string | null | undefined): number[] {
   }
 }
 
+/**
+ * True when the runtime's `Intl` accepts `value` as an IANA timezone id.
+ *
+ * This is the only definition of "valid timezone" that matters here: every
+ * scheduler resolves a net's wall clock with
+ * `new Intl.DateTimeFormat(..., { timeZone })`, which throws a RangeError on
+ * anything it doesn't recognise. A zone that fails this check is a zone that
+ * blows up the auto-open / auto-start / reminder ticks, so it must never
+ * reach the database.
+ *
+ * Rejects the shapes people actually type into the timezone box:
+ * abbreviations ("CDT", "EST"), friendly names ("Eastern"), raw offsets
+ * ("UTC-6"), and values pasted with surrounding whitespace
+ * (" America/Chicago ").
+ */
+export function isValidTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Net timezone as accepted on input. Validated (not normalized) so the error
+ * is actionable and the stored value is exactly what the operator confirmed —
+ * silently trimming or remapping would hide a typo that shifts a net by hours.
+ */
+const timezone = z
+  .string()
+  .min(1)
+  .refine(isValidTimezone, { message: 'Must be an IANA timezone like America/Chicago' });
+
 const baseNetFields = {
   name: z.string().min(1).max(120),
   repeaterId: z.string().min(1),
@@ -69,7 +103,7 @@ const netInputObject = z.object({
   kind: NetKind.optional(),
   dayOfWeek: dayOfWeek.optional(),
   startLocal: startLocal.optional(),
-  timezone: z.string().min(1).optional(),
+  timezone: timezone.optional(),
 });
 
 export const NetInput = netInputObject.superRefine((val, ctx) => {
@@ -115,6 +149,10 @@ export const Net = z.object({
   reminderMinutes: z.array(z.number().int()).default([]),
   dayOfWeek: z.number().int(),
   startLocal: z.string(),
+  // Deliberately NOT the validated `timezone` schema: this is the response
+  // shape, and rows written before the input-side refinement existed may hold
+  // a bad zone. Reading such a net must still work (that's how an officer
+  // finds and fixes it) — the write path is where bad zones get rejected.
   timezone: z.string(),
   active: z.boolean(),
 });

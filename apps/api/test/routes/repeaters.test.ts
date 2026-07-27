@@ -102,6 +102,104 @@ describe('PATCH/DELETE /api/repeaters/:id', () => {
       .patch('/api/repeaters/nope').set('Cookie', officerCookie).send(valid);
     expect(res.status).toBe(404);
   });
+  it('DELETE 404s unknown id', async () => {
+    const res = await request(app)
+      .delete('/api/repeaters/nope').set('Cookie', officerCookie);
+    expect(res.status).toBe(404);
+  });
+});
+
+// Every FK below Repeater is ON DELETE CASCADE, so deleting a repeater used to
+// wipe its nets, sessions, check-ins and chat with nothing written to
+// `deletedAt` — i.e. nothing recoverable from the 30-day trash.
+describe('DELETE /api/repeaters/:id with dependents', () => {
+  async function makeRepeater(name: string): Promise<string> {
+    const r = await request(app).post('/api/repeaters').set('Cookie', officerCookie)
+      .send({ ...valid, name });
+    return r.body.id as string;
+  }
+
+  it('refuses with 409 and names what would be destroyed', async () => {
+    const repeaterId = await makeRepeater('Busy Repeater');
+    const net = await request(app).post('/api/nets').set('Cookie', officerCookie).send({
+      name: 'Wed Net', repeaterId, dayOfWeek: 3,
+      startLocal: '20:00', timezone: 'America/Chicago',
+    });
+    const s = await request(app).post(`/api/nets/${net.body.id}/sessions`)
+      .set('Cookie', officerCookie);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officerCookie);
+    await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officerCookie)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+
+    const del = await request(app).delete(`/api/repeaters/${repeaterId}`)
+      .set('Cookie', officerCookie);
+    expect(del.status).toBe(409);
+    expect(del.body.error.code).toBe('CONFLICT');
+    expect(del.body.error.message).toContain('Busy Repeater');
+    expect(del.body.error.message).toContain('1 net');
+    expect(del.body.error.message).toContain('1 session');
+    expect(del.body.error.message).toContain('1 check-in');
+    // The remedy has to be one that actually clears the 409. The count is not
+    // filtered by Net.active, so telling the officer to *deactivate* the net
+    // would send them back here with the same error.
+    expect(del.body.error.message).toMatch(/point those nets at another repeater/i);
+    expect(del.body.error.message).toMatch(/deactivating a net does not release/i);
+
+    // Nothing was destroyed.
+    expect(await prisma.repeater.count({ where: { id: repeaterId } })).toBe(1);
+    expect(await prisma.net.count({ where: { repeaterId } })).toBe(1);
+    expect(await prisma.netSession.count({ where: { id: s.body.id } })).toBe(1);
+    expect(await prisma.checkIn.count()).toBe(1);
+  });
+
+  it('refuses when the repeater is only LINKED to a net', async () => {
+    const primary = await makeRepeater('Primary');
+    const linked = await makeRepeater('Linked Only');
+    await request(app).post('/api/nets').set('Cookie', officerCookie).send({
+      name: 'Linked Net', repeaterId: primary, dayOfWeek: 3,
+      startLocal: '20:00', timezone: 'America/Chicago',
+      linkedRepeaterIds: [linked],
+    });
+
+    const del = await request(app).delete(`/api/repeaters/${linked}`)
+      .set('Cookie', officerCookie);
+    expect(del.status).toBe(409);
+    // A link only disappears — the message must not claim it destroys a net.
+    expect(del.body.error.message).toContain('linked into 1 net');
+    expect(del.body.error.message).not.toContain('permanently destroy');
+    expect(await prisma.repeater.count({ where: { id: linked } })).toBe(1);
+  });
+
+  it('deletes a repeater with no dependents', async () => {
+    const repeaterId = await makeRepeater('Unused');
+    const del = await request(app).delete(`/api/repeaters/${repeaterId}`)
+      .set('Cookie', officerCookie);
+    expect(del.status).toBe(204);
+    expect(await prisma.repeater.count({ where: { id: repeaterId } })).toBe(0);
+  });
+
+  it('deletes once the nets that used it are gone', async () => {
+    const repeaterId = await makeRepeater('Retired');
+    const net = await request(app).post('/api/nets').set('Cookie', officerCookie).send({
+      name: 'Old Net', repeaterId, dayOfWeek: 1,
+      startLocal: '19:00', timezone: 'America/Chicago',
+    });
+    expect(
+      (await request(app).delete(`/api/repeaters/${repeaterId}`).set('Cookie', officerCookie))
+        .status,
+    ).toBe(409);
+    await request(app).delete(`/api/nets/${net.body.id}`).set('Cookie', officerCookie);
+    const del = await request(app).delete(`/api/repeaters/${repeaterId}`)
+      .set('Cookie', officerCookie);
+    expect(del.status).toBe(204);
+  });
+
+  it('rejects MEMBER before doing any counting', async () => {
+    const repeaterId = await makeRepeater('Guarded');
+    const res = await request(app).delete(`/api/repeaters/${repeaterId}`)
+      .set('Cookie', memberCookie);
+    expect(res.status).toBe(403);
+  });
 });
 
 // ARD fixture — 3 rows, 2 close to callook coords (39.1836,-96.5717), 1 far.

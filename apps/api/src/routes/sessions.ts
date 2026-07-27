@@ -3,11 +3,12 @@ import { PrismaClient, CheckIn } from '@prisma/client';
 import { z } from 'zod';
 import { NetSessionUpdate } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
-import { findSameDaySession } from '../lib/sessionDedupe.js';
+import { findSameDaySessionInTz } from '../lib/sessionDedupe.js';
+import { InvalidTimezoneError } from '../discord/reminders.js';
 import { postToDiscord } from '../discord/client.js';
 import { withCheckInMode } from '../lib/checkinMode.js';
 import { startSession } from '../lib/startSession.js';
@@ -58,7 +59,37 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     // Check for existing same-day session. The dedupe path doesn't care whether
     // the existing row is in PREP or LIVE — either way we return that row so a
     // second click of "Open net" doesn't create a duplicate prep session.
-    const existing = await findSameDaySession(prisma, netId, new Date());
+    //
+    // The day window is anchored to the NET's own timezone, not the server's.
+    // A 20:00 America/Chicago net runs straight through 00:00 UTC, so a
+    // server-local/UTC day window cuts one net night in half: the second press
+    // of "Open net" (or the auto-open scheduler, which has always been
+    // tz-aware) lands on "another day" and creates a second PREP session. The
+    // auto-start scheduler then takes both live — two "net is live"
+    // announcements in Discord and a check-in log split across two rows.
+    //
+    // A net saved BEFORE the shared schema started validating timezones can
+    // still hold something Intl rejects ("CDT", "Eastern", a pasted trailing
+    // space). Anchoring to the net's zone means that row now reaches Intl on
+    // this path, where it used to be answered with a server-local window — so
+    // without this catch, "Open net" would 500 on net night and the operator
+    // would have no idea why. Answer with the fix instead. New nets cannot
+    // reach this branch; NetInput/NetUpdate reject bad zones at the door.
+    let existing: Awaited<ReturnType<typeof findSameDaySessionInTz>>;
+    try {
+      existing = await findSameDaySessionInTz(prisma, netId, net.timezone || 'UTC', new Date());
+    } catch (e) {
+      if (e instanceof InvalidTimezoneError) {
+        throw new HttpError(
+          400,
+          'VALIDATION',
+          `This net's timezone (${JSON.stringify(e.timezone)}) is not a valid IANA `
+            + 'timezone, so its schedule cannot be resolved. Edit the net and pick a '
+            + 'zone like America/Chicago, then open it again.',
+        );
+      }
+      throw e;
+    }
     if (existing) {
       if (existing.endedAt === null) {
         // Adopt an unclaimed session: if the same-day row has no control
@@ -179,7 +210,12 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.status(200).json(updated);
   }));
 
-  flat.get('/', asyncHandler(async (req, res) => {
+  // Session reads are members-only. Every payload below carries the club's
+  // participation log — member callsigns paired with the real names captured at
+  // check-in — so an unauthenticated GET publishes the roster to anyone who
+  // knows the URL. These three routes were the only ones on this router without
+  // a guard; their mutating siblings have always required a role.
+  flat.get('/', requireAuth, asyncHandler(async (req, res) => {
     const { netId, from, to } = RangeQuery.parse(req.query);
     const list = await prisma.netSession.findMany({
       where: {
@@ -194,7 +230,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.json(list);
   }));
 
-  flat.get('/:id/summary', asyncHandler(async (req, res) => {
+  flat.get('/:id/summary', requireAuth, asyncHandler(async (req, res) => {
     const session = await prisma.netSession.findFirst({
       where: { id: req.params.id, deletedAt: null },
       include: {
@@ -223,7 +259,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
     res.json(payload);
   }));
 
-  flat.get('/:id', asyncHandler(async (req, res) => {
+  flat.get('/:id', requireAuth, asyncHandler(async (req, res) => {
     const s = await prisma.netSession.findFirst({
       where: { id: req.params.id, deletedAt: null },
       include: {

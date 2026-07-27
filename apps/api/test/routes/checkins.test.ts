@@ -226,3 +226,179 @@ describe('check-ins', () => {
     expect(p.body.mode).toBe('echolink');
   });
 });
+
+// The 5-minute member window had no coverage past expiry: deleting the time
+// clause from both handlers left the whole suite green, so nothing stopped a
+// member from rewriting a finalized log.
+describe('member edit window on check-ins', () => {
+  /** Push a check-in's timestamp back so the 5-minute window has lapsed. */
+  async function backdate(id: string, minutes: number): Promise<void> {
+    await prisma.checkIn.update({
+      where: { id },
+      data: { checkedInAt: new Date(Date.now() - minutes * 60 * 1000) },
+    });
+  }
+
+  async function memberCheckIn(): Promise<string> {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', member).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    expect(c.status).toBe(201);
+    return c.body.id as string;
+  }
+
+  it('member cannot PATCH their own check-in after 5 minutes', async () => {
+    const id = await memberCheckIn();
+    await backdate(id, 6);
+    const p = await request(app).patch(`/api/checkins/${id}`).set('Cookie', member)
+      .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Rewritten' });
+    expect(p.status).toBe(403);
+    expect(p.body.error.code).toBe('FORBIDDEN');
+    const row = await prisma.checkIn.findUnique({ where: { id } });
+    expect(row!.nameAtCheckIn).toBe('Bob');
+  });
+
+  it('member cannot DELETE their own check-in after 5 minutes', async () => {
+    const id = await memberCheckIn();
+    await backdate(id, 6);
+    const d = await request(app).delete(`/api/checkins/${id}`).set('Cookie', member);
+    expect(d.status).toBe(403);
+    const row = await prisma.checkIn.findUnique({ where: { id } });
+    expect(row!.deletedAt).toBeNull();
+  });
+
+  it('member can still edit inside the window (4 minutes in)', async () => {
+    const id = await memberCheckIn();
+    await backdate(id, 4);
+    const p = await request(app).patch(`/api/checkins/${id}`).set('Cookie', member)
+      .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Robert' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Robert');
+  });
+
+  it('an officer can still PATCH and DELETE a long-expired check-in', async () => {
+    const id = await memberCheckIn();
+    await backdate(id, 60 * 24);
+    const p = await request(app).patch(`/api/checkins/${id}`).set('Cookie', officer)
+      .send({ callsign: 'KB0BOB', nameAtCheckIn: 'Corrected by officer' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Corrected by officer');
+    const d = await request(app).delete(`/api/checkins/${id}`).set('Cookie', officer);
+    expect(d.status).toBe(204);
+  });
+});
+
+// A member who checks in during the last minutes of a net is still inside the
+// 5-minute window after the control op ends it. Editing a closed log is an
+// officer-only action, so the handlers reject it.
+describe('check-ins on an ENDED session', () => {
+  let endedCheckIn: string;
+
+  beforeEach(async () => {
+    // Own net + session so ending it doesn't disturb the shared fixture.
+    const r = await request(app).post('/api/repeaters').set('Cookie', officer)
+      .send({ name: `R-end-${Date.now()}`, frequency: 147.21, offsetKhz: 600, mode: 'FM' });
+    const n = await request(app).post('/api/nets').set('Cookie', officer).send({
+      name: `Ended Net ${Date.now()}`, repeaterId: r.body.id, dayOfWeek: 5,
+      startLocal: '19:00', timezone: 'America/Chicago',
+    });
+    const s = await request(app).post(`/api/nets/${n.body.id}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
+    const c = await request(app).post(`/api/sessions/${s.body.id}/checkins`)
+      .set('Cookie', member).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    endedCheckIn = c.body.id;
+    await request(app).patch(`/api/sessions/${s.body.id}`).set('Cookie', officer)
+      .send({ endedAt: new Date().toISOString() });
+  });
+
+  it('member cannot PATCH their own check-in once the net has ended', async () => {
+    const p = await request(app).patch(`/api/checkins/${endedCheckIn}`).set('Cookie', member)
+      .send({ nameAtCheckIn: 'Rewritten after the fact' });
+    expect(p.status).toBe(403);
+    expect(p.body.error.message).toMatch(/ended/i);
+    const row = await prisma.checkIn.findUnique({ where: { id: endedCheckIn } });
+    expect(row!.nameAtCheckIn).toBe('Bob');
+  });
+
+  it('member cannot DELETE their own check-in once the net has ended', async () => {
+    const d = await request(app).delete(`/api/checkins/${endedCheckIn}`).set('Cookie', member);
+    expect(d.status).toBe(403);
+    expect(d.body.error.message).toMatch(/ended/i);
+  });
+
+  it('an officer can still correct the log after the net has ended', async () => {
+    const p = await request(app).patch(`/api/checkins/${endedCheckIn}`).set('Cookie', officer)
+      .send({ nameAtCheckIn: 'Bob Smith' });
+    expect(p.status).toBe(200);
+    expect(p.body.nameAtCheckIn).toBe('Bob Smith');
+  });
+});
+
+// PATCH used to demand a full body (callsign + nameAtCheckIn) while /nets and
+// /users accepted true partials.
+describe('PATCH /api/checkins/:id partial bodies', () => {
+  it('accepts nameAtCheckIn alone and leaves the callsign', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer)
+      .send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest', comment: 'first timer' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ nameAtCheckIn: 'Guest Renamed' });
+    expect(p.status).toBe(200);
+    expect(p.body.callsign).toBe('KC0GST');
+    expect(p.body.nameAtCheckIn).toBe('Guest Renamed');
+    expect(p.body.comment).toBe('first timer');
+    expect(p.body.mode).toBe('rf');
+  });
+
+  it('accepts mode alone', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ mode: 'echolink' });
+    expect(p.status).toBe(200);
+    expect(p.body.mode).toBe('echolink');
+    expect(p.body.nameAtCheckIn).toBe('Guest');
+  });
+
+  it('accepts callsign alone and relinks userId', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0VIS', nameAtCheckIn: 'Visitor' });
+    expect(c.body.userId).toBeNull();
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ callsign: 'KB0BOB' });
+    expect(p.status).toBe(200);
+    expect(p.body.callsign).toBe('KB0BOB');
+    expect(p.body.userId).not.toBeNull();
+    expect(p.body.nameAtCheckIn).toBe('Visitor');
+  });
+
+  it('a PATCH that leaves the callsign alone keeps the existing userId link', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', member).send({ callsign: 'KB0BOB', nameAtCheckIn: 'Bob' });
+    expect(c.body.userId).not.toBeNull();
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ nameAtCheckIn: 'Bob S' });
+    expect(p.status).toBe(200);
+    expect(p.body.userId).toBe(c.body.userId);
+  });
+
+  it('an empty body is a no-op, not a 400', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    const p = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({});
+    expect(p.status).toBe(200);
+    expect(p.body.callsign).toBe('KC0GST');
+    expect(p.body.nameAtCheckIn).toBe('Guest');
+  });
+
+  it('still validates the fields that ARE supplied', async () => {
+    const c = await request(app).post(`/api/sessions/${sessionId}/checkins`)
+      .set('Cookie', officer).send({ callsign: 'KC0GST', nameAtCheckIn: 'Guest' });
+    const bad = await request(app).patch(`/api/checkins/${c.body.id}`).set('Cookie', officer)
+      .send({ nameAtCheckIn: '' });
+    expect(bad.status).toBe(400);
+    const badMode = await request(app).patch(`/api/checkins/${c.body.id}`)
+      .set('Cookie', officer).send({ mode: 'irlp' });
+    expect(badMode.status).toBe(400);
+  });
+});

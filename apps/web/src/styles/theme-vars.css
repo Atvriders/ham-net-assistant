@@ -48,6 +48,15 @@
 
   /* --- Layout -------------------------------------------------------- */
   --max-content: 1280px;
+  /* Measured heights of the two pieces of sticky chrome the run-net console
+   * layers against. RunNetPage re-publishes both on `document.documentElement`
+   * from a ResizeObserver; these are the fallbacks used before the first
+   * measurement and anywhere the shell isn't mounted. They must never be
+   * *smaller* than reality on a phone — below 1024px the nav has no hamburger
+   * and its tail wraps to 150-230px, which is exactly why the old hard-coded
+   * 56px slid START NET / END NET underneath the opaque nav. */
+  --nav-h: 56px;
+  --runnet-status-h: 88px;
 
   /* --- DARK palette (default) --------------------------------------- */
   --color-bg: #0B0C10;
@@ -57,7 +66,13 @@
   --color-border-strong: #3E4452;
   --color-fg: #E8E6E1;
   --color-fg-muted: #A6A39B;
-  --color-fg-subtle: #6E6B65;
+  /* Lifted from #6E6B65: the only consumers are the check-in ordinals
+     (.hna-roster__idx) and the session-log index column, both of which are
+     data an operator reads off a roster. #6E6B65 was 3.37:1 on --color-surface
+     — below WCAG AA for normal text. #8B8780 is 5.01:1 on --color-surface,
+     4.56:1 on --color-surface-2 and 5.47:1 on --color-bg, and still reads a
+     step quieter than --color-fg-muted. */
+  --color-fg-subtle: #8B8780;
   --color-primary: #FFB454;
   --color-primary-fg: #0B0C10;
   --color-success: #5CE0B3;
@@ -88,7 +103,10 @@ html[data-color-mode='light'] {
   --color-border-strong: #8A8170;
   --color-fg: #1A1410;
   --color-fg-muted: #5B554A;
-  --color-fg-subtle: #867F71;
+  /* Deepened from #867F71 (3.84:1 on cream — under AA) to #706A5E: 5.19:1 on
+     --color-surface and 4.68:1 on the --color-bg paper, the two backgrounds
+     the ordinals actually sit on. */
+  --color-fg-subtle: #706A5E;
   /* Deepened from spec's #C76A14 to clear AA on cream (5.12:1 cream→primary,
      4.61:1 primary→bg); same burnt-amber temperament. */
   --color-primary: #A85508;

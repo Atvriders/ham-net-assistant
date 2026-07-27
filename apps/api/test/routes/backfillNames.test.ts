@@ -85,7 +85,42 @@ describe('admin backfill names', () => {
       .set('Cookie', admin)
       .send({ scope: 'all' });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ scanned: 0, updated: 0, lookedUp: 0 });
+    // `capped` tells the admin UI whether backlog remains after this run.
+    expect(res.body).toEqual({ scanned: 0, updated: 0, lookedUp: 0, capped: false });
+  });
+
+  it('repairs every row of a repeated callsign with a single lookup', async () => {
+    // The handler used to issue one FCC lookup and one UPDATE per row; a
+    // regular on twenty nets meant twenty round trips inside one request.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ status: 'VALID', name: 'REPEAT CALLER', current: { operClass: 'Extra' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const sId = await makeSession();
+    const ids = [
+      await rawCheckIn(sId, 'KJ0RPT', 'KJ0RPT'),
+      await rawCheckIn(sId, 'KJ0RPT', 'KJ0RPT'),
+      await rawCheckIn(sId, 'KJ0RPT', ''),
+    ];
+
+    const res = await request(app)
+      .post('/api/admin/backfill-names')
+      .set('Cookie', admin)
+      .send({ scope: 'all' });
+    expect(res.status).toBe(200);
+    expect(res.body.scanned).toBe(3);
+    expect(res.body.updated).toBe(3);
+    // lookedUp counts distinct callsigns resolved, not rows.
+    expect(res.body.lookedUp).toBe(1);
+    expect(res.body.capped).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    for (const id of ids) {
+      const row = await prisma.checkIn.findUnique({ where: { id } });
+      expect(row?.nameAtCheckIn).toBe('Repeat Caller');
+    }
   });
 
   it('updates a check-in whose nameAtCheckIn equals callsign', async () => {

@@ -312,3 +312,126 @@ describe('NetEditModal', () => {
     ]);
   });
 });
+
+describe('NetEditModal timezone control', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', mockFetch(() => {}));
+  });
+
+  it('offers IANA zones as a select instead of free text', async () => {
+    // Free text is how values like "CDT" reached the server: Intl rejects
+    // them, so every schedule/reminder computation for that net failed
+    // permanently. Only real identifiers can be chosen now.
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const control = await screen.findByLabelText(/Timezone/);
+    expect(control.tagName).toBe('SELECT');
+    const values = Array.from(
+      (control as HTMLSelectElement).options,
+      (o) => o.value,
+    );
+    expect(values).toContain('America/Chicago');
+    expect(values).toContain('UTC');
+    expect(values).not.toContain('CDT');
+  });
+
+  it('keeps an unrecognised legacy zone selectable so editing cannot rewrite it', async () => {
+    // Opening the editor on a net stored with a zone this engine does not
+    // enumerate must not silently swap it for the first option in the list.
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={{ ...netToInput(net), timezone: 'CDT' }}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const control = (await screen.findByLabelText(
+      /Timezone/,
+    )) as HTMLSelectElement;
+    expect(control.value).toBe('CDT');
+  });
+
+  it('saves the selected zone unchanged', async () => {
+    const patches: unknown[] = [];
+    vi.stubGlobal('fetch', mockFetch((b) => patches.push(b)));
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    const control = (await screen.findByLabelText(
+      /Timezone/,
+    )) as HTMLSelectElement;
+    await userEvent.selectOptions(control, 'America/Denver');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(patches).toHaveLength(1);
+    });
+    expect((patches[0] as { timezone: string }).timezone).toBe('America/Denver');
+  });
+});
+
+describe('NetEditModal nested-dialog Escape', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', mockFetch(() => {}));
+  });
+
+  it('closes only the script picker, leaving the in-progress net form intact', async () => {
+    // P1-10 in its production shape: Escape used to fire every open Modal's
+    // onClose, so dismissing the picker also unmounted this form and threw
+    // away the script the officer had been writing.
+    render(
+      <NetEditModal
+        open
+        netId="n1"
+        initial={netToInput(net)}
+        repeaters={repeaters as never}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByText('Edit net');
+    const nameField = screen.getByLabelText(/Name/);
+    await userEvent.clear(nameField);
+    await userEvent.type(nameField, 'Thursday Tech Net');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Use saved script/i }),
+    );
+    await screen.findByRole('dialog', { name: /Use a saved script/i });
+
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: /Use a saved script/i }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('dialog', { name: 'Edit net' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Name/)).toHaveValue('Thursday Tech Net');
+  });
+});

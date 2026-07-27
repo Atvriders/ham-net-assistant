@@ -3,26 +3,71 @@ services:
     image: ghcr.io/atvriders/ham-net-assistant:latest
     pull_policy: always
     restart: unless-stopped
+    # PID 1 here is the entrypoint shell, which neither reaps orphaned children
+    # nor forwards signals. docker's tiny init in front of it means
+    # `docker compose stop` reaches node promptly (clean SQLite close) instead
+    # of timing out into SIGKILL with the WAL still open.
+    init: true
+    # Memory ceiling so one runaway request (a large PDF/CSV export) gets the
+    # container OOM-killed and restarted instead of pushing the whole host into
+    # swap. Sized for node + the Prisma query engine + @react-pdf/renderer with
+    # headroom — raise it if the club's exports outgrow it, don't remove it.
+    mem_limit: 768m
+    # Unrotated json-file logs grow without bound on a machine nobody watches,
+    # and the disk they fill is the one holding /data.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
+      # Published on all interfaces on purpose: the owner's Cloudflare Tunnel
+      # connects to this port. Do NOT change the binding.
+      # Do not expose 3045 to the internet directly either — session cookies
+      # are Secure-only in production, so nobody can log in over plain HTTP on
+      # this port (the app just looks broken); the tunnel terminates TLS.
       - "3045:3000"
     volumes:
+      # Everything durable lives here: /data/ham.db, /data/logos, and the
+      # pre-migration snapshots the entrypoint writes to /data/backups.
       - hna-data:/data
     environment:
-      JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me}
-      REGISTRATION_CODE: ${REGISTRATION_CODE:-}
+      # `:?` makes compose REFUSE to start when this is unset or empty. It used
+      # to carry a placeholder default, which meant any club deploying without
+      # a .env signed sessions with a key published in this repo — anyone could
+      # mint themselves an ADMIN cookie for that club.
+      # (Quoted because the failure message contains a colon, which YAML would
+      # otherwise read as a nested mapping.)
+      JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env - generate one with: openssl rand -hex 32}"
+      # `?` without the colon: the variable must be PRESENT but may be empty.
+      # An empty REGISTRATION_CODE means open registration, and the first
+      # account ever created becomes ADMIN — on a public URL that is a land
+      # grab by whoever finds it first. Put a shared join code in .env; set it
+      # empty (REGISTRATION_CODE=) only as a deliberate choice, e.g. while
+      # bootstrapping the first admin on a closed network.
+      REGISTRATION_CODE: "${REGISTRATION_CODE?set REGISTRATION_CODE in .env to a shared join code - use an empty value (REGISTRATION_CODE=) ONLY if you intend open registration, where the first account created becomes ADMIN}"
       NODE_ENV: production
+      # How many pre-migration snapshots to keep in /data/backups (default 5).
+      # HNA_BACKUP_KEEP: "5"
     # NOTE: a compose-level healthcheck OVERRIDES the image's HEALTHCHECK.
     # The image intentionally ships without wget (runtime layer kept slim),
     # so this must use node's built-in http — a wget-based test here made
     # every probe fail exec and the container report unhealthy while the
     # app was actually fine.
+    #
+    # Probes /api/themes/default, NOT /api/themes: the plain list is built from
+    # theme.json files on disk and answers 200 even when the database is
+    # corrupt, locked or unmigrated — so an unusable container reported healthy
+    # and kept serving. /api/themes/default reads the Setting table, so a
+    # broken database becomes a 500 and an honest "unhealthy". Only 200 counts:
+    # a 404 would mean the route moved, which is not healthy either.
     healthcheck:
       test:
         [
           "CMD",
           "node",
           "-e",
-          "require('http').get('http://127.0.0.1:3000/api/themes',r=>process.exit(r.statusCode>=200&&r.statusCode<500?0:1)).on('error',()=>process.exit(1))",
+          "require('http').get('http://127.0.0.1:3000/api/themes/default',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

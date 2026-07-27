@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { makeTestDb, cleanupTestDb } from '../helpers.js';
 import { autoOpenTick } from '../../src/lib/autoOpenScheduler.js';
@@ -139,6 +139,37 @@ describe('autoOpenScheduler', () => {
 
     const sessions = await prisma.netSession.findMany({ where: { netId } });
     expect(sessions).toHaveLength(0);
+  });
+
+  it('a net with an Intl-invalid timezone does not stop the others from opening', async () => {
+    // Written straight to the DB the way a pre-validation row (or a hand-edited
+    // one) would exist: "CDT" makes Intl.DateTimeFormat throw a RangeError.
+    // That RangeError used to escape the per-net loop and permanently kill
+    // auto-open for EVERY net, across restarts, with only a console.warn.
+    // Created FIRST so it is reached first in the (rowid-ordered) loop: with
+    // the bug, the good net that follows it never gets a chance.
+    const bad = await prisma.net.create({
+      data: {
+        name: 'Bad TZ Net', kind: 'weekly', repeaterId,
+        dayOfWeek: 1, startLocal: '12:05', timezone: 'CDT', active: true,
+        reminderMinutes: null,
+      },
+    });
+    const goodId = await netOccurringInTz(NOW, 10, 'UTC');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const opened = await autoOpenTick(prisma, NOW);
+      expect(opened).toBe(1);
+      // The offending row is named in the log so an officer can fix it.
+      const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain(bad.id);
+      expect(logged).toContain('CDT');
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(await prisma.netSession.count({ where: { netId: goodId } })).toBe(1);
+    expect(await prisma.netSession.count({ where: { netId: bad.id } })).toBe(0);
   });
 
   it('opens a net relative to its own timezone wall-clock (timezone correctness)', async () => {

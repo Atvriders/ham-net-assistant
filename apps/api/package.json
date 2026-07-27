@@ -2,6 +2,15 @@
   "name": "@hna/api",
   "version": "0.1.0",
   "private": true,
+  "description": "Ham-Net-Assistant API server — Express 5 + Prisma/SQLite, JWT-in-cookie auth, Discord bridge, and the built SPA.",
+  "license": "MIT",
+  "author": "Atvriders",
+  "homepage": "https://github.com/Atvriders/ham-net-assistant#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atvriders/ham-net-assistant.git",
+    "directory": "apps/api"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -11,29 +20,33 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "admin": "node dist/cli/admin.js",
+    "db:snapshot": "node dist/cli/backup.js"
   },
   "dependencies": {
     "@hna/shared": "*",
     "@prisma/client": "^6.0.0",
-    "prisma": "^6.0.0",
-    "express": "^5.2.1",
-    "cookie-parser": "^1.4.6",
+    "@react-pdf/renderer": "^4.5.1",
     "argon2": "^0.45.0",
+    "cookie-parser": "^1.4.6",
+    "discord.js": "^14.27.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.7.2",
-    "zod": "^4.4.3",
-    "@react-pdf/renderer": "^4.5.1",
+    "prisma": "^6.0.0",
     "react": "^19.2.0",
-    "discord.js": "^14.27.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/cookie-parser": "^1.4.7",
+    "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^24.0.0",
-    "@types/supertest": "^7.0.0",
     "@types/react": "^19.2.0",
+    "@types/supertest": "^7.0.0",
     "supertest": "^7.0.0",
     "tsx": "^4.23.1",
     "typescript": "^5.4.5",

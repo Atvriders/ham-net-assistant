@@ -1,3 +1,15 @@
+> # ⚠️ SUPERSEDED — HISTORICAL DOCUMENT, DO NOT IMPLEMENT
+>
+> The original 2026-04-10 build plan. Every task in it was completed long ago
+> and the codebase has moved several major versions past it (React 19, Vite 7,
+> Express 5, Zod 4, Node 24, ESLint 10, four roles including `NET_CONTROL`,
+> plus features that post-date the plan entirely: Discord bridge, auto-open /
+> auto-start, saved script library, PREP → LIVE session lifecycle).
+>
+> Kept for archaeology only. **Do not execute these steps against the current
+> tree** — the file layout, dependency versions, and API surface it describes
+> no longer match reality. Trust the code, then `README.md`.
+
 # Ham-Net-Assistant Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -224,7 +224,14 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
         </div>
       </div>
 
-      {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
+      {/* Announced on appearance, and shaped (border + tint) rather than
+          coloured only — a validation failure here is the difference between
+          saving and silently losing the operator's session edits. */}
+      {err && (
+        <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
+          {err}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <Button onClick={save} disabled={busy}>
           Save

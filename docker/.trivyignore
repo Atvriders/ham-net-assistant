@@ -1,0 +1,16 @@
+# Trivy ignore list for the runtime image scan in .github/workflows/ci.yml.
+#
+# The scan fails CI on HIGH/CRITICAL findings that have a fix available
+# (`ignore-unfixed: true`), so anything listed here is a deliberate, reviewed
+# decision to ship a known-vulnerable component — not a way to quiet the build.
+#
+# Every entry MUST carry, on the lines above it:
+#   * why the finding does not apply to this deployment (or why the fix cannot
+#     be taken yet), and
+#   * an expiry date, after which the entry is removed and the finding is
+#     either fixed or re-justified.
+#
+# Format is one CVE id per line, optionally with an expiry:
+#   CVE-2024-12345 exp:2026-12-31
+#
+# Empty on purpose: nothing is currently waived.

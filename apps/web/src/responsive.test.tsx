@@ -1,45 +1,43 @@
 /**
- * Viewport-resilience sweep.
+ * Fixed-width audit — the honest replacement for the old "viewport
+ * resilience" sweep.
  *
- * Mounts a representative set of top-level pages in jsdom at three
- * viewport widths (375, 768, 1280) and asserts that no element's
- * `scrollWidth` exceeds the viewport `clientWidth` — i.e. the page
- * never triggers a horizontal scrollbar.
+ * WHAT THE OLD FILE DID: it mounted five pages at 375 / 768 / 1280px and
+ * asserted that no element's `scrollWidth` exceeded the viewport. jsdom has no
+ * layout engine — `scrollWidth` is 0 for every element, including a 5000px
+ * div — so `sw > viewportWidth + 1` could never be true. Eighteen tests, none
+ * of which could fail, under a docstring claiming they caught hardcoded pixel
+ * widths. It also never awaited any fetch, so most of those pages were still
+ * showing "Loading…" when the (impossible) assertion ran.
  *
- * jsdom doesn't run a real layout engine, so the assertion is a smoke
- * test: it catches absolutely-positioned elements / fixed-width tables
- * / hardcoded pixel widths that exceed the viewport. It does NOT
- * exercise flex/grid wrapping the way a real browser does, but it
- * does catch the worst regressions (which is the bar we want here —
- * "nothing goes off the screen", per the user's request).
+ * WHAT THIS FILE DOES INSTEAD: it audits something jsdom really implements —
+ * inline style declarations. Any element that pins a `width` / `min-width`
+ * wider than the narrowest supported viewport (360px) must sit inside a
+ * horizontal scroll container, which is exactly the convention the app already
+ * follows for its wide tables (`.hna-table-scroll`, `overflow-x: auto`). A new
+ * `style={{ minWidth: 900 }}` on a page body — the regression the old file
+ * claimed to catch — fails this suite.
+ *
+ * The audit's teeth are themselves under test: `detects a naked wide element`
+ * and `accepts the same element inside a scroll container` are canaries that
+ * fail if the predicate ever stops discriminating. Real horizontal-overflow
+ * behavior (flex/grid wrapping, intrinsic content width) needs a real layout
+ * engine and belongs in a browser-based test, not here.
  */
-import { describe, it, vi, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthProvider.js';
 import { LoginPage } from './auth/LoginPage.js';
 import { RegisterPage } from './auth/RegisterPage.js';
+import { ThemeProvider } from './theme/ThemeProvider.js';
 import { Dashboard } from './pages/Dashboard.js';
 import { NetsPage } from './pages/NetsPage.js';
+import { AdminPage } from './pages/AdminPage.js';
 import { RunNetPage } from './pages/RunNetPage.js';
 
-/** Resize the jsdom viewport — `clientWidth` is derived from it. */
-function setViewport(w: number, h = 800) {
-  Object.defineProperty(window, 'innerWidth', {
-    configurable: true,
-    value: w,
-  });
-  Object.defineProperty(window, 'innerHeight', {
-    configurable: true,
-    value: h,
-  });
-  // Re-fire the resize event so any width-watching listeners pick it
-  // up. The pages under test don't currently subscribe to resize, but
-  // this keeps the test honest if that changes.
-  window.dispatchEvent(new Event('resize'));
-}
-
-const WIDTHS = [375, 768, 1280] as const;
+/** Narrowest phone this app supports; anything wider must be able to scroll. */
+const NARROWEST_VIEWPORT = 360;
 
 const repeater = {
   id: 'r1',
@@ -74,13 +72,28 @@ const sessionLive = {
   liveAt: new Date().toISOString(),
   endedAt: null,
   controlOpId: 'u1',
-  checkIns: [],
+  checkIns: [
+    {
+      id: 'c1',
+      callsign: 'KA1AAA',
+      nameAtCheckIn: 'Alpha Anderson',
+      checkedInAt: new Date().toISOString(),
+      mode: 'rf' as const,
+      createdById: 'u1',
+    },
+  ],
   net,
 };
 
-const sessionPrep = {
-  ...sessionLive,
-  liveAt: null,
+const sessionPrep = { ...sessionLive, liveAt: null };
+
+const adminUser = {
+  id: 'u1',
+  callsign: 'W1AW',
+  name: 'Op',
+  email: 'o@x.co',
+  role: 'ADMIN',
+  collegeSlug: null,
 };
 
 function makeFetchStub(opts: { role?: string; session?: unknown } = {}) {
@@ -93,139 +106,241 @@ function makeFetchStub(opts: { role?: string; session?: unknown } = {}) {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
-    if (url.endsWith('/auth/me'))
-      return json({ id: 'u1', callsign: 'W1AW', name: 'Op', email: 'o@x.co', role });
+    if (url.endsWith('/auth/me')) return json({ ...adminUser, role });
     if (url.endsWith('/presence/heartbeat')) return json({});
+    if (url.endsWith('/presence/online')) return json([]);
     if (url.endsWith('/api/sessions/s1')) return json(session);
+    if (url.endsWith('/api/nets/active')) return json([]);
     if (url.endsWith('/api/nets')) return json([net]);
     if (url.endsWith('/api/sessions')) return json([]);
-    if (url.endsWith('/api/nets/active')) return json([]);
     if (url.endsWith('/api/repeaters')) return json([repeater]);
+    if (url.endsWith('/api/users')) return json([adminUser]);
+    if (url.endsWith('/api/themes')) return json([]);
+    if (url.endsWith('/themes/default')) return json({ slug: 'default' });
+    if (url.endsWith('/admin/trash')) return json({ sessions: [], checkIns: [] });
+    if (url.endsWith('/admin/duplicate-sessions')) return json([]);
+    if (url.endsWith('/discord/config'))
+      return json({
+        enabled: false,
+        channelId: '',
+        tokenSet: false,
+        tokenFromEnv: false,
+        channelIdFromEnv: false,
+        enabledFromEnv: false,
+      });
     return json([]);
   });
 }
 
-/**
- * Walk every element in the document and return the first one whose
- * `scrollWidth` exceeds the viewport's `clientWidth`. The body itself
- * is excluded — it intentionally has `overflow-x: hidden` so its
- * `scrollWidth` can be misleading. Returns null if nothing overflows.
- *
- * jsdom returns 0 for most layout-derived properties (it's not a real
- * layout engine), so this is effectively a smoke test: it catches
- * absolutely-positioned children with explicit width that exceeds the
- * viewport, not flex/grid runtime wrap behavior.
- */
-function findOverflowingElement(): Element | null {
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const all = document.querySelectorAll('*');
-  for (const el of Array.from(all)) {
-    if (el === document.body || el === document.documentElement) continue;
-    // Skip elements that don't have intrinsic size in jsdom; only flag
-    // when scrollWidth is actually populated (e.g. an inline-set width).
-    const sw = el.scrollWidth;
-    if (sw > viewportWidth + 1) return el;
-  }
-  return null;
+/** Parse `"720px"` / `"720"` into a number; anything relative returns null. */
+function pxValue(raw: string): number | null {
+  const value = raw.trim();
+  if (!value) return null;
+  const match = /^(\d+(?:\.\d+)?)(px)?$/.exec(value);
+  return match ? Number(match[1]) : null;
 }
 
-function expectNoHorizontalOverflow(label: string) {
-  const el = findOverflowingElement();
-  if (el) {
-    const tag = el.tagName.toLowerCase();
-    const cls = el.className?.toString().slice(0, 80) ?? '';
+/**
+ * True when this element can scroll its overflow horizontally — either via an
+ * inline overflow declaration or the app's `.hna-table-scroll` convention
+ * (which sets `overflow-x: auto` in ui.css; stylesheets aren't loaded in
+ * jsdom, so the class is the check).
+ */
+function isHorizontalScroller(el: HTMLElement): boolean {
+  if (el.classList.contains('hna-table-scroll')) return true;
+  const { overflowX, overflow } = el.style;
+  return /(auto|scroll)/.test(`${overflowX} ${overflow}`);
+}
+
+/** `<tag class="…">` — enough to find the offender in a failure message. */
+function describeEl(el: HTMLElement): string {
+  const cls = el.getAttribute('class');
+  return `<${el.tagName.toLowerCase()}${cls ? ` class="${cls}"` : ''}>`;
+}
+
+interface WideElement {
+  el: HTMLElement;
+  property: 'width' | 'min-width';
+  px: number;
+  scrollable: boolean;
+}
+
+/**
+ * Every element pinned wider than the narrowest supported viewport, flagged
+ * with whether some ancestor can scroll it horizontally.
+ */
+function findWideElements(root: ParentNode): WideElement[] {
+  const found: WideElement[] = [];
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
+    const candidates: Array<['width' | 'min-width', number | null]> = [
+      ['width', pxValue(el.style.width)],
+      ['min-width', pxValue(el.style.minWidth)],
+    ];
+    for (const [property, px] of candidates) {
+      if (px === null || px <= NARROWEST_VIEWPORT) continue;
+      let scrollable = false;
+      for (
+        let node: HTMLElement | null = el.parentElement;
+        node && node !== document.body;
+        node = node.parentElement
+      ) {
+        if (isHorizontalScroller(node)) {
+          scrollable = true;
+          break;
+        }
+      }
+      found.push({ el, property, px, scrollable });
+    }
+  }
+  return found;
+}
+
+function expectNoNakedWideElements(label: string, root: ParentNode) {
+  const naked = findWideElements(root).filter((w) => !w.scrollable);
+  if (naked.length > 0) {
+    const list = naked
+      .map((w) => `${describeEl(w.el)} ${w.property}: ${w.px}px`)
+      .join('; ');
     throw new Error(
-      `${label}: element <${tag} class="${cls}"> has scrollWidth=${el.scrollWidth} > viewport=${document.documentElement.clientWidth}`,
+      `${label}: ${naked.length} element(s) pinned wider than ${NARROWEST_VIEWPORT}px ` +
+        `with no horizontally scrollable ancestor — ${list}`,
     );
   }
 }
 
-describe('viewport resilience — no horizontal page scroll', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('the fixed-width audit itself', () => {
+  it('detects a naked wide element', () => {
+    const { container } = render(<div style={{ minWidth: 900 }} />);
+    const naked = findWideElements(container).filter((w) => !w.scrollable);
+    expect(naked).toHaveLength(1);
+    expect(naked[0]!.px).toBe(900);
+    expect(() => expectNoNakedWideElements('fixture', container)).toThrow(
+      /pinned wider than 360px/,
+    );
   });
 
-  for (const w of WIDTHS) {
-    it(`LoginPage at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub({ role: 'MEMBER' }));
-      render(
-        <MemoryRouter initialEntries={['/login']}>
-          <AuthProvider>
-            <LoginPage />
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`LoginPage @${w}px`);
-    });
+  it('accepts the same element inside a scroll container', () => {
+    const { container } = render(
+      <div className="hna-table-scroll" style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 900 }} />
+      </div>,
+    );
+    expect(findWideElements(container)).toHaveLength(1);
+    expect(findWideElements(container)[0]!.scrollable).toBe(true);
+    expect(() => expectNoNakedWideElements('fixture', container)).not.toThrow();
+  });
 
-    it(`RegisterPage at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub({ role: 'MEMBER' }));
-      render(
-        <MemoryRouter initialEntries={['/register']}>
-          <AuthProvider>
-            <RegisterPage />
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`RegisterPage @${w}px`);
-    });
+  it('ignores widths a phone can actually honour', () => {
+    const { container } = render(<div style={{ width: 320 }} />);
+    expect(findWideElements(container)).toHaveLength(0);
+  });
+});
 
-    it(`Dashboard at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub());
-      render(
-        <MemoryRouter initialEntries={['/']}>
-          <AuthProvider>
-            <Dashboard />
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`Dashboard @${w}px`);
-    });
+describe('pages pin no width a phone cannot scroll', () => {
+  it('LoginPage', async () => {
+    vi.stubGlobal('fetch', makeFetchStub({ role: 'MEMBER' }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('button', { name: /sign in/i });
+    expectNoNakedWideElements('LoginPage', container);
+  });
 
-    it(`NetsPage at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub());
-      render(
-        <MemoryRouter initialEntries={['/nets']}>
-          <AuthProvider>
-            <NetsPage />
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`NetsPage @${w}px`);
-    });
+  it('RegisterPage', async () => {
+    vi.stubGlobal('fetch', makeFetchStub({ role: 'MEMBER' }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/register']}>
+        <AuthProvider>
+          <RegisterPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText(/callsign/i);
+    expectNoNakedWideElements('RegisterPage', container);
+  });
 
-    it(`RunNetPage LIVE at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub({ session: sessionLive }));
-      render(
-        <MemoryRouter initialEntries={['/run/s1']}>
-          <AuthProvider>
-            <Routes>
-              <Route path="/run/:sessionId" element={<RunNetPage />} />
-            </Routes>
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`RunNetPage LIVE @${w}px`);
-    });
+  it('Dashboard', async () => {
+    vi.stubGlobal('fetch', makeFetchStub());
+    const { container } = render(
+      <MemoryRouter initialEntries={['/']}>
+        <AuthProvider>
+          <Dashboard />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    // Wait for real content — the old suite audited a "Loading…" screen.
+    await screen.findByText('Tuesday Net');
+    expectNoNakedWideElements('Dashboard', container);
+  });
 
-    it(`RunNetPage PREP at ${w}px`, () => {
-      setViewport(w);
-      vi.stubGlobal('fetch', makeFetchStub({ session: sessionPrep }));
-      render(
-        <MemoryRouter initialEntries={['/run/s1']}>
-          <AuthProvider>
-            <Routes>
-              <Route path="/run/:sessionId" element={<RunNetPage />} />
-            </Routes>
-          </AuthProvider>
-        </MemoryRouter>,
-      );
-      expectNoHorizontalOverflow(`RunNetPage PREP @${w}px`);
-    });
-  }
+  it('NetsPage', async () => {
+    vi.stubGlobal('fetch', makeFetchStub());
+    const { container } = render(
+      <MemoryRouter initialEntries={['/nets']}>
+        <AuthProvider>
+          <NetsPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByText('Tuesday Net');
+    expectNoNakedWideElements('NetsPage', container);
+  });
+
+  it('RunNetPage (LIVE)', async () => {
+    vi.stubGlobal('fetch', makeFetchStub({ session: sessionLive }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/run/s1']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/run/:sessionId" element={<RunNetPage />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('region', { name: 'Net status' });
+    expectNoNakedWideElements('RunNetPage LIVE', container);
+  });
+
+  it('RunNetPage (PREP)', async () => {
+    vi.stubGlobal('fetch', makeFetchStub({ session: sessionPrep }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/run/s1']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/run/:sessionId" element={<RunNetPage />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByTestId('prep-chip');
+    expectNoNakedWideElements('RunNetPage PREP', container);
+  });
+
+  it('AdminPage keeps its deliberately wide tables inside scrollers', async () => {
+    vi.stubGlobal('fetch', makeFetchStub({ role: 'ADMIN' }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <ThemeProvider>
+            <AdminPage />
+          </ThemeProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText('Role for W1AW');
+    // Positive control: this page really does pin a table wider than a phone,
+    // so the audit is exercised against production markup and not just the
+    // fixtures above.
+    const wide = findWideElements(container);
+    expect(wide.length).toBeGreaterThan(0);
+    expectNoNakedWideElements('AdminPage', container);
+  });
 });

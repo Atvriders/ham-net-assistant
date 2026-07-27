@@ -153,6 +153,15 @@ export function AdminPage() {
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  // In-app replacement for the two window.alert() sinks this page used to end
+  // in (a restore notice and the catch-all for every confirmed action). A
+  // native alert is unstyled, blocks the event loop, is suppressible by the
+  // browser after a couple of firings, and simply doesn't exist in a kiosk or
+  // an embedded webview — so an admin could run a destructive action, have it
+  // fail, and see nothing at all.
+  const [banner, setBanner] = useState<
+    { kind: 'info' | 'error'; text: string } | null
+  >(null);
 
   // Form ids for label associations
   const defaultThemeId = useId();
@@ -271,9 +280,10 @@ export function AdminPage() {
       { method: 'POST' },
     );
     if (res.parentSoftDeleted) {
-      window.alert(
-        'Check-in restored, but its session is still in the trash. Restore the session to see it.',
-      );
+      setBanner({
+        kind: 'info',
+        text: 'Check-in restored, but its session is still in the trash. Restore the session to see it.',
+      });
     }
     await refreshTrash();
   }
@@ -354,6 +364,42 @@ export function AdminPage() {
           show a confirmation modal before they run.
         </p>
       </header>
+
+      {banner && (
+        <Card>
+          <div
+            // Errors interrupt (assertive); the restore notice is informational
+            // and announces politely.
+            role={banner.kind === 'error' ? 'alert' : 'status'}
+            data-testid="admin-banner"
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              color:
+                banner.kind === 'error'
+                  ? 'var(--color-danger)'
+                  : 'var(--color-fg)',
+            }}
+          >
+            <span
+              className="hna-mono"
+              style={{ fontSize: 12, letterSpacing: '0.06em' }}
+            >
+              {banner.text}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setBanner(null)}
+              aria-label="Dismiss"
+            >
+              ✕
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* MEMBERS */}
       <p className="hna-cap hna-cap--accent">[ MEMBERS ]</p>
@@ -913,8 +959,9 @@ export function AdminPage() {
           if (!confirm) return;
           const c = confirm;
           setConfirm(null);
-          // Run the underlying action; errors surface via window.alert in the
-          // existing handlers, which we preserve here.
+          setBanner(null);
+          // Run the underlying action; a failure lands in the page banner
+          // above so it survives long enough to be read (and copied).
           (async () => {
             try {
               switch (c.kind) {
@@ -941,7 +988,7 @@ export function AdminPage() {
                   break;
               }
             } catch (e) {
-              window.alert((e as Error).message);
+              setBanner({ kind: 'error', text: errorMessage(e) });
             }
           })();
         }}

@@ -10,6 +10,13 @@ import { postToDiscord, getActiveClient, loadDiscordConfig } from '../discord/cl
 
 const ReactionInput = z.object({ emoji: z.string().min(1).max(64) });
 
+/**
+ * How many chat rows one GET returns. The window is the NEWEST N, not the
+ * oldest N (see the read handler) — the panel has to keep showing new traffic
+ * once a long-running session goes past the cap.
+ */
+const MESSAGE_WINDOW = 400;
+
 /** Add a reaction on the bot's mirror of a chat message in Discord. Best effort. */
 async function forwardReactionToDiscord(
   prisma: PrismaClient,
@@ -54,6 +61,14 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
   // are excluded from the backfill. Rows are returned ascending by createdAt
   // and each row includes its sessionId so the client can distinguish current-
   // session messages from the backfill.
+  //
+  // The query takes the NEWEST MESSAGE_WINDOW rows (order desc + take) and
+  // reverses them for the response. Ordering ascending before `take` pinned
+  // the panel to the OLDEST 400 rows: past that count the chat silently froze
+  // — new messages never appeared even though POSTs kept returning 201. That
+  // is reachable by calendar time, not just by a busy night, because the
+  // Discord bridge files every inbound message into the newest never-ended
+  // session, which can stay open for weeks.
   nested.get('/', requireAuth, asyncHandler(async (req, res) => {
     const { sessionId } = req.params as { sessionId: string };
     const session = await prisma.netSession.findUnique({
@@ -73,8 +88,10 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           },
         ],
       },
-      orderBy: { createdAt: 'asc' },
-      take: 400,
+      // id is a tiebreaker so rows written inside the same millisecond keep a
+      // stable order across polls (cuid ids are monotonic within a process).
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: MESSAGE_WINDOW,
       include: {
         reactions: {
           select: {
@@ -88,6 +105,9 @@ export function messagesRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         },
       },
     });
+    // Back to chronological for the client: ChatBox renders rows in array
+    // order and locates the backfill/current divider with findIndex.
+    rows.reverse();
     res.json(rows);
   }));
 

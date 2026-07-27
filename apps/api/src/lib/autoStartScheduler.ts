@@ -65,25 +65,35 @@ export async function autoStartTick(
   let started = 0;
   for (const s of sessions) {
     const tz = s.net.timezone || 'UTC';
-    const wall = wallClockIn(tz, now);
-    // Today, in the net's own timezone, must be the net's scheduled day.
-    if (wall.weekday !== s.net.dayOfWeek) continue;
-    // Today's scheduled start as a UTC instant (DST-safe — reuses the
-    // reminders.ts wall-clock helpers rather than reinventing tz math).
-    const [h, m] = s.net.startLocal.split(':').map(Number);
-    const startMs = instantFromWallClock(
-      tz, wall.year, wall.month, wall.day, h ?? 0, m ?? 0,
-    ).getTime();
-    if (nowMs < startMs) continue;                       // not yet started
-    if (nowMs - startMs > AUTO_START_GRACE_MS) continue; // stale — too late
-    // Abandoned session from a PAST occurrence (e.g. opened last week and
-    // never started): today's weekday + grace window match again exactly one
-    // week later, so age-gate on when the session was opened relative to
-    // today's start. Sessions opened after the start (within grace) pass
-    // trivially (negative difference).
-    if (startMs - s.startedAt.getTime() > AUTO_START_MAX_PREP_AGE_MS) continue;
-    const { transitioned } = await startSession(prisma, s.id, null);
-    if (transitioned) started += 1;
+    // Per-session failure boundary: wallClockIn throws InvalidTimezoneError
+    // for a zone Intl rejects, and one such net used to abort the loop —
+    // meaning NO net anywhere ever auto-started again, silently.
+    try {
+      const wall = wallClockIn(tz, now);
+      // Today, in the net's own timezone, must be the net's scheduled day.
+      if (wall.weekday !== s.net.dayOfWeek) continue;
+      // Today's scheduled start as a UTC instant (DST-safe — reuses the
+      // reminders.ts wall-clock helpers rather than reinventing tz math).
+      const [h, m] = s.net.startLocal.split(':').map(Number);
+      const startMs = instantFromWallClock(
+        tz, wall.year, wall.month, wall.day, h ?? 0, m ?? 0,
+      ).getTime();
+      if (nowMs < startMs) continue;                       // not yet started
+      if (nowMs - startMs > AUTO_START_GRACE_MS) continue; // stale — too late
+      // Abandoned session from a PAST occurrence (e.g. opened last week and
+      // never started): today's weekday + grace window match again exactly one
+      // week later, so age-gate on when the session was opened relative to
+      // today's start. Sessions opened after the start (within grace) pass
+      // trivially (negative difference).
+      if (startMs - s.startedAt.getTime() > AUTO_START_MAX_PREP_AGE_MS) continue;
+      const { transitioned } = await startSession(prisma, s.id, null);
+      if (transitioned) started += 1;
+    } catch (e) {
+      console.warn(
+        `[auto-start] skipping session ${s.id} (timezone ${JSON.stringify(s.net.timezone)})`,
+        e,
+      );
+    }
   }
   return started;
 }
@@ -92,15 +102,29 @@ export async function autoStartTick(
  * Start the auto-start scheduler on a ~30s interval using the real clock.
  * Runs one tick immediately at startup. Returns a stop function.
  * Unconditional — postToDiscord no-ops cleanly when Discord isn't connected.
+ *
+ * NOTE: exactly ONE replica may run this scheduler. The guard-update inside
+ * startSession keeps a *transition* single-fire even under a race, but the
+ * app is deliberately not designed for multi-replica scheduling — treat
+ * "one process owns the schedulers" as an invariant, not a coincidence.
  */
 export function startAutoStartScheduler(prisma: PrismaClient): () => void {
-  const handle = setInterval(() => {
-    void autoStartTick(prisma, new Date()).catch((e) => {
+  // Re-entrancy guard: the tick awaits a Discord post per started session, so
+  // it can easily outlive the 30s interval; overlapping ticks would re-read
+  // the same PREP rows and pile up redundant work against the guard-update.
+  let inFlight = false;
+  const run = async (): Promise<void> => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await autoStartTick(prisma, new Date());
+    } catch (e) {
       console.warn('[auto-start] tick failed', e);
-    });
-  }, 30 * 1000);
-  void autoStartTick(prisma, new Date()).catch((e) => {
-    console.warn('[auto-start] tick failed', e);
-  });
+    } finally {
+      inFlight = false;
+    }
+  };
+  const handle = setInterval(() => { void run(); }, 30 * 1000);
+  void run();
   return () => clearInterval(handle);
 }

@@ -97,7 +97,16 @@ export function EditCheckInModal({ open, checkIn, onClose, onSaved }: Props) {
           <option value="echolink">EchoLink (VoIP)</option>
         </select>
       </label>
-      {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
+      {/* `role="alert"` so the failure is announced when it appears — the
+          message is rendered far from the Save button the user just pressed.
+          `.hna-form-error` carries a border + tint so the error does not read
+          as "red text" alone (WCAG 1.4.1, and invisible to a monochrome or
+          high-contrast display). */}
+      {err && (
+        <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
+          {err}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <Button onClick={save} disabled={busy}>Save</Button>
         <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>

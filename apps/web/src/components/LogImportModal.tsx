@@ -137,7 +137,14 @@ export function LogImportModal({ open, onClose, onImported }: Props) {
             />
           </div>
         )}
-        {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
+        {/* Announced on appearance and shaped, not colour-only: an import that
+            silently refused is otherwise indistinguishable from one that
+            worked. */}
+        {err && (
+          <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
+            {err}
+          </div>
+        )}
         {preview && (
           <div style={{ marginTop: 16, padding: 12, background: 'var(--color-bg-muted)', borderRadius: 6 }}>
             <div className="hna-label">Preview</div>

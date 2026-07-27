@@ -180,8 +180,10 @@ export function CsvImportModal({
               placeholder="Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,..."
             />
           </label>
+          {/* Shaped (border + tint) rather than colour-only so "your CSV was
+              rejected" survives a monochrome or high-contrast display. */}
           {parseError && (
-            <div role="alert" style={{ color: 'var(--color-danger)', marginTop: 8 }}>
+            <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
               {parseError}
             </div>
           )}

@@ -69,7 +69,7 @@ describe('sessions', () => {
   });
   it('GET session returns with checkins', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
-    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', officer);
     expect(g.status).toBe(200);
     expect(g.body.checkIns).toEqual([]);
     expect(g.body.net).toBeDefined();
@@ -78,12 +78,12 @@ describe('sessions', () => {
   });
   it('GET list filters by netId', async () => {
     await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
-    const list = await request(app).get(`/api/sessions?netId=${netId}`);
+    const list = await request(app).get(`/api/sessions?netId=${netId}`).set('Cookie', officer);
     expect(list.status).toBe(200);
     expect(list.body.length).toBeGreaterThanOrEqual(1);
   });
   it('GET list rejects malformed date query', async () => {
-    const res = await request(app).get('/api/sessions?from=garbage');
+    const res = await request(app).get('/api/sessions?from=garbage').set('Cookie', officer);
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
@@ -116,7 +116,7 @@ describe('sessions', () => {
   it('GET /api/sessions/:id returns topicTitle', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer)
       .send({ topicTitle: 'Snapshot topic' });
-    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', officer);
     expect(g.status).toBe(200);
     expect(g.body.topicTitle).toBe('Snapshot topic');
   });
@@ -127,7 +127,7 @@ describe('sessions', () => {
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
     const del = await request(app).delete(`/api/sessions/${s.body.id}`).set('Cookie', officer);
     expect(del.status).toBe(204);
-    const get = await request(app).get(`/api/sessions/${s.body.id}`);
+    const get = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', officer);
     expect(get.status).toBe(404);
     const row = await prisma.netSession.findUnique({ where: { id: s.body.id } });
     expect(row).not.toBeNull();
@@ -287,7 +287,7 @@ describe('sessions', () => {
   });
   it('GET session includes controlOp with callsign and name', async () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
-    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', officer);
     expect(g.status).toBe(200);
     expect(g.body.controlOp).toBeDefined();
     expect(g.body.controlOp.callsign).toBe('W1AW');
@@ -298,7 +298,7 @@ describe('sessions', () => {
     await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
     await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
       .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
-    const res = await request(app).get(`/api/sessions/${s.body.id}/summary`);
+    const res = await request(app).get(`/api/sessions/${s.body.id}/summary`).set('Cookie', officer);
     expect(res.status).toBe(200);
     expect(res.body.session.id).toBe(s.body.id);
     expect(res.body.net.id).toBe(netId);
@@ -480,6 +480,84 @@ describe('sessions', () => {
   });
 });
 
+// These three GETs shipped with no auth middleware while every mutating route
+// on the same router required a role. An anonymous request returned the club's
+// participation log — member callsigns paired with the real names recorded at
+// check-in. Each read now needs a session cookie.
+describe('session reads require authentication', () => {
+  let sessionId: string;
+
+  beforeEach(async () => {
+    const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/start`).set('Cookie', officer);
+    await request(app).post(`/api/sessions/${s.body.id}/checkins`).set('Cookie', officer)
+      .send({ callsign: 'W1AW', nameAtCheckIn: 'A' });
+    sessionId = s.body.id;
+  });
+
+  it('GET /api/sessions without a cookie returns 401', async () => {
+    const res = await request(app).get('/api/sessions');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('GET /api/sessions with a cookie returns 200', async () => {
+    const res = await request(app).get('/api/sessions').set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body.some((s: { id: string }) => s.id === sessionId)).toBe(true);
+  });
+
+  it('GET /api/sessions/:id without a cookie returns 401', async () => {
+    const res = await request(app).get(`/api/sessions/${sessionId}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    // The 401 must come before the row is read — no roster leaks in the body.
+    expect(JSON.stringify(res.body)).not.toContain('W1AW');
+  });
+
+  it('GET /api/sessions/:id with a cookie returns 200 and the check-in names', async () => {
+    const res = await request(app).get(`/api/sessions/${sessionId}`).set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body.checkIns[0].callsign).toBe('W1AW');
+    expect(res.body.checkIns[0].nameAtCheckIn).toBe('A');
+  });
+
+  it('GET /api/sessions/:id/summary without a cookie returns 401', async () => {
+    const res = await request(app).get(`/api/sessions/${sessionId}/summary`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    expect(JSON.stringify(res.body)).not.toContain('W1AW');
+  });
+
+  it('GET /api/sessions/:id/summary with a cookie returns 200', async () => {
+    const res = await request(app).get(`/api/sessions/${sessionId}/summary`)
+      .set('Cookie', officer);
+    expect(res.status).toBe(200);
+    expect(res.body.checkIns).toHaveLength(1);
+  });
+
+  it('an unknown id still 401s (not 404) when unauthenticated', async () => {
+    // Existence must not leak either — the guard runs before the lookup.
+    const res = await request(app).get('/api/sessions/does-not-exist');
+    expect(res.status).toBe(401);
+  });
+
+  it('a plain MEMBER can still read sessions', async () => {
+    const m = await request(app).post('/api/auth/register').send({
+      email: `mem-read-${Date.now()}@x.co`,
+      password: 'hunter2hunter2', name: 'M', callsign: 'KB0RDR',
+    });
+    const cookie = m.headers['set-cookie'][0];
+    expect((await request(app).get('/api/sessions').set('Cookie', cookie)).status).toBe(200);
+    expect(
+      (await request(app).get(`/api/sessions/${sessionId}`).set('Cookie', cookie)).status,
+    ).toBe(200);
+    expect(
+      (await request(app).get(`/api/sessions/${sessionId}/summary`).set('Cookie', cookie)).status,
+    ).toBe(200);
+  });
+});
+
 describe('net control assignment on open/start', () => {
   let openerId: string;      // user A — the officer from beforeAll (W1AW)
   let netctlB: string;       // cookie for user B, promoted to NET_CONTROL
@@ -624,5 +702,34 @@ describe('session prep gates', () => {
     expect(second.status).toBe(200);
     expect(second.body.id).toBe(first.body.id);
     expect(second.body.reused).toBe(true);
+  });
+});
+
+describe('opening a net whose stored timezone is invalid', () => {
+  // NetInput/NetUpdate now reject anything Intl doesn't know, but rows written
+  // before that validation existed are still in production databases. Opening
+  // a session anchors the same-day dedupe window to the NET's timezone, so
+  // such a row reaches Intl on this path and used to answer 500 — on net
+  // night, with nothing in the response to say what was wrong.
+  it('answers 400 naming the bad zone instead of a 500', async () => {
+    // Written straight through Prisma: the API refuses to create it.
+    const bad = await prisma.net.create({
+      data: {
+        name: 'Legacy Net',
+        repeaterId: (await prisma.repeater.findFirstOrThrow()).id,
+        dayOfWeek: 3,
+        startLocal: '20:00',
+        timezone: 'CDT',
+      },
+    });
+
+    const res = await request(app).post(`/api/nets/${bad.id}/sessions`).set('Cookie', officer);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toContain('CDT');
+    expect(res.body.error.message).toMatch(/edit the net/i);
+    // And nothing was created, so a retry after the fix is clean.
+    expect(await prisma.netSession.count({ where: { netId: bad.id } })).toBe(0);
   });
 });

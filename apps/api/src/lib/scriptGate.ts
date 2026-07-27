@@ -2,10 +2,15 @@ import type { Role } from '@hna/shared';
 
 /**
  * Returns true if the given role is allowed to view net scripts.
- * Officers and admins can see scripts; plain members cannot.
+ *
+ * NET_CONTROL is included deliberately: the script IS the net — the preamble,
+ * the check-in call, the closing — and it is read aloud on the air by whoever
+ * is running the session. Gating it to OFFICER+ left the exact role that
+ * exists to let a non-officer run a net staring at an empty script panel
+ * while live. Plain members still cannot see scripts.
  */
 export function canViewScripts(role: Role | undefined): boolean {
-  return role === 'OFFICER' || role === 'ADMIN';
+  return role === 'NET_CONTROL' || role === 'OFFICER' || role === 'ADMIN';
 }
 
 /**

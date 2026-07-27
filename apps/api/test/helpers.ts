@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Express } from 'express';
 
-process.env.JWT_SECRET = 'test-secret-long-enough-for-validation';
+// Must satisfy the same rules the real deploy does (>= 32 chars, no
+// placeholder words like "secret"/"change-me"), otherwise importing src/env.ts
+// throws before a single test runs. Fixed value: tokens signed in one test
+// file are meaningless in another anyway, and a random one would make failures
+// unreproducible.
+process.env.JWT_SECRET = '9f3b7c1d5e8a24609bd4f7a1c3e5079b2d6481fa0c7e39b5d2a814f60c9e73b1';
 process.env.NODE_ENV = 'test';
 
 export function makeTestDb(): { prisma: PrismaClient; dbFile: string } {

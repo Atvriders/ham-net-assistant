@@ -169,7 +169,14 @@ export function ScriptImportModal({ open, onClose, onImport }: Props) {
           </div>
         )}
 
-        {err && <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{err}</div>}
+        {/* Import failures land here after an async fetch/parse the user
+            cannot see — `role="alert"` announces them, and `.hna-form-error`
+            gives a non-colour cue for the "nothing happened?" case. */}
+        {err && (
+          <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
+            {err}
+          </div>
+        )}
 
         {preview !== null && (
           <div style={{ marginTop: 16 }}>

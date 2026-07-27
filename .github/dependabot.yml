@@ -1,0 +1,47 @@
+version: 2
+
+# A club app that is deployed once and then runs unattended for semesters is
+# exactly where dependency rot goes unnoticed. Weekly PRs, with minor/patch
+# updates grouped so the reviewer sees one PR to run CI against instead of
+# twenty; majors stay separate because they need judgement.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # npm workspaces: the root lockfile covers apps/* and packages/*, so one
+    # entry updates the whole monorepo.
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - ci

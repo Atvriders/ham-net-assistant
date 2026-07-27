@@ -48,7 +48,9 @@ export interface StartSessionResult {
  * control-less session — the starter becomes control so a live net is never
  * left control-less, but an existing control op is never reassigned (the
  * `controlOpId: null` WHERE guard makes that race-safe too). Scheduler starts
- * pass null and leave controlOpId exactly as-is.
+ * pass null and leave controlOpId exactly as-is — and when that leaves the
+ * session control-less, the Discord announcement is worded as "scheduled to
+ * start, no control op yet" instead of "now live" (see below).
  */
 export async function startSession(
   prisma: PrismaClient,
@@ -75,17 +77,30 @@ export async function startSession(
   });
 
   if (transitioned && session) {
-    // Fire-and-forget Discord "now live" notification — announced from here
-    // (not the route) so scheduler-driven starts ping exactly like manual
-    // ones, and the guard above guarantees it fires at most once per session.
+    // Fire-and-forget Discord notification — announced from here (not the
+    // route) so scheduler-driven starts ping exactly like manual ones, and
+    // the guard above guarantees it fires at most once per session.
     void (async () => {
       try {
         const repeater = session.net?.repeater;
         const freq = repeater?.frequency != null ? `${repeater.frequency.toFixed(3)} MHz` : '';
         const repeaterName = repeater?.name ? ` (${repeater.name})` : '';
         const topicLine = session.topicTitle ? ` · Topic: ${session.topicTitle}` : '';
-        const content =
-          `🟢 **${session.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
+        // A scheduler start (actorUserId === null) on a session nobody has
+        // claimed means the clock rolled over with no net control op. Saying
+        // "🟢 is now live" there is a lie the club acts on: members key up
+        // expecting someone to take check-ins and get silence, and after a
+        // few weeks of that they stop believing the announcement at all.
+        //
+        // We reword rather than stay silent: suppressing the post entirely
+        // would also hide the one moment when an officer could still step in
+        // and run the net. So the ping goes out, but it asks for a volunteer
+        // instead of claiming there is one.
+        const unattended = actorUserId === null && session.controlOpId === null;
+        const content = unattended
+          ? `🟡 **${session.net.name}** is scheduled to start now on ${freq}${repeaterName}${topicLine}` +
+            ' — no net control has taken the mic yet. Any operator can open the console and take control.'
+          : `🟢 **${session.net.name}** is now live on ${freq}${repeaterName}${topicLine}`;
         await postToDiscord(prisma, content);
       } catch { /* ignore */ }
     })();

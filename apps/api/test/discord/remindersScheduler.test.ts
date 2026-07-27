@@ -13,6 +13,14 @@ vi.mock('../../src/discord/client.js', async () => {
 import { postToDiscord } from '../../src/discord/client.js';
 import { startReminderScheduler } from '../../src/discord/reminders.js';
 
+const discordMock = postToDiscord as unknown as {
+  mock: { calls: unknown[][] };
+  mockClear: () => void;
+  mockResolvedValueOnce: (v: unknown) => void;
+};
+const postedContents = (): string[] =>
+  discordMock.mock.calls.map((c) => String(c[1] ?? ''));
+
 let prisma: PrismaClient;
 let dbFile: string;
 let repeaterId: string;
@@ -159,6 +167,122 @@ describe('per-net reminder scheduling', () => {
     const fn = postToDiscord as unknown as { mock: { calls: unknown[][] } };
     const contents = fn.mock.calls.map((c) => String(c[1] ?? ''));
     expect(contents.some((c) => c.includes('Impromptu Net'))).toBe(false);
+  });
+
+  it('still fires a reminder that came due 3 minutes ago (catch-up window)', async () => {
+    // Net starts in 57 min with a 60-min reminder, i.e. the reminder was due
+    // ~3 minutes ago. The old symmetric ±60s window against a 60s tick meant
+    // a two-minute Discord outage (or one slow tick) dropped this reminder
+    // permanently — the next tick was already past it.
+    const { weekday, startLocal } = netStartingInMinutes(57);
+    await prisma.net.create({
+      data: {
+        name: 'Late Net', kind: 'weekly', repeaterId,
+        dayOfWeek: weekday, startLocal, timezone: 'UTC', active: true,
+        reminderMinutes: JSON.stringify([60]),
+      },
+    });
+
+    await runOneTick();
+
+    expect((await prisma.netReminder.findMany()).map((r) => r.kind)).toEqual(['m60']);
+    expect(postedContents().some((c) => c.includes('Late Net'))).toBe(true);
+  });
+
+  it('does NOT fire a reminder that came due 6 minutes ago (window closed)', async () => {
+    // Past the 5-minute catch-up window: a reminder this stale is noise, and
+    // for short lead times it could land after the net already started.
+    const { weekday, startLocal } = netStartingInMinutes(54);
+    await prisma.net.create({
+      data: {
+        name: 'Too Late Net', kind: 'weekly', repeaterId,
+        dayOfWeek: weekday, startLocal, timezone: 'UTC', active: true,
+        reminderMinutes: JSON.stringify([60]),
+      },
+    });
+
+    await runOneTick();
+
+    expect(await prisma.netReminder.findMany()).toEqual([]);
+    expect(postedContents().some((c) => c.includes('Too Late Net'))).toBe(false);
+  });
+
+  it('does NOT fire a reminder that is not due yet', async () => {
+    // Net starts in 62 min with a 60-min reminder: due in ~2 minutes. The
+    // window is forward-only, so nothing fires early.
+    const { weekday, startLocal } = netStartingInMinutes(62);
+    await prisma.net.create({
+      data: {
+        name: 'Early Net', kind: 'weekly', repeaterId,
+        dayOfWeek: weekday, startLocal, timezone: 'UTC', active: true,
+        reminderMinutes: JSON.stringify([60]),
+      },
+    });
+
+    await runOneTick();
+
+    expect(await prisma.netReminder.findMany()).toEqual([]);
+    expect(postedContents().some((c) => c.includes('Early Net'))).toBe(false);
+  });
+
+  it('releases the dedupe row when the Discord post fails, so a later tick retries', async () => {
+    // The row is staked BEFORE posting (a crash in between must not re-ping
+    // the whole club), but a clean send failure has to roll it back or the
+    // reminder is lost even though Discord came back seconds later.
+    const { weekday, startLocal } = netStartingInMinutes(60);
+    await prisma.net.create({
+      data: {
+        name: 'Flaky Net', kind: 'weekly', repeaterId,
+        dayOfWeek: weekday, startLocal, timezone: 'UTC', active: true,
+        reminderMinutes: JSON.stringify([60]),
+      },
+    });
+
+    discordMock.mockResolvedValueOnce({ ok: false, reason: 'Discord error: 503' });
+    await runOneTick();
+    expect(await prisma.netReminder.findMany()).toEqual([]);
+
+    // Discord is back: the same reminder still fires, exactly once.
+    await runOneTick();
+    expect((await prisma.netReminder.findMany()).map((r) => r.kind)).toEqual(['m60']);
+    expect(postedContents().filter((c) => c.includes('Flaky Net'))).toHaveLength(2);
+  });
+
+  it('a net with an Intl-invalid timezone does not stop other nets being reminded', async () => {
+    // "CDT" makes Intl.DateTimeFormat throw a RangeError inside
+    // nextOccurrence. It used to escape the per-net loop into the tick's
+    // catch-all, so ONE bad row silenced reminders for every net forever.
+    // Created first so it is reached first in the rowid-ordered loop.
+    const bad = netStartingInMinutes(60);
+    await prisma.net.create({
+      data: {
+        name: 'Bad TZ Net', kind: 'weekly', repeaterId,
+        dayOfWeek: bad.weekday, startLocal: bad.startLocal, timezone: 'CDT',
+        active: true, reminderMinutes: JSON.stringify([60]),
+      },
+    });
+    const good = netStartingInMinutes(60);
+    await prisma.net.create({
+      data: {
+        name: 'Good TZ Net', kind: 'weekly', repeaterId,
+        dayOfWeek: good.weekday, startLocal: good.startLocal, timezone: 'UTC',
+        active: true, reminderMinutes: JSON.stringify([60]),
+      },
+    });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await runOneTick();
+      const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('Bad TZ Net');
+      expect(logged).toContain('invalid timezone');
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(postedContents().some((c) => c.includes('Good TZ Net'))).toBe(true);
+    const rows = await prisma.netReminder.findMany({ include: { net: true } });
+    expect(rows.map((r) => r.net.name)).toEqual(['Good TZ Net']);
   });
 
   it('dedupes the same (netId, occursAt, kind): a second tick does not re-fire', async () => {

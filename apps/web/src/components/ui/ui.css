@@ -1354,12 +1354,19 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 /* ============================================================== */
 
 /* Status strip across the top of the live page. Sticks to the top of
- * <main> so the operator always sees net + control op + elapsed time
- * while scrolling the roster. The 56px offset clears the sticky shell
- * nav (~52px) plus its 2px bottom border. */
+ * <main> so the operator always sees net + control op + elapsed time —
+ * and the START NET / Take control / END NET buttons — while scrolling
+ * the roster.
+ *
+ * The offset is the *measured* nav height (RunNetPage publishes --nav-h
+ * from a ResizeObserver), not a constant: below 1024px there is no
+ * hamburger and .hna-shell__tail wraps, so the real nav runs 150-230px
+ * tall. With the old hard-coded 56px the strip — and therefore every
+ * run-the-net control — slid under the opaque nav the moment a phone
+ * operator scrolled. */
 .hna-runnet-status {
   position: sticky;
-  top: 56px;
+  top: var(--nav-h);
   z-index: 5;
   background: color-mix(in srgb, var(--color-surface) 96%, transparent);
   backdrop-filter: blur(8px);
@@ -1595,15 +1602,29 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   gap: var(--space-4);
 }
 
-/* Sticky check-in form for the LIVE layout. The form rides at the top
- * of the roster column so adding a check-in never requires scrolling.
- * The 56 + 88 offset clears the shell nav (~56px) and the status strip
- * (~88px sticky). */
-.hna-runnet-live .hna-runnet-live__checkin {
-  position: sticky;
-  top: calc(56px + 88px);
-  z-index: 3;
-  background: var(--color-surface);
+/* Sticky check-in form for the LIVE layout (≥1024px only — below that the
+ * console is a single column and the form sits inline).
+ *
+ * The sticky element is the FORM, not its `.hna-runnet-live__checkin`
+ * wrapper. The wrapper is a grid item that is exactly as tall as its grid
+ * area, so `position: sticky` on it had a zero shift range and did nothing
+ * at all. Inside the roster card the form is a normal block child of a
+ * container that grows with the log, so it has real range: the log scrolls
+ * under an opaque form and the operator can always type the next callsign.
+ * (.hna-roster deliberately has no inner scroller — the page scrolls, which
+ * is what the roster's scroll-into-view nudge assumes.)
+ *
+ * Offsets are the measured heights of the two sticky layers above it. */
+@media (min-width: 1024px) {
+  .hna-runnet-live .hna-runnet-live__checkin .hna-checkin-form {
+    position: sticky;
+    top: calc(var(--nav-h) + var(--runnet-status-h));
+    z-index: 3;
+    background: var(--color-surface);
+    /* The strip above is opaque and pinned at --nav-h; padding here keeps log
+     * rows from peeking through the seam between the two as they scroll by. */
+    padding-top: var(--space-2);
+  }
 }
 
 /* ≥1600px: CHAT fits — promote it to a third top-row column so the
@@ -1624,14 +1645,16 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
  * `.hna-script-panel` is unaffected. */
 @media (min-width: 1024px) {
   .hna-runnet-live .hna-runnet-live__script .hna-script-panel {
-    max-height: calc(100vh - 56px - 88px - var(--space-6));
+    max-height: calc(100vh - var(--nav-h) - var(--runnet-status-h) - var(--space-6));
   }
 }
 
 /* <1024px (tablet + phone): single column. Script FIRST — directly
  * under the status strip — so it never lands at the bottom of the
- * stack, then roster, then chat. The check-in form drops its top-sticky
- * (the mobile sticky-bottom rule below takes over for one-thumb add). */
+ * stack, then roster, then chat. The check-in form is not sticky here
+ * (the ≥1024px rule above is media-scoped): on a phone the nav plus the
+ * status strip already own most of the viewport, so pinning the form too
+ * would leave almost no room for the log. */
 @media (max-width: 1023px) {
   .hna-runnet-live {
     grid-template-columns: minmax(0, 1fr);
@@ -1639,9 +1662,6 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
       'script'
       'roster'
       'chat';
-  }
-  .hna-runnet-live .hna-runnet-live__checkin {
-    position: static;
   }
 }
 
@@ -1708,8 +1728,11 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 
 /* Sticky check-in form on mobile so officers can add a check-in
- * with one thumb. Stacks above the roster list on small screens. */
-@media (max-width: 1024px) {
+ * with one thumb. Stacks above the roster list on small screens.
+ * Stops at 1023px — 1024px is where the desktop console layout (and its
+ * top-sticky form) begins, and overlapping the two pinned the form to the
+ * top AND the bottom of the viewport at exactly that width. */
+@media (max-width: 1023px) {
   .hna-checkin-form {
     position: sticky;
     bottom: 0;

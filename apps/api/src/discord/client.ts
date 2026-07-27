@@ -7,7 +7,6 @@ import {
   type MessageReaction,
   type PartialMessageReaction,
   type PartialUser,
-  type TextChannel,
   type User as DiscordUser,
 } from 'discord.js';
 import type { PrismaClient } from '@prisma/client';
@@ -57,6 +56,24 @@ export async function loadDiscordConfig(prisma: PrismaClient): Promise<DiscordCo
   return { enabled: !!enabled, token, channelId };
 }
 
+/**
+ * Tear down the gateway connection and forget it. Safe to call when nothing
+ * is connected. Used by config changes AND by the process shutdown handler —
+ * without an explicit destroy the websocket keeps the event loop alive, so
+ * `docker compose up -d` had to wait out the full stop grace and SIGKILL us.
+ */
+export async function destroyDiscordClient(): Promise<void> {
+  if (!activeClient) return;
+  try {
+    await activeClient.destroy();
+  } catch (e) {
+    console.warn('[discord] destroy failed', e);
+  }
+  activeClient = null;
+  activeToken = null;
+  messageHandler = null;
+}
+
 /** Idempotently start/stop the discord client to match the desired config. */
 export async function reconcileDiscord(
   prisma: PrismaClient,
@@ -64,12 +81,7 @@ export async function reconcileDiscord(
 ): Promise<void> {
   const cfg = await loadDiscordConfig(prisma);
   if (!cfg.enabled || !cfg.token) {
-    if (activeClient) {
-      try { await activeClient.destroy(); } catch { /* ignore */ }
-      activeClient = null;
-      activeToken = null;
-      messageHandler = null;
-    }
+    await destroyDiscordClient();
     return;
   }
   if (activeClient && activeToken === cfg.token) {
@@ -78,9 +90,7 @@ export async function reconcileDiscord(
     return;
   }
   // (re)start
-  if (activeClient) {
-    try { await activeClient.destroy(); } catch { /* ignore */ }
-  }
+  await destroyDiscordClient();
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -187,44 +197,6 @@ export async function postToDiscord(prisma: PrismaClient, content: string): Prom
   }
 }
 
-export async function sendDiscordOrThrow(
-  prisma: PrismaClient,
-  content: string,
-): Promise<string> {
-  if (!activeClient) {
-    throw new Error('Discord bot is not running. Set Enabled + token + channel ID and Save first.');
-  }
-  const cfg = await loadDiscordConfig(prisma);
-  if (!cfg.channelId) {
-    throw new Error('No channel ID configured.');
-  }
-  let channel;
-  try {
-    channel = await activeClient.channels.fetch(cfg.channelId);
-  } catch (e) {
-    const msg = (e as Error)?.message ?? String(e);
-    throw new Error(`Channel fetch failed: ${msg}. Verify the channel ID is correct and the bot has been invited to that server with View Channel permission.`, { cause: e });
-  }
-  if (!channel) {
-    throw new Error(`Channel ${cfg.channelId} not found. The bot may not be in the server, or the ID is wrong.`);
-  }
-  if (!channel.isTextBased() || !('send' in channel)) {
-    throw new Error('Configured channel is not text-based or doesn\'t accept messages.');
-  }
-  try {
-    const msg = await (channel as TextChannel).send(content);
-    return msg.id;
-  } catch (e) {
-    const err = e as Error & { code?: number };
-    const code = err.code ? ` (code ${err.code})` : '';
-    throw new Error(`Send failed${code}: ${err.message ?? String(e)}. Common causes: bot lacks Send Messages permission on this channel, MESSAGE CONTENT INTENT not enabled in the developer portal, or invalid token.`, { cause: e });
-  }
-}
-
-export function discordChannelMatches(prisma: PrismaClient, channelId: string): Promise<boolean> {
-  return loadDiscordConfig(prisma).then((c) => !!c.channelId && c.channelId === channelId);
-}
-
 export function getActiveClient(): Client | null {
   return activeClient;
 }
@@ -238,60 +210,12 @@ export function getActiveClient(): Client | null {
 export async function applyDiscordConfig(prisma: PrismaClient): Promise<void> {
   const cfg = await loadDiscordConfig(prisma);
   if (!cfg.enabled || !cfg.token || !cfg.channelId) {
-    if (activeClient) {
-      try { await activeClient.destroy(); } catch { /* ignore */ }
-      activeClient = null;
-      activeToken = null;
-      messageHandler = null;
-    }
+    await destroyDiscordClient();
     return;
   }
   await reconcileDiscord(prisma, (m) => {
     void handleInboundDiscordMessage(prisma, cfg.channelId, m);
   });
-}
-
-export async function postToDiscordOrThrow(
-  prisma: PrismaClient,
-  content: string,
-): Promise<string> {
-  if (!activeClient) {
-    throw new Error('Discord client is not connected (token or channel missing, or enabled=false)');
-  }
-  const cfg = await loadDiscordConfig(prisma);
-  if (!cfg.enabled) {
-    throw new Error('Discord integration is disabled');
-  }
-  if (!cfg.token) {
-    throw new Error('Discord bot token is not set');
-  }
-  if (!cfg.channelId) {
-    throw new Error('Discord channel ID is not set');
-  }
-  let channel;
-  try {
-    channel = await activeClient.channels.fetch(cfg.channelId);
-  } catch (e) {
-    const msg = (e as Error)?.message ?? String(e);
-    throw new Error(`Could not fetch channel ${cfg.channelId}: ${msg}. Bot may not be in the server, or the channel ID is wrong.`, { cause: e });
-  }
-  if (!channel) {
-    throw new Error(`Channel ${cfg.channelId} not found. Check the channel ID and that the bot is in the server.`);
-  }
-  if (!channel.isTextBased()) {
-    throw new Error(`Channel ${cfg.channelId} is not a text channel`);
-  }
-  if (!('send' in channel)) {
-    throw new Error(`Channel ${cfg.channelId} does not support sending messages`);
-  }
-  try {
-    const msg = await (channel as TextChannel).send(content);
-    return msg.id;
-  } catch (e) {
-    const err = e as Error & { code?: number };
-    const msg = err?.message ?? String(e);
-    throw new Error(`Send failed: ${msg}. The bot probably lacks Send Messages permission in that channel.`, { cause: e });
-  }
 }
 
 export async function sendTestMessage(

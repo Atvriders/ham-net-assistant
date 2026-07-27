@@ -3,10 +3,28 @@ import { PrismaClient } from '@prisma/client';
 export const prisma = new PrismaClient();
 
 /**
- * Apply SQLite reliability pragmas: WAL journaling for better concurrent
- * read/write behavior, a 5s busy timeout so transient lock contention waits
- * instead of erroring, and `synchronous=NORMAL` which is the recommended
- * trade-off when WAL is enabled. Runs once at boot.
+ * Apply SQLite reliability pragmas once at boot. Must complete BEFORE the
+ * HTTP server starts accepting requests (see index.ts) so no query ever runs
+ * against an un-tuned connection.
+ *
+ * What is actually guaranteed, since these statements run on whichever single
+ * connection Prisma's pool hands us:
+ *  - `journal_mode=WAL` — GUARANTEED database-wide. WAL is persisted in the
+ *    database file header, so every connection (and every later boot) uses
+ *    it. This is the one that matters: it's what lets readers not block the
+ *    writer.
+ *  - `busy_timeout=5000` — connection-scoped. Other pooled connections keep
+ *    their own timeout, so a busy-lock error is still possible under
+ *    contention; it is not the blanket guarantee it looks like.
+ *  - `synchronous=NORMAL` — connection-scoped, and therefore NOT in effect
+ *    process-wide despite what this comment used to claim. Connections that
+ *    never ran it stay at SQLite's default `FULL`, which fsyncs more often:
+ *    slower, but strictly MORE durable, so the mismatch is safe. Do not
+ *    "fix" it by assuming NORMAL semantics anywhere.
+ *
+ * Making the connection-scoped pragmas real would mean pinning the pool to a
+ * single connection (`?connection_limit=1` on DATABASE_URL) — a deployment
+ * decision, not a code one.
  */
 let initialized: Promise<void> | null = null;
 export function initDb(): Promise<void> {

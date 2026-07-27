@@ -1,6 +1,13 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
+
+// findBy*/waitFor default to 1s. That is enough in a browser but not always in
+// jsdom on a shared CI runner: *ByRole queries walk the whole accessibility
+// tree, and the net editor renders the full IANA timezone list (~400 options),
+// which produced intermittent failures in otherwise-correct tests. A ceiling,
+// not a wait — a passing query still resolves on the first tick.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

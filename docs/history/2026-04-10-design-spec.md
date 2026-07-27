@@ -1,3 +1,15 @@
+> # ⚠️ SUPERSEDED — HISTORICAL DOCUMENT, DO NOT IMPLEMENT
+>
+> Written 2026-04-10, before the app was built. It is kept only to explain
+> *why* the product works the way it does. **Large parts are now wrong**, for
+> example: React 18 + Zustand + Vite 5 (the app is React 19 + Vite 7 with no
+> Zustand — server state is polled via hooks), Node 20 (the image is
+> `node:24-bookworm-slim`), Express 4 (now Express 5), Zod 3 (now Zod 4), and a
+> three-role model with no `NET_CONTROL`.
+>
+> **Authoritative sources, in this order:** the code → `README.md` →
+> `CONTRIBUTING.md`. When this file disagrees with any of them, it is wrong.
+
 # Ham-Net-Assistant — Design Spec
 
 **Date:** 2026-04-10

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  Callsign, RegisterInput, RepeaterInput, NetInput, CheckInInput,
+  Callsign, RegisterInput, RepeaterInput, NetInput, NetUpdate, CheckInInput,
   ReminderMinutes, parseReminderMinutes, DEFAULT_REMINDER_MINUTES,
-  NetScript, NetScriptInput,
+  NetScript, NetScriptInput, isValidTimezone,
   Role, ROLE_RANK, ROLE_LABEL, roleAtLeast,
 } from '../src/index.js';
 
@@ -46,7 +46,7 @@ describe('Callsign', () => {
 describe('RegisterInput', () => {
   it('accepts complete input', () => {
     const out = RegisterInput.parse({
-      email: 'a@b.co', password: 'longenough', name: 'Alice', callsign: 'W1AW',
+      email: 'a@b.co', password: 'longenoughnow', name: 'Alice', callsign: 'W1AW',
     });
     expect(out.callsign).toBe('W1AW');
   });
@@ -111,6 +111,72 @@ describe('NetInput', () => {
         name: 'x', repeaterId: 'y', kind: 'impromptu', scriptCategory: 'monthly' as never,
       }),
     ).toThrow();
+  });
+});
+
+// A timezone Intl can't parse makes every scheduler throw a RangeError, which
+// used to take down auto-open, auto-start AND reminders for EVERY net. The
+// API boundary is where that has to be caught.
+describe('NetInput timezone validation', () => {
+  const weekly = { name: 'Wed Net', repeaterId: 'x', dayOfWeek: 3, startLocal: '20:00' };
+
+  it.each(['America/Chicago', 'UTC', 'Europe/London', 'Pacific/Honolulu'])(
+    'accepts the IANA zone %s',
+    (timezone) => {
+      expect(NetInput.parse({ ...weekly, timezone }).timezone).toBe(timezone);
+    },
+  );
+
+  it('accepts the legacy fixed-offset zones Intl still knows (EST, MST)', () => {
+    // Not a recommendation — "EST" is UTC-5 year-round, so a club that types
+    // it will drift an hour every summer. But Intl accepts it, the schedulers
+    // therefore handle it without throwing, and the schema's job is only to
+    // keep zones Intl REJECTS out of the database.
+    expect(NetInput.parse({ ...weekly, timezone: 'EST' }).timezone).toBe('EST');
+  });
+
+  it.each([
+    ['CDT', 'a US timezone abbreviation'],
+    ['PDT', 'a daylight-time abbreviation'],
+    ['Eastern', 'a friendly name'],
+    ['UTC-6', 'a raw offset'],
+    [' America/Chicago ', 'a pasted value with surrounding whitespace'],
+    ['America/Chicago ', 'a trailing space'],
+    ['Not/AZone', 'a plausible-looking but unknown zone'],
+    ['', 'empty'],
+  ])('rejects %s (%s)', (timezone) => {
+    expect(() => NetInput.parse({ ...weekly, timezone })).toThrow();
+  });
+
+  it('reports the failure on the timezone field with an actionable message', () => {
+    const res = NetInput.safeParse({ ...weekly, timezone: 'CDT' });
+    expect(res.success).toBe(false);
+    const issue = res.error!.issues.find((i) => i.path[0] === 'timezone');
+    expect(issue).toBeDefined();
+    expect(issue!.message).toBe('Must be an IANA timezone like America/Chicago');
+  });
+
+  it('PATCH bodies are validated too (NetUpdate shares the field)', () => {
+    expect(() => NetUpdate.parse({ timezone: 'Eastern' })).toThrow();
+    expect(NetUpdate.parse({ timezone: 'America/Denver' }).timezone).toBe('America/Denver');
+  });
+
+  it('an impromptu net may still omit the timezone entirely', () => {
+    expect(NetInput.parse({ name: 'Pop-up', repeaterId: 'x', kind: 'impromptu' }).timezone)
+      .toBeUndefined();
+  });
+});
+
+describe('isValidTimezone', () => {
+  it('mirrors what Intl.DateTimeFormat will accept', () => {
+    for (const tz of ['America/Chicago', 'UTC', 'Asia/Tokyo']) {
+      expect(isValidTimezone(tz)).toBe(true);
+      expect(() => new Intl.DateTimeFormat('en-US', { timeZone: tz })).not.toThrow();
+    }
+    for (const tz of ['CDT', 'Eastern', 'UTC-6', ' America/Chicago ']) {
+      expect(isValidTimezone(tz)).toBe(false);
+      expect(() => new Intl.DateTimeFormat('en-US', { timeZone: tz })).toThrow();
+    }
   });
 });
 

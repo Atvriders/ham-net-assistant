@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { PRESENCE_ONLINE_WINDOW_MS } from '@hna/shared';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/async.js';
+import { HttpError } from '../middleware/error.js';
 
 /**
  * Lightweight presence: the web client pings `POST /heartbeat` every ~45s while
@@ -14,10 +15,22 @@ export function presenceRouter(prisma: PrismaClient): Router {
 
   router.post('/heartbeat', requireAuth, asyncHandler(async (req, res) => {
     const now = new Date();
-    await prisma.user.update({
-      where: { id: req.user!.id },
-      data: { lastSeenAt: now },
-    });
+    try {
+      await prisma.user.update({
+        where: { id: req.user!.id },
+        data: { lastSeenAt: now },
+      });
+    } catch (e) {
+      // The account was deleted between loadUser's lookup and this write.
+      // Prisma raises P2025 ("record not found"), which used to surface as a
+      // 500 every 45 seconds for as long as the tab stayed open — an endless
+      // error log and no signal to the client. Answer like /auth/me does so
+      // the SPA can drop its stale session.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new HttpError(401, 'UNAUTHENTICATED', 'User no longer exists');
+      }
+      throw e;
+    }
     res.json({ ok: true, lastSeenAt: now.toISOString() });
   }));
 

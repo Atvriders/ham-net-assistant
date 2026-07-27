@@ -53,6 +53,9 @@ describe('logo upload', () => {
     const get = await request(app).get('/api/themes/default/logo');
     expect(get.status).toBe(200);
     expect(get.headers['content-type']).toMatch(/image\/svg/);
+    // An uploaded SVG is active content served from the app's own origin.
+    expect(get.headers['x-content-type-options']).toBe('nosniff');
+    expect(get.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
 
     const list = await request(app).get('/api/themes');
     const def = (list.body as Array<{ slug: string; uploadedLogoUrl: string | null }>).find(
@@ -134,5 +137,92 @@ describe('logo upload', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
     dnsSpy.mockRestore();
+  });
+
+  it('rejects a host resolving to CGNAT space (SSRF)', async () => {
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '100.64.9.9', family: 4 }]);
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'https://cgnat.example/logo.png' });
+    expect(res.status).toBe(400);
+    dnsSpy.mockRestore();
+  });
+
+  it('rejects a host resolving to an IPv4-mapped IPv6 metadata address (SSRF)', async () => {
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '::ffff:169.254.169.254', family: 6 }]);
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'https://mapped.example/logo.png' });
+    expect(res.status).toBe(400);
+    dnsSpy.mockRestore();
+  });
+
+  it('rejects a redirecting logo URL instead of following it', async () => {
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      // @ts-expect-error overload
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/logo.png' } }),
+    );
+    const res = await request(app)
+      .post('/api/themes/default/logo')
+      .set('Cookie', admin)
+      .set('Content-Type', 'application/json')
+      .send({ url: 'https://example.com/logo.png' });
+    expect(res.status).toBe(400);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+    dnsSpy.mockRestore();
+  });
+});
+
+describe('theme slug validation', () => {
+  // Express percent-decodes route params, so '..%2Fx' arrives as '../x'. Before
+  // router.param(), only the POST handler checked the shape: the anonymous GET
+  // was a filesystem existence oracle and the ADMIN DELETE could unlink any
+  // image on the box.
+  const traversals = ['..%2F..%2Fetc%2Fpasswd', '..%2Fdefault', '%2Fetc%2Fhosts', 'UPPER', 'has space'];
+
+  for (const slug of traversals) {
+    it(`GET rejects slug "${slug}"`, async () => {
+      const res = await request(app).get(`/api/themes/${slug}/logo`);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+    });
+
+    it(`DELETE rejects slug "${slug}"`, async () => {
+      const res = await request(app).delete(`/api/themes/${slug}/logo`).set('Cookie', admin);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+    });
+  }
+
+  it('a valid but unused slug still 404s (no information leak difference)', async () => {
+    const res = await request(app).get('/api/themes/no-such-theme/logo');
+    expect(res.status).toBe(404);
+  });
+
+  it('does not read a file outside the logo dir even if one exists there', async () => {
+    // Prove the traversal target really is present: without the guard, the
+    // handler would have found and streamed it.
+    const outside = path.join(path.dirname(LOGO_DIR), 'outside-logo.png');
+    fs.writeFileSync(outside, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    try {
+      const res = await request(app).get('/api/themes/..%2Foutside-logo/logo');
+      expect(res.status).toBe(400);
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
   });
 });

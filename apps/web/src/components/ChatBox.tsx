@@ -47,6 +47,9 @@ export function ChatBox({ sessionId, liveAt }: Props) {
   const [pickerForId, setPickerForId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  // Set when a send settles, consumed by the re-focus effect below.
+  const sendSettledRef = useRef(false);
   const messages = data ?? [];
 
   useEffect(() => {
@@ -65,6 +68,18 @@ export function ChatBox({ sessionId, liveAt }: Props) {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages.length, sessionId]);
+
+  // Put the caret back in the compose box once a send settles. The textarea is
+  // `disabled` while the POST is in flight, and disabling the focused element
+  // hands focus to <body> — so during a live net Enter-to-send worked for the
+  // first message and then silently stopped, and the operator had to click the
+  // box again for every subsequent line. Runs on failure too: the text is
+  // still there to retry.
+  useEffect(() => {
+    if (submitting || !sendSettledRef.current) return;
+    sendSettledRef.current = false;
+    composeRef.current?.focus();
+  }, [submitting]);
 
   // Identify where the backfill (other sessions, last 24h) ends and the
   // current session begins, so we can render a subtle divider between them.
@@ -94,6 +109,7 @@ export function ChatBox({ sessionId, liveAt }: Props) {
       if (e instanceof ApiErrorException) setErr(e.payload.message);
       else setErr('Failed to send');
     } finally {
+      sendSettledRef.current = true;
       setSubmitting(false);
     }
   }
@@ -297,6 +313,7 @@ export function ChatBox({ sessionId, liveAt }: Props) {
       </div>
       <div className="hna-chat__compose">
         <textarea
+          ref={composeRef}
           className="hna-input"
           rows={2}
           value={text}

@@ -117,7 +117,13 @@ export function ScriptLibraryPanel() {
         <div style={{ marginBottom: 12 }}>
           <Button onClick={startCreate}>New script</Button>
         </div>
-        {error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
+        {/* Load/delete failures leave the table looking merely empty, so this
+            must be announced and must not rely on red text alone. */}
+        {error && (
+          <div role="alert" className="hna-form-error">
+            {error}
+          </div>
+        )}
         {scripts === null && !error && <div style={{ fontSize: 13 }}>Loading…</div>}
         {scripts !== null && scripts.length === 0 && (
           <div style={{ fontSize: 13, opacity: 0.7, fontStyle: 'italic' }}>
@@ -174,11 +180,15 @@ export function ScriptLibraryPanel() {
           </div>
         )}
       </Card>
+      {/* Named from the in-body <h2> rather than Modal's `title` prop: passing
+          both rendered the same heading twice (header bar + body) and left
+          `dialogTitleId` referenced by nothing. This matches every other
+          dialog in the app. */}
       <Modal
         open={edit !== null}
         onClose={() => setEdit(null)}
         size="wide"
-        title={edit?.id ? 'Edit saved script' : 'New saved script'}
+        titleId={dialogTitleId}
       >
         {edit && (
           <div>
@@ -221,8 +231,13 @@ export function ScriptLibraryPanel() {
                 />
               </div>
             </div>
+            {/* Save failures sit below a long editor the user may have
+                scrolled past — announce them, and shape them so the failure is
+                not carried by colour alone. */}
             {saveError && (
-              <div style={{ color: 'var(--color-danger)', marginTop: 8 }}>{saveError}</div>
+              <div role="alert" className="hna-form-error" style={{ marginTop: 8 }}>
+                {saveError}
+              </div>
             )}
             <div className="hna-modal-actions">
               <Button onClick={() => void saveEdit()} disabled={saving}>

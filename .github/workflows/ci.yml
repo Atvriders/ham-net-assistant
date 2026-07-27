@@ -8,6 +8,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default. The docker job re-declares the one extra scope it
+# needs (packages: write), so a compromised action in the test job cannot
+# publish an image.
+permissions:
+  contents: read
+
+env:
+  # Not a secret: CI needs *a* valid signing key to boot the app, and env.ts
+  # rejects short or placeholder-looking values (the old
+  # `ci-secret-long-enough-for-validation` no longer passes). Generated with
+  # `openssl rand -hex 32`; never used by any deployment.
+  JWT_SECRET: da1ed84cbe380e8b2639006b5bdfcdce0ebc47754ca248e1277b16a8f8be4093
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -17,17 +30,36 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm install
+      # `npm ci`, not `npm install`: install quietly rewrites package-lock.json
+      # when a manifest has drifted, so CI could go green on a dependency tree
+      # that neither the Docker build nor another developer would ever resolve
+      # to. `ci` fails loudly instead — the point of committing a lockfile.
+      - run: npm ci
       - run: npm -w @hna/shared run build
       - run: npx -w @hna/api prisma generate
       - run: npm run typecheck
       - run: npx eslint . --max-warnings=0
+      # JWT_SECRET comes from the workflow-level env above.
       - run: npm test
-        env:
-          JWT_SECRET: ci-secret-long-enough-for-validation
       - run: npm run build
-        env:
-          JWT_SECRET: ci-secret-long-enough-for-validation
+
+      # Dependency vulnerabilities, deliberately split into a gate and a report.
+      #
+      # Gate: anything CRITICAL fails the build.
+      - name: Dependency audit (fails on critical)
+        run: npm audit --audit-level=critical
+
+      # Report: HIGH findings are printed but do not block. The tree currently
+      # carries HIGH advisories whose only fix is a breaking downgrade
+      # (react-router's RSC-mode CSRF advisory — this SPA does not use RSC
+      # mode; postcss and brace-expansion are build-time only). npm audit has
+      # no per-advisory ignore file, so a hard gate here would block every PR
+      # on something no PR can fix. Fold this into the gate above (and delete
+      # this step) once those advisories have non-breaking fixes — Dependabot
+      # opens the PR that makes it possible.
+      - name: Dependency audit (reports high)
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
   docker:
     runs-on: ubuntu-latest
@@ -45,12 +77,50 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Load the image into the local daemon first so the scan runs against the
+      # exact image the push step would publish. The push step below rebuilds
+      # from BuildKit's cache inside this same job, so this costs one build.
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          push: false
+          tags: ham-net-assistant:ci
+
+      # An image nobody scans is an image nobody patches, and this container is
+      # deployed once by a student club and then left running for semesters.
+      # `ignore-unfixed` keeps the gate actionable: it fails only on findings a
+      # newer base image or dependency would actually resolve. Waiving a
+      # specific CVE is a reviewed, documented edit to docker/.trivyignore
+      # (required justification + expiry format is in that file).
+      - name: Scan image for HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          # Trivy pulls its vulnerability DB from ghcr.io, which rate-limits
+          # anonymous pulls hard enough to flake the job. Use the workflow token.
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          image-ref: ham-net-assistant:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          trivyignores: docker/.trivyignore
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.server_url == 'https://github.com' }}
+          # Build provenance (SLSA attestation) so a club can verify the image
+          # on GHCR was built by this workflow from this commit, rather than
+          # pushed by hand from somebody's laptop.
+          provenance: true
           tags: |
             ghcr.io/atvriders/ham-net-assistant:latest
             ghcr.io/atvriders/ham-net-assistant:${{ github.sha }}

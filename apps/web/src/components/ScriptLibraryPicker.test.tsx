@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NetEditModal, netToInput } from './NetEditModal.js';
 import type { NetWithRepeater } from './NetEditModal.js';
+import { ScriptLibraryPicker } from './ScriptLibraryPicker.js';
 
 const repeaters = [
   { id: 'r1', name: 'R1', frequency: 146.76, offsetKhz: -600, mode: 'FM' },
@@ -189,5 +190,35 @@ describe('NetEditModal saved-script library', () => {
       /Saved as/,
     );
     promptSpy.mockRestore();
+  });
+});
+
+describe('ScriptLibraryPicker error reporting', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('announces a failed script load in an alert region', async () => {
+    // When /scripts fails the list simply renders as "no saved scripts match",
+    // which is indistinguishable from an empty library — the error line is the
+    // only signal, so it has to be announced and shaped, not just coloured.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'INTERNAL', message: 'Script library unavailable' },
+            }),
+            { status: 500, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+    render(
+      <ScriptLibraryPicker open onClose={() => {}} onPick={() => {}} />,
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Script library unavailable');
+    expect(alert).toHaveClass('hna-form-error');
   });
 });

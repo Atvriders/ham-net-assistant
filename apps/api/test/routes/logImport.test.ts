@@ -108,6 +108,61 @@ describe('POST /api/log-import/text', () => {
     expect(total).toBe(0);
   });
 
+  it('rolls the whole import back when a write fails partway through', async () => {
+    // A process death mid-import used to leave session #1 committed plus a
+    // half-written session #2. Because the dedupe rule is "a session already
+    // exists for this net on this date", every later re-run then SKIPPED the
+    // torn session — the missing check-ins could never be imported again.
+    // Fault-inject a failing checkIn.create inside the transaction to prove
+    // the run is now all-or-nothing.
+    const realTransaction = prisma.$transaction.bind(prisma);
+    let checkInWrites = 0;
+    vi.spyOn(prisma, '$transaction').mockImplementation((async (
+      fn: (tx: unknown) => Promise<unknown>,
+      opts: unknown,
+    ) =>
+      realTransaction(async (tx) => {
+        const faulty = new Proxy(tx, {
+          get(target, prop, receiver) {
+            if (prop === 'checkIn') {
+              return {
+                create: async (args: Parameters<typeof tx.checkIn.create>[0]) => {
+                  checkInWrites += 1;
+                  // Third check-in overall = first check-in of session #2.
+                  if (checkInWrites === 3) throw new Error('simulated crash mid-import');
+                  return tx.checkIn.create(args);
+                },
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        });
+        return fn(faulty);
+      }, opts as never)) as never);
+
+    const res = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text: SAMPLE, netId });
+    expect(res.status).toBe(500);
+    vi.restoreAllMocks();
+
+    expect(await prisma.netSession.count({ where: { netId } })).toBe(0);
+    expect(await prisma.checkIn.count()).toBe(0);
+
+    // The retry imports everything: no sticky torn state to skip over.
+    const retry = await request(app)
+      .post('/api/log-import/text')
+      .set('Cookie', admin)
+      .send({ text: SAMPLE, netId });
+    expect(retry.status).toBe(200);
+    expect(retry.body.created).toBe(2);
+    const sessions = await prisma.netSession.findMany({
+      where: { netId }, include: { checkIns: true },
+    });
+    expect(sessions.flatMap((s) => s.checkIns)).toHaveLength(4);
+  });
+
   it('returns 404 when netId not found', async () => {
     const res = await request(app)
       .post('/api/log-import/text')
@@ -167,6 +222,36 @@ describe('POST /api/log-import/url', () => {
       .set('Cookie', member)
       .send({ url: 'https://example.com/log.txt', netId });
     expect(res.status).toBe(403);
+  });
+
+  it('refuses a redirect into private address space', async () => {
+    mockDnsPublic();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+      }),
+    );
+    const res = await request(app)
+      .post('/api/log-import/url')
+      .set('Cookie', admin)
+      .send({ url: 'https://example.com/log.txt', netId });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to fetch when DNS resolution fails', async () => {
+    // The old guard swallowed lookup errors into an empty address list, which
+    // then passed the "no private addresses here" loop and fetched anyway.
+    vi.spyOn(dns, 'lookup').mockRejectedValue(new Error('ENOTFOUND'));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const res = await request(app)
+      .post('/api/log-import/url')
+      .set('Cookie', admin)
+      .send({ url: 'https://broken.example/log.txt', netId });
+    expect(res.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

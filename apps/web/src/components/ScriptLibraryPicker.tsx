@@ -107,8 +107,12 @@ export function ScriptLibraryPicker({ open, onClose, onPick, preferredCategory }
           />
         </div>
 
+        {/* The list simply stays empty when the fetch fails, so the error has
+            to announce itself and be legible without colour. */}
         {error && (
-          <div style={{ color: 'var(--color-danger)', marginBottom: 8 }}>{error}</div>
+          <div role="alert" className="hna-form-error">
+            {error}
+          </div>
         )}
 
         {scripts === null && !error && <div style={{ fontSize: 13 }}>Loading…</div>}

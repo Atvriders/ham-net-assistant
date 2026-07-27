@@ -6,6 +6,11 @@ export const ErrorCode = z.enum([
   'NOT_FOUND',
   'VALIDATION',
   'CONFLICT',
+  // Distinct from FORBIDDEN so the client can tell "you may not do this" from
+  // "you did this too fast" — the first is permanent and the second resolves
+  // by waiting, and telling an operator the wrong one mid-net is worse than
+  // saying nothing.
+  'RATE_LIMITED',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

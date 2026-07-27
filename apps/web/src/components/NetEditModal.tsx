@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import type { Net, NetInput, NetScript, Repeater, ScriptCategory } from '@hna/shared';
 import { DEFAULT_REMINDER_MINUTES } from '@hna/shared';
 import { apiFetch, ApiErrorException } from '../api/client.js';
@@ -61,6 +61,51 @@ export const emptyNetInput: NetInput = {
   active: true,
   linkedRepeaterIds: [],
 };
+
+/**
+ * Zones offered when the browser cannot enumerate the IANA database itself.
+ * Deliberately short and US-college-club shaped — it only has to keep the
+ * control usable on an old engine, not mirror tzdata.
+ */
+const FALLBACK_TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'America/Puerto_Rico',
+  'Europe/London',
+];
+
+/**
+ * Selectable IANA zone identifiers.
+ *
+ * This used to be a free-text box, which is how values like "CDT" reached the
+ * server: `Intl.DateTimeFormat` throws on them, so every scheduling
+ * calculation for that net (next occurrence, Discord reminders, the
+ * five-minute announcement) failed permanently and could only be repaired by
+ * editing the row. Constraining the control to real identifiers makes that
+ * class of typo unrepresentable. Computed once at module load — the list is
+ * ~400 entries and never changes.
+ */
+const IANA_TIMEZONES: string[] = (() => {
+  try {
+    if (typeof Intl.supportedValuesOf === 'function') {
+      const zones = Intl.supportedValuesOf('timeZone');
+      if (zones.length > 0) {
+        // Some engines omit plain "UTC" from the enumeration even though they
+        // accept it, and existing nets are stored with it.
+        return zones.includes('UTC') ? [...zones] : ['UTC', ...zones];
+      }
+    }
+  } catch {
+    /* engines predating the 'timeZone' key throw RangeError */
+  }
+  return FALLBACK_TIMEZONES;
+})();
 
 // Common preset reminder lead times offered as one-click chips.
 const REMINDER_PRESETS: { label: string; minutes: number }[] = [
@@ -288,6 +333,14 @@ export function NetEditModal({
   }
 
   const dialogTitle = netId ? 'Edit net' : 'New net';
+  // A net saved before the picker existed may carry a zone this engine's
+  // tzdata does not list. Keep it in the options so merely opening the editor
+  // cannot silently rewrite an existing net's schedule.
+  const timezoneOptions = useMemo(() => {
+    const current = data.timezone;
+    if (!current || IANA_TIMEZONES.includes(current)) return IANA_TIMEZONES;
+    return [current, ...IANA_TIMEZONES];
+  }, [data.timezone]);
   const isWeekly = (data.kind ?? 'weekly') === 'weekly';
   // The internal hh:mm pieces, with a sentinel when startLocal is empty so the
   // selects can render a "PICK" placeholder option that fails validation.
@@ -645,8 +698,9 @@ export function NetEditModal({
                     *
                   </span>
                 </label>
-                <Input
+                <select
                   id={timezoneId}
+                  className="hna-input"
                   value={data.timezone ?? ''}
                   aria-required="true"
                   aria-invalid={errors.timezone ? true : undefined}
@@ -656,7 +710,18 @@ export function NetEditModal({
                   onChange={(e) =>
                     setData({ ...data, timezone: e.target.value })
                   }
-                />
+                >
+                  {!data.timezone && (
+                    <option value="" disabled>
+                      — PICK ZONE —
+                    </option>
+                  )}
+                  {timezoneOptions.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
+                </select>
                 {errors.timezone && (
                   <p id={`${timezoneId}-err`} className="hna-input-error">
                     {errors.timezone}

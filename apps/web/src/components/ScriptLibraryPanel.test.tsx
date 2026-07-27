@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ScriptLibraryPanel } from './ScriptLibraryPanel.js';
 import { AuthProvider } from '../auth/AuthProvider.js';
 
@@ -92,5 +93,47 @@ describe('ScriptLibraryPanel', () => {
     });
     expect(screen.queryByText('Script library')).toBeNull();
     expect(screen.queryByText('Opening')).toBeNull();
+  });
+});
+
+describe('ScriptLibraryPanel error reporting', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('announces a rejected save in an alert region', async () => {
+    // The save error sits under a tall script editor the officer has usually
+    // scrolled past, so it must announce itself instead of quietly turning red.
+    vi.stubGlobal('fetch', makeFetch(officer));
+    render(
+      <AuthProvider>
+        <ScriptLibraryPanel />
+      </AuthProvider>,
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'New script' }),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Title is required.');
+    expect(alert).toHaveClass('hna-form-error');
+  });
+
+  it('names the editor dialog once, from its in-body heading', async () => {
+    vi.stubGlobal('fetch', makeFetch(officer));
+    render(
+      <AuthProvider>
+        <ScriptLibraryPanel />
+      </AuthProvider>,
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'New script' }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'New saved script' }),
+    ).toBeInTheDocument();
+    // Exactly one visible heading — the header bar must not repeat it.
+    expect(screen.getAllByText('New saved script')).toHaveLength(1);
   });
 });

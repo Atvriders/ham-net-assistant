@@ -115,7 +115,7 @@ describe('admin trash', () => {
     const s = await request(app).post(`/api/nets/${netId}/sessions`).set('Cookie', admin);
     await request(app).delete(`/api/sessions/${s.body.id}`).set('Cookie', admin);
 
-    const g = await request(app).get(`/api/sessions/${s.body.id}`);
+    const g = await request(app).get(`/api/sessions/${s.body.id}`).set('Cookie', admin);
     expect(g.status).toBe(404);
 
     const stats = await request(app).get('/api/stats/participation').set('Cookie', admin);

@@ -123,8 +123,31 @@ describe('handleInboundDiscordMessage', () => {
     expect(rows[0].body.length).toBe(500);
   });
 
-  // Reference unused id to avoid TS warning when type-checking standalone
-  it('repeater id is set up', () => {
-    expect(repeaterId).toBeTruthy();
+  it('mirrors into the most recently started open session', async () => {
+    // The bridge files inbound Discord chatter against `orderBy startedAt
+    // desc` — so when an older session was left open (a net nobody ended)
+    // and a newer net is actually on the air, the traffic lands on the net
+    // that is running, not on the stale one.
+    const secondNet = await prisma.net.create({
+      data: {
+        name: 'Second Net',
+        repeaterId,
+        dayOfWeek: 4,
+        startLocal: '21:00',
+        timezone: 'America/Chicago',
+      },
+    });
+    const newer = await prisma.netSession.create({
+      data: { netId: secondNet.id, startedAt: new Date(Date.now() + 60_000) },
+    });
+
+    const m = makeMessage({ id: 'discord-msg-newest' });
+    await handleInboundDiscordMessage(prisma, 'channel-1', m as never);
+
+    const rows = await prisma.sessionMessage.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sessionId).toBe(newer.id);
+    const relays = await prisma.discordRelay.findMany();
+    expect(relays[0].sessionMessageId).toBe(rows[0].id);
   });
 });

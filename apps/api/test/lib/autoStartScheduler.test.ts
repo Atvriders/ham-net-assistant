@@ -119,12 +119,73 @@ describe('autoStartScheduler', () => {
     expect(s!.liveAt).not.toBeNull();
     expect(s!.endedAt).toBeNull();
 
-    // The 🟢 "now live" announcement goes through the shared startSession
-    // core — exactly like a manual START press.
+    // The announcement goes through the shared startSession core — exactly
+    // like a manual START press.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(discordMock.mock.calls.length).toBe(1);
+  });
+
+  it('a control-less scheduler start is NOT announced as "now live"', async () => {
+    // Nobody claimed the session and no human pressed START: telling the club
+    // the net is live means members key up to silence. The ping still goes
+    // out — reworded — so an officer can still step in and take control.
+    const netId = await netStartingAt(-5);
+    await prepSession(netId, { controlOpId: null });
+
+    expect(await autoStartTick(prisma, NOW)).toBe(1);
+
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(discordMock.mock.calls.length).toBe(1);
     const content = String(discordMock.mock.calls[0]![1] ?? '');
-    expect(content).toContain('live');
+    expect(content).not.toContain('is now live');
+    expect(content).toContain('scheduled to start now');
+    expect(content).toContain('no net control has taken the mic yet');
+  });
+
+  it('a scheduler start WITH a control op still announces "now live"', async () => {
+    // Someone opened the console and took control during PREP — the net does
+    // have a human at the mic, so the normal 🟢 wording is honest.
+    const netId = await netStartingAt(-5);
+    await prepSession(netId, { controlOpId: officerId });
+
+    expect(await autoStartTick(prisma, NOW)).toBe(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(discordMock.mock.calls.length).toBe(1);
+    const content = String(discordMock.mock.calls[0]![1] ?? '');
+    expect(content).toContain('is now live');
+    expect(content).not.toContain('scheduled to start now');
+  });
+
+  it('a net with an Intl-invalid timezone does not stop other nets from starting', async () => {
+    // "CDT" makes Intl.DateTimeFormat throw. That RangeError used to escape
+    // the per-session loop, so ONE bad row permanently stopped auto-start for
+    // every net. The bad session is created first so it is reached first.
+    const badNet = await prisma.net.create({
+      data: {
+        name: 'Bad TZ Net', kind: 'weekly', repeaterId,
+        dayOfWeek: 1, startLocal: '11:55', timezone: 'CDT', active: true,
+        reminderMinutes: null,
+      },
+    });
+    const badSession = await prepSession(badNet.id);
+    const goodNet = await netStartingAt(-5);
+    const goodSession = await prepSession(goodNet);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await autoStartTick(prisma, NOW)).toBe(1);
+      const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain(badSession);
+      expect(logged).toContain('CDT');
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect((await prisma.netSession.findUnique({ where: { id: goodSession } }))!.liveAt)
+      .not.toBeNull();
+    expect((await prisma.netSession.findUnique({ where: { id: badSession } }))!.liveAt)
+      .toBeNull();
   });
 
   it('does NOT start before the scheduled start time', async () => {

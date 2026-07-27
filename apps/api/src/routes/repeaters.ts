@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { Callsign, RepeaterInput } from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
@@ -269,6 +269,16 @@ async function fetchHearhamNearby(
 
 export type RepeaterSuggestionSource = 'ard' | 'hearham' | 'none';
 
+/** True for the Prisma "record required but not found" error (P2025). */
+function isRecordNotFound(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025';
+}
+
+/** "3 nets" / "1 net" / "0 nets" — for the dependent-count refusal message. */
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 export function repeatersRouter(prisma: PrismaClient): Router {
   const router = Router();
 
@@ -386,18 +396,67 @@ export function repeatersRouter(prisma: PrismaClient): Router {
         },
       });
       res.json(updated);
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Repeater not found');
+    } catch (e) {
+      if (isRecordNotFound(e)) throw new HttpError(404, 'NOT_FOUND', 'Repeater not found');
+      throw e;
     }
   }));
 
+  // DELETE /api/repeaters/:id
+  //
+  // Every FK from Repeater downward is ON DELETE CASCADE
+  // (Repeater → Net → NetSession → CheckIn / SessionMessage), so a plain
+  // delete here silently destroyed the club's entire history for that
+  // repeater: every net, every session, every check-in and every chat message,
+  // with nothing written to `deletedAt` and therefore nothing in the 30-day
+  // trash to restore from. One mis-click on the Repeaters page was
+  // unrecoverable. Refuse while anything still hangs off the repeater and tell
+  // the officer exactly what the delete would have taken with it.
   router.delete('/:id', requireRole('OFFICER'), asyncHandler(async (req, res) => {
-    try {
-      await prisma.repeater.delete({ where: { id: req.params.id } });
-      res.status(204).end();
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Repeater not found');
+    const repeaterId = req.params.id;
+    const existing = await prisma.repeater.findUnique({
+      where: { id: repeaterId },
+      select: { id: true, name: true },
+    });
+    if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Repeater not found');
+
+    const [nets, linkedNets, sessions, checkIns] = await Promise.all([
+      prisma.net.count({ where: { repeaterId } }),
+      prisma.netLink.count({ where: { repeaterId } }),
+      prisma.netSession.count({ where: { net: { repeaterId } } }),
+      prisma.checkIn.count({ where: { session: { net: { repeaterId } } } }),
+    ]);
+
+    if (nets > 0 || linkedNets > 0) {
+      // Name the damage precisely: primary use destroys history, a link only
+      // disappears. An officer needs to know which one they are looking at.
+      const reasons: string[] = [];
+      if (nets > 0) {
+        reasons.push(
+          `it would permanently destroy ${plural(nets, 'net')}, `
+            + `${plural(sessions, 'session')} and ${plural(checkIns, 'check-in')}`,
+        );
+      }
+      if (linkedNets > 0) {
+        reasons.push(`it is linked into ${plural(linkedNets, 'net')}`);
+      }
+      // The guard above counts EVERY net pointing at this repeater, active or
+      // not, so "deactivate the net" does not clear it — only re-pointing the
+      // net at another repeater (or deleting the net / removing the link) does.
+      // Say that explicitly: guidance that doesn't unblock the operator sends
+      // them round the loop a second time.
+      throw new HttpError(
+        409,
+        'CONFLICT',
+        `Cannot delete "${existing.name}": ${reasons.join('; ')}. Point those nets `
+          + 'at another repeater first (or delete the net / remove the link) — '
+          + 'deactivating a net does not release its repeater, and a cascade '
+          + 'delete never reaches the trash and cannot be undone.',
+      );
     }
+
+    await prisma.repeater.delete({ where: { id: repeaterId } });
+    res.status(204).end();
   }));
 
   return router;

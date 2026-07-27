@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   NetInput,
   NetUpdate,
@@ -66,6 +66,25 @@ async function assertRepeatersExist(prisma: PrismaClient, ids: string[]): Promis
   if (found.length !== ids.length) {
     throw new HttpError(400, 'VALIDATION', 'Unknown repeater in linkedRepeaterIds');
   }
+}
+
+/**
+ * Validate the net's PRIMARY repeaterId. Only the linked ids used to be
+ * checked, so a bad primary fell through to Prisma: create blew up as a 500
+ * INTERNAL, and update surfaced as "Net not found" — a 404 about the wrong
+ * object, for a net that plainly exists. Officers hit this whenever a repeater
+ * was deleted in another tab.
+ */
+async function assertPrimaryRepeaterExists(prisma: PrismaClient, id: string): Promise<void> {
+  const found = await prisma.repeater.findUnique({ where: { id }, select: { id: true } });
+  if (!found) {
+    throw new HttpError(400, 'VALIDATION', `Unknown repeater: ${id}`);
+  }
+}
+
+/** True for the Prisma "record required but not found" error (P2025). */
+function isRecordNotFound(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025';
 }
 
 /**
@@ -149,6 +168,7 @@ export function netsRouter(prisma: PrismaClient): Router {
   router.post('/', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof NetInput>;
     const linkIds = normalizeLinkedIds(body.linkedRepeaterIds, body.repeaterId);
+    await assertPrimaryRepeaterExists(prisma, body.repeaterId);
     await assertRepeatersExist(prisma, linkIds);
     const sched = schedulingFields(body);
     const created = await prisma.$transaction(async (tx) => {
@@ -186,6 +206,9 @@ export function netsRouter(prisma: PrismaClient): Router {
     const linkIds = touchLinks
       ? normalizeLinkedIds(body.linkedRepeaterIds, primaryRepeaterId)
       : [];
+    if (body.repeaterId !== undefined) {
+      await assertPrimaryRepeaterExists(prisma, body.repeaterId);
+    }
     if (touchLinks) await assertRepeatersExist(prisma, linkIds);
     try {
       const updated = await prisma.$transaction(async (tx) => {
@@ -220,8 +243,13 @@ export function netsRouter(prisma: PrismaClient): Router {
         return tx.net.findUniqueOrThrow({ where: { id: netId }, include: netInclude });
       });
       res.json(hydrateReminderMinutes(updated));
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Net not found');
+    } catch (e) {
+      // Only a genuinely missing row becomes a 404. The blanket catch that
+      // used to live here reported every failure in this transaction — a bad
+      // FK, a constraint violation, a dropped DB connection — as "Net not
+      // found", which sent officers hunting for a net that was right there.
+      if (isRecordNotFound(e)) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
+      throw e;
     }
   }));
 
@@ -229,8 +257,9 @@ export function netsRouter(prisma: PrismaClient): Router {
     try {
       await prisma.net.delete({ where: { id: req.params.id } });
       res.status(204).end();
-    } catch {
-      throw new HttpError(404, 'NOT_FOUND', 'Net not found');
+    } catch (e) {
+      if (isRecordNotFound(e)) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
+      throw e;
     }
   }));
 

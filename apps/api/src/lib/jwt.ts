@@ -7,11 +7,23 @@ export interface JwtClaims {
   role: Role;
 }
 
-const DAYS = 60 * 60 * 24;
+const HOURS = 60 * 60;
+
+/**
+ * Session lifetime, in seconds.
+ *
+ * 12h rather than the original 7 days: the cookie is the whole credential, so
+ * a copy taken off a shared club laptop is a valid login for exactly this
+ * long. Role changes and deletions no longer wait for expiry (`loadUser` reads
+ * the user row on every request), but nothing can revoke a *stolen* cookie
+ * without a schema change — bounding it is the mitigation. 12h also covers a
+ * full net night without a mid-net re-login.
+ */
+export const TOKEN_TTL_SECONDS = 12 * HOURS;
 
 export function signToken(claims: JwtClaims): string {
   return jwt.sign(claims, env.JWT_SECRET, {
-    expiresIn: 7 * DAYS,
+    expiresIn: TOKEN_TTL_SECONDS,
     algorithm: 'HS256',
   });
 }
@@ -29,6 +41,8 @@ export const COOKIE_OPTS = {
   httpOnly: true,
   sameSite: 'lax' as const,
   secure: env.NODE_ENV === 'production',
-  maxAge: 7 * DAYS * 1000,
+  // Kept in lockstep with the token's own exp: a cookie that outlives its JWT
+  // just produces silent 401s on every request until the user clears it.
+  maxAge: TOKEN_TTL_SECONDS * 1000,
   path: '/',
 };
