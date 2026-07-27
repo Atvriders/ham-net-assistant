@@ -13,4 +13,29 @@
 # Format is one CVE id per line, optionally with an expiry:
 #   CVE-2024-12345 exp:2026-12-31
 #
-# Empty on purpose: nothing is currently waived.
+# ---------------------------------------------------------------------------
+# npm's own bundled dependencies, shipped inside node:24-bookworm-slim at
+# /usr/local/lib/node_modules/npm/node_modules/. NOT application dependencies:
+# the scan reports 0 vulnerabilities for every path under /app and 0 for the
+# Debian package set — these five are entirely the base image's npm CLI.
+#
+# Why they do not apply here: all five are denial-of-service vectors that
+# require feeding hostile input to npm (a crafted gzip/tar archive, a crafted
+# brace pattern, an attacker-controlled HTTP response). Nothing in the running
+# container executes npm at all — the CMD invokes the Prisma CLI through node
+# directly and the app never shells out to a package manager. Reaching these
+# code paths would require an attacker who can already run commands in the
+# container, at which point the CVE is irrelevant.
+#
+# Why the fix cannot be taken yet: "fixed" here means the upstream library has
+# a patched release, not that npm has shipped a build bundling it. Upgrading
+# npm inside the image would only trade these for whatever the next npm
+# bundles. The real fix is a newer node base image; re-check at expiry.
+#
+# exp: 2026-10-31 — re-verify against the then-current node:24-bookworm-slim
+# and delete any entry the base image has resolved.
+CVE-2026-59873 exp:2026-10-31
+CVE-2026-59874 exp:2026-10-31
+CVE-2026-13149 exp:2026-10-31
+CVE-2026-14257 exp:2026-10-31
+CVE-2026-12151 exp:2026-10-31

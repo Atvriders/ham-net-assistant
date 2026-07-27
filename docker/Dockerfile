@@ -109,4 +109,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "require('http').get('http://127.0.0.1:3000/api/themes/default',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" || exit 1
 
 ENTRYPOINT ["/usr/local/bin/hna-entrypoint.sh"]
-CMD ["sh","-c","npx -w @hna/api prisma migrate deploy && exec node apps/api/dist/index.js"]
+# Invoke the Prisma CLI through node directly rather than `npx`: npx is npm,
+# and npm's bundled dependencies are the only vulnerable component the image
+# scan finds (see docker/.trivyignore). Keeping npm off the boot path means
+# nothing in the running container executes it, and startup no longer depends
+# on npx's resolution behavior. The fallback covers both possible layouts —
+# npm hoists `prisma` to /app/node_modules for this workspace, but a future
+# version conflict could nest it under apps/api — and an explicit failure here
+# is far better than a silently unmigrated database.
+CMD ["sh","-c","P=node_modules/prisma/build/index.js; [ -f \"$P\" ] || P=apps/api/node_modules/prisma/build/index.js; [ -f \"$P\" ] || { echo 'FATAL: prisma CLI not found in image' >&2; exit 1; }; node \"$P\" migrate deploy --schema apps/api/prisma/schema.prisma && exec node apps/api/dist/index.js"]
