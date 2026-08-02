@@ -67,6 +67,9 @@ interface RecommendedTopic {
   recommended?: boolean;
 }
 
+/** How long the green "NET IS LIVE" confirmation stays on screen, in ms. */
+const NET_STARTED_MS = 6_000;
+
 const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
   weekly: 'Weekly',
   general: 'General',
@@ -230,6 +233,26 @@ export function RunNetPage() {
   useStickyChromeVars(statusEl);
   const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
+  // One green blink at the PREP -> LIVE moment. Only a transition observed
+  // while this console is open counts: the ref starts null, so opening a
+  // session that is ALREADY live records the state without announcing it.
+  const [justWentLive, setJustWentLive] = useState(false);
+  const prevIsLiveRef = useRef<boolean | null>(null);
+  const isLive = session ? session.liveAt != null : null;
+  useEffect(() => {
+    if (isLive === null) return;
+    const prev = prevIsLiveRef.current;
+    prevIsLiveRef.current = isLive;
+    if (prev === false && isLive) setJustWentLive(true);
+  }, [isLive]);
+  useEffect(() => {
+    if (!justWentLive) return;
+    // Long enough to be read (the blink itself is 1.2s), short enough that it
+    // doesn't become another permanent bar — the LIVE chip in the status strip
+    // is what carries the state from here on.
+    const id = window.setTimeout(() => setJustWentLive(false), NET_STARTED_MS);
+    return () => window.clearTimeout(id);
+  }, [justWentLive]);
   const nameRef = useRef<string>('');
   useEffect(() => {
     nameRef.current = name;
@@ -914,6 +937,14 @@ export function RunNetPage() {
        * session goes LIVE (so the 1s tick never runs while LIVE); the
        * component renders nothing for impromptu nets. */}
       {isPrep && <FiveMinuteAnnouncement net={net} onStartDue={refresh} />}
+
+      {/* The countdown strip's slot, reused for the moment it was counting
+          down to: one green blink confirming the net is on the air. */}
+      {!isPrep && justWentLive && (
+        <div className="hna-netstarted hna-mono" role="status" data-testid="net-started-flash">
+          {'// NET IS LIVE'}
+        </div>
+      )}
 
       {/* ===== Rack =====
        *

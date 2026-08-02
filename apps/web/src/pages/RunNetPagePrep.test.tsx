@@ -615,4 +615,31 @@ describe('RunNetPage auto-start countdown strip', () => {
     });
     expect(screen.queryByTestId('prep-countdown')).not.toBeInTheDocument();
   });
+  /**
+   * The green confirmation is tied to the TRANSITION, not to the live state:
+   * an operator who opens a console on an already-running net gets no blink,
+   * because nothing just happened from their point of view.
+   */
+  it('blinks the green NET IS LIVE confirmation when the net starts', async () => {
+    const { fn } = makeMockFetch({ role: 'OFFICER', live: false });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    const startBtn = await screen.findByTestId('start-net-button');
+    expect(screen.queryByTestId('net-started-flash')).not.toBeInTheDocument();
+    await userEvent.click(startBtn);
+    expect(await screen.findByTestId('net-started-flash')).toHaveTextContent(
+      /NET IS LIVE/i,
+    );
+  });
+
+  it('shows no NET IS LIVE flash when opening a session that was already live', async () => {
+    const { fn } = makeMockFetch({ role: 'OFFICER', live: true });
+    vi.stubGlobal('fetch', fn);
+    renderPage();
+    // Wait until the live console is fully rendered before asserting absence.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Elapsed time')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('net-started-flash')).not.toBeInTheDocument();
+  });
 });

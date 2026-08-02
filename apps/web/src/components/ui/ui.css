@@ -1490,7 +1490,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   /* The strip carries the live MM:SS auto-start countdown — tabular digits
    * keep it from wiggling as it ticks. */
   font-variant-numeric: tabular-nums;
-  animation: hna-fivemin-flash 1200ms linear infinite;
+  /* Five blinks, then hold — NOT infinite. A bar that never stops blinking
+   * for the whole five-minute window sits in the operator's peripheral vision
+   * while they are reading the script, and stops being a signal once it is
+   * permanent. `forwards` parks it on the animation's solid high-contrast
+   * frame, so the announcement stays prominent (and identical to what
+   * reduced-motion users see) without any further motion. */
+  animation: hna-fivemin-flash 1200ms linear 5 forwards;
 }
 @keyframes hna-fivemin-flash {
   0%, 49% {
@@ -1500,6 +1506,38 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   50%, 100% {
     background: var(--color-warn, #d49016);
     color: var(--color-bg);
+  }
+}
+
+/* ------------------------------------------------------------------
+ * "NET IS LIVE" confirmation — one green blink at the moment the session
+ * goes LIVE, shown in the slot the countdown strip just vacated so the
+ * operator's eye is already there. Deliberately a SINGLE blink and then
+ * gone (RunNetPage unmounts it on a timer): the transition is the event
+ * worth signalling, and the permanently-visible LIVE chip in the status
+ * strip is what carries the state afterwards.
+ * ------------------------------------------------------------------ */
+.hna-netstarted {
+  margin: var(--space-4) 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  border: var(--border-w-strong) solid var(--color-success);
+  border-radius: var(--radius-sm);
+  animation: hna-netstarted-flash 1200ms linear 1 forwards;
+}
+@keyframes hna-netstarted-flash {
+  0%, 49% {
+    background: var(--color-success);
+    color: var(--color-bg);
+  }
+  50%, 100% {
+    background: color-mix(in srgb, var(--color-success) 14%, transparent);
+    color: var(--color-success);
   }
 }
 
@@ -2445,6 +2483,13 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   .hna-fivemin {
     animation: none !important;
     background: var(--color-warn, #d49016);
+    color: var(--color-bg);
+  }
+  /* Same for the net-started confirmation: no blink, just the solid green
+   * bar for the few seconds it is on screen. */
+  .hna-netstarted {
+    animation: none !important;
+    background: var(--color-success);
     color: var(--color-bg);
   }
   .hna-btn::after { transition: none !important; }
