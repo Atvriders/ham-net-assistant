@@ -33,14 +33,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.64.0",
-    "@typescript-eslint/parser": "^8.64.0",
-    "eslint": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.0.0",
-    "prettier": "^3.9.5",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
     "typescript": "^5.4.5",
-    "typescript-eslint": "^8.64.0"
+    "typescript-eslint": "^8.66.0"
   }
 }
