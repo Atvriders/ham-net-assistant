@@ -658,6 +658,12 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   grid-template-columns: 1fr;
   gap: var(--space-4);
 }
+/* The UA stylesheet's `[hidden] { display: none }` is a type-less rule, so any
+ * class that sets `display` (`.hna-field` immediately below, among others)
+ * silently defeats it. The run-net dock collapses fields with the `hidden`
+ * attribute — it must remove them from the page, not just from the tab order. */
+[hidden] { display: none !important; }
+
 .hna-field { display: grid; gap: var(--space-2); }
 .hna-field > label {
   font-family: var(--font-mono);
@@ -1765,26 +1771,171 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   flex-wrap: wrap;
 }
 
-/* Sticky check-in form on mobile so officers can add a check-in
- * with one thumb. Stacks above the roster list on small screens.
- * Stops at 1023px — 1024px is where the desktop console layout (and its
- * top-sticky form) begins, and overlapping the two pinned the form to the
- * top AND the bottom of the viewport at exactly that width. */
+/* ------------------------------------------------------------------
+ * OPERATOR DOCK (< 1024px)
+ *
+ * The check-in entry was `position: sticky` inside the roster card, which
+ * meant it existed only while the roster happened to be on screen — scroll up
+ * to read the script mid-net and the way to log a check-in was gone. On a
+ * phone that is the whole job: read the script aloud, log stations as they
+ * call, without either one displacing the other.
+ *
+ * So on narrow screens it leaves the card and pins to the viewport: the
+ * script scrolls behind it like paper on a desk while the entry stays under
+ * the operator's thumb. Collapsed it is one row — callsign plus Add — because
+ * the name auto-fills from the directory in the common case; [ MORE ] reveals
+ * name, mode and comment. The page reserves --runnet-dock-h at the bottom
+ * (measured, see useStickyChromeVars) so the last log rows can still be
+ * scrolled clear of it.
+ * ------------------------------------------------------------------ */
 @media (max-width: 1023px) {
-  .hna-checkin-form {
-    position: sticky;
+  .hna-checkin-form--dock {
+    position: fixed;
+    left: 0;
+    right: 0;
     bottom: 0;
-    z-index: 4;
+    z-index: 20;
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    /* Clear of the iPhone home indicator, and of nothing at all elsewhere. */
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     background: var(--color-surface);
-    border-top: var(--border-w) solid var(--color-border);
-    padding-top: var(--space-3);
-    margin-left: calc(-1 * var(--space-5));
-    margin-right: calc(-1 * var(--space-5));
-    margin-bottom: 0;
-    padding-left: var(--space-5);
-    padding-right: var(--space-5);
+    border-top: var(--border-w-strong) solid var(--color-border-strong);
+    /* Lifts the dock off the log rows sliding underneath it. */
+    box-shadow: 0 -10px 24px -12px rgba(0, 0, 0, 0.55);
+    gap: var(--space-2);
+    /* An expanded dock on a short phone in landscape must not become taller
+     * than the screen — its own contents scroll instead. */
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  /* Collapsed: callsign takes the full width the name field is not using. */
+  .hna-checkin-form--dock:not(.is-open) .hna-checkin-form__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Add + MORE sit on one line with the entry, not stacked under it. */
+  .hna-checkin-form--dock .hna-checkin-form__actions {
+    align-items: center;
+  }
+  .hna-checkin-form--dock:not(.is-open) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* The resolved name gets its OWN row rather than sharing `entry`: placing
+     * both in one area stacked it on top of the CALLSIGN label. When no name
+     * has resolved the row has no items and collapses to zero height, so the
+     * dock is one line until there is something to confirm. */
+    grid-template-areas:
+      'recent   recent'
+      'entry    actions'
+      'resolved actions';
+    align-items: end;
+    column-gap: var(--space-2);
+    row-gap: 2px;
+  }
+  .hna-checkin-form--dock:not(.is-open) .hna-recent { grid-area: recent; }
+  .hna-checkin-form--dock:not(.is-open) .hna-checkin-form__row { grid-area: entry; }
+  .hna-checkin-form--dock:not(.is-open) .hna-checkin-form__actions {
+    grid-area: actions;
+    align-self: end;
+  }
+  .hna-checkin-form--dock:not(.is-open) .hna-checkin-form__resolved {
+    grid-area: resolved;
+    align-self: start;
+  }
+
+  /* Reserve the dock's real height so the tail of the log is reachable —
+   * only while a dock is actually pinned. During PREP the entry stays in the
+   * normal flow, and reserving space for a bar that is not there would leave
+   * a dead strip under the page. */
+  .hna-runnet-page:has(.hna-checkin-form--dock) {
+    padding-bottom: calc(var(--runnet-dock-h, 108px) + var(--space-4));
   }
 }
+
+/* Resolved-name confirmation under the collapsed callsign field. */
+.hna-checkin-form__resolved {
+  margin: 2px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* [ MORE ] / [ LESS ] — reveals name, mode and comment in the dock. */
+.hna-checkin-form__toggle {
+  background: transparent;
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 8px 10px;
+  /* 44px is the smallest target a thumb hits reliably while holding a mic. */
+  min-height: 44px;
+  cursor: pointer;
+}
+.hna-checkin-form__toggle:hover,
+.hna-checkin-form__toggle[aria-expanded='true'] {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* ------------------------------------------------------------------
+ * RECENT rail — this net's regulars, one row, tap to fill.
+ * Scrolls sideways and never wraps: vertical space in the dock belongs to
+ * the script behind it.
+ * ------------------------------------------------------------------ */
+.hna-recent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.hna-recent__label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--color-fg-subtle);
+  flex: 0 0 auto;
+}
+.hna-recent__rail {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+}
+.hna-recent__rail::-webkit-scrollbar { display: none; }
+/* Fade the trailing edge so a chip clipped by the viewport reads as "there is
+ * more, swipe" instead of as a broken layout. Purely an affordance — the rail
+ * scrolls with or without it. */
+.hna-recent__rail {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+}
+.hna-recent__chip {
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  padding: 7px 10px;
+  min-height: 36px;
+  cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.hna-recent__chip:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.hna-recent__chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .hna-roster {
   list-style: none;

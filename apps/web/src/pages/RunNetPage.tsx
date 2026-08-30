@@ -31,6 +31,9 @@ import { ChatBox } from '../components/ChatBox.js';
 import { FiveMinuteAnnouncement } from '../components/FiveMinuteAnnouncement.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 import { NetEditModal, netToInput } from '../components/NetEditModal.js';
+import { RecentCallsigns, type RecentCallsign } from '../components/RecentCallsigns.js';
+import { RepeaterFacts } from '../components/RepeaterFacts.js';
+import { useMediaQuery } from '../lib/useMediaQuery.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -96,13 +99,22 @@ function topicErrorMessage(e: unknown): string {
  * tracks wrapping, viewport resize and theme swaps (a theme changes the nav's
  * fonts and therefore its height) instead of guessing.
  */
-function useStickyChromeVars(statusEl: HTMLElement | null) {
+function useStickyChromeVars(
+  statusEl: HTMLElement | null,
+  dockEl: HTMLElement | null,
+) {
   useEffect(() => {
     const root = document.documentElement;
     const nav = document.querySelector<HTMLElement>('.hna-shell__nav');
     const targets: Array<[HTMLElement, string]> = [];
     if (nav) targets.push([nav, '--nav-h']);
     if (statusEl) targets.push([statusEl, '--runnet-status-h']);
+    // The phone dock is fixed to the bottom of the viewport, so the page has
+    // to reserve exactly its height or the last rows of the log sit
+    // permanently underneath it — unreachable, because scrolling further just
+    // moves the dock with the viewport. Measured rather than guessed: the
+    // dock grows when it expands and when a wrapped error appears.
+    if (dockEl) targets.push([dockEl, '--runnet-dock-h']);
     if (targets.length === 0) return;
 
     const apply = () => {
@@ -136,7 +148,7 @@ function useStickyChromeVars(statusEl: HTMLElement | null) {
       ro.disconnect();
       clear();
     };
-  }, [statusEl]);
+  }, [statusEl, dockEl]);
 }
 
 /** Elapsed `T+HH:MM:SS` mono counter that ticks every second. */
@@ -230,7 +242,17 @@ export function RunNetPage() {
   // Callback ref (state, not useRef) so the measuring effect re-runs when the
   // status strip mounts — it only exists once the session payload has loaded.
   const [statusEl, setStatusEl] = useState<HTMLDivElement | null>(null);
-  useStickyChromeVars(statusEl);
+  const [dockEl, setDockEl] = useState<HTMLFormElement | null>(null);
+  useStickyChromeVars(statusEl, dockEl);
+  // Below 1024px the check-in entry becomes a dock fixed to the bottom of the
+  // viewport, collapsed to callsign + Add. Kept in JS as well as CSS because
+  // the collapsed fields must leave the DOM, not merely be painted away — see
+  // useMediaQuery. Falls back to `false` (full form) wherever matchMedia is
+  // unavailable, so nothing is ever hidden by accident.
+  const isNarrow = useMediaQuery('(max-width: 1023px)');
+  const [dockOpen, setDockOpen] = useState(false);
+  const showEntryExtras = !isNarrow || dockOpen;
+  const [recent, setRecent] = useState<RecentCallsign[]>([]);
   const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   // One green blink at the PREP -> LIVE moment. Only a transition observed
@@ -283,6 +305,27 @@ export function RunNetPage() {
       });
     return () => ctrl.abort();
   }, [session, netLoadNonce]);
+
+  // This net's regulars, most recently heard first — the tap-to-fill strip
+  // above the check-in entry. Keyed to the net, not the club, because who
+  // checks into the Tuesday tech net is not who checks into Sunday's swap net.
+  //
+  // Best-effort: a failure (or an API that predates the route) leaves the list
+  // empty and the strip renders nothing. Typing a callsign has to keep working
+  // when a convenience does not.
+  useEffect(() => {
+    const netId = session?.netId;
+    if (!netId) return;
+    const ctrl = new AbortController();
+    apiFetch<RecentCallsign[]>(`/nets/${netId}/recent-checkins?limit=12`, {
+      signal: ctrl.signal,
+    })
+      .then(setRecent)
+      .catch((e) => {
+        if (!isAbortError(e)) console.warn('recent check-ins load failed', e);
+      });
+    return () => ctrl.abort();
+  }, [session?.netId]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -723,7 +766,6 @@ export function RunNetPage() {
           .slice(0, 8)
       : directory.slice(0, 8);
 
-  const repeaterFreq = `${net.repeater.frequency.toFixed(3)} MHz`;
   const scriptCategoryLabel =
     SCRIPT_CATEGORY_LABELS[net.scriptCategory ?? 'general'] ?? 'General';
   // The API returns check-ins newest-first (desc); the LOG displays them
@@ -773,9 +815,13 @@ export function RunNetPage() {
             </span>
           )}
           <span className="hna-runnet-status__cell">
-            <strong>{net.repeater.name}</strong>
-            <span style={{ opacity: 0.7 }}>·</span>
-            <strong>{repeaterFreq}</strong>
+            {/* Clubs routinely NAME a repeater after its frequency, so the
+                strip read "W0QQQ 145.41 · 145.410 MHz". RepeaterFacts drops
+                the copy embedded in the name (only when it IS this
+                frequency) and keeps the formatted one — and carries the
+                linked machines, which an operator has to announce on the
+                air when the net is running linked. */}
+            <RepeaterFacts repeater={net.repeater} links={net.links} compact />
           </span>
           {isPrep ? (
             <span
@@ -1277,7 +1323,15 @@ export function RunNetPage() {
               </p>
             )}
             <form
-              className="hna-checkin-form"
+              ref={setDockEl}
+              // The dock only engages on a LIVE net: during PREP the entry is
+              // disabled, and pinning a dimmed, unusable bar over the script
+              // the operator is rehearsing would cost screen for nothing.
+              className={
+                isNarrow && !isPrep
+                  ? `hna-checkin-form hna-checkin-form--dock${dockOpen ? ' is-open' : ''}`
+                  : 'hna-checkin-form'
+              }
               onSubmit={(e) => {
                 e.preventDefault();
                 void addCheckInAction.run();
@@ -1285,6 +1339,16 @@ export function RunNetPage() {
               aria-disabled={isPrep}
               style={isPrep ? { opacity: 0.55 } : undefined}
             >
+              <RecentCallsigns
+                recent={recent}
+                alreadyCheckedIn={session.checkIns.map((c) => c.callsign)}
+                onPick={(entry) => {
+                  setCallsign(entry.callsign);
+                  setName(entry.name);
+                  inputRef.current?.focus();
+                }}
+                disabled={isPrep}
+              />
               <div className="hna-checkin-form__row">
                 <div className="hna-field">
                   <label htmlFor="checkin-callsign-input">Callsign</label>
@@ -1294,7 +1358,7 @@ export function RunNetPage() {
                       id="checkin-callsign-input"
                       value={callsign}
                       onChange={setCallsign}
-                      autoFocus
+                      autoFocus={!isNarrow}
                       list="callsign-directory"
                     />
                   </div>
@@ -1306,7 +1370,7 @@ export function RunNetPage() {
                     ))}
                   </datalist>
                 </div>
-                <div className="hna-field">
+                <div className="hna-field" hidden={!showEntryExtras}>
                   <label htmlFor="checkin-name-input">Name</label>
                   <Input
                     id="checkin-name-input"
@@ -1329,6 +1393,7 @@ export function RunNetPage() {
                 className="hna-field"
                 role="group"
                 aria-label="Participation method"
+                hidden={!showEntryExtras}
               >
                 <span
                   className="hna-mono"
@@ -1376,7 +1441,7 @@ export function RunNetPage() {
                   </button>
                 </div>
               </div>
-              <div className="hna-field">
+              <div className="hna-field" hidden={!showEntryExtras}>
                 <label htmlFor="checkin-comment-input">Comment (optional)</label>
                 <Input
                   id="checkin-comment-input"
@@ -1392,6 +1457,19 @@ export function RunNetPage() {
                   }}
                 />
               </div>
+              {/* Collapsed dock: the resolved name is the only confirmation the
+                  operator needs before pressing Add, and it costs one line
+                  instead of a whole field. Auto-filled from the club
+                  directory / FCC lookup, so it is usually already right. */}
+              {isNarrow && !dockOpen && name.trim() !== '' && (
+                <p
+                  className="hna-checkin-form__resolved hna-mono"
+                  data-testid="dock-resolved-name"
+                >
+                  <span aria-hidden="true">→ </span>
+                  {name}
+                </p>
+              )}
               <div className="hna-checkin-form__actions">
                 <Button
                   type="submit"
@@ -1400,14 +1478,28 @@ export function RunNetPage() {
                 >
                   {addCheckInAction.pending ? 'Adding…' : 'Add'}
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => void undoLastAction.run()}
-                  disabled={isPrep || undoLastAction.pending}
-                >
-                  Undo
-                </Button>
+                <span hidden={!showEntryExtras}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void undoLastAction.run()}
+                    disabled={isPrep || undoLastAction.pending}
+                  >
+                    Undo
+                  </Button>
+                </span>
+                {isNarrow && (
+                  <button
+                    type="button"
+                    className="hna-checkin-form__toggle hna-mono"
+                    onClick={() => setDockOpen((v) => !v)}
+                    aria-expanded={dockOpen}
+                    aria-controls="checkin-name-input"
+                    data-testid="dock-toggle"
+                  >
+                    {dockOpen ? '[ LESS ]' : '[ MORE ]'}
+                  </button>
+                )}
               </div>
               {(addCheckInAction.error || undoLastAction.error) && (
                 <p className="hna-input-error" role="alert" style={{ marginTop: 6 }}>

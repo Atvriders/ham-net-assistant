@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   NetInput,
@@ -46,6 +46,23 @@ function hydrateMany<T extends { reminderMinutes?: string | null }>(rows: T[]) {
 function serializeReminderMinutes(value: number[] | undefined): string {
   const arr = value ?? [...DEFAULT_REMINDER_MINUTES];
   return JSON.stringify(arr);
+}
+
+/**
+ * Query for the run-net console's tap-to-fill suggestions. `limit` arrives as
+ * a string on the query string, so coerce before range-checking. Out of range
+ * is a 400 rather than a silent clamp: a console asking for 500 suggestions is
+ * a client bug, and quietly serving it 30 hides the bug while a 400 names it.
+ */
+const RecentCheckInsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(30).default(12),
+});
+
+interface RecentCheckIn {
+  callsign: string;
+  name: string;
+  lastCheckedInAt: string;
+  count: number;
 }
 
 function normalizeLinkedIds(
@@ -163,6 +180,60 @@ export function netsRouter(prisma: PrismaClient): Router {
       net: hydrateReminderMinutes(s.net),
       checkIns: s.checkIns.map((ci) => withCheckInMode(ci)),
     });
+  }));
+
+  /**
+   * Tap-to-fill suggestions for the run-net console: the operators who
+   * actually check into THIS net, so a control op on a phone picks a callsign
+   * instead of thumb-typing one mid-net.
+   *
+   * NET_CONTROL, deliberately not OFFICER. This is run-the-net data, and
+   * OFFICER would lock out the exact role that exists to run nets — the
+   * operators who are the only users this endpoint is for.
+   */
+  router.get('/:netId/recent-checkins', requireRole('NET_CONTROL'), asyncHandler(async (req, res) => {
+    const parsed = RecentCheckInsQuery.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(400, 'VALIDATION', 'Invalid limit (expected 1-30)');
+    }
+    const netId = req.params.netId as string;
+    // Distinguish "net has no check-ins yet" (200 []) from "no such net"
+    // (404), same as the mutating siblings below: an empty list for a typo'd
+    // id reads as a working console with a quiet net.
+    const net = await prisma.net.findUnique({ where: { id: netId }, select: { id: true } });
+    if (!net) throw new HttpError(404, 'NOT_FOUND', 'Net not found');
+    // One query for the net's whole live check-in history, newest first, then
+    // group in memory: the first row seen for a callsign IS its most recent,
+    // which is where `name` has to come from (names change; the latest is the
+    // best guess) and `count` needs every row anyway. A groupBy would yield
+    // count + max(checkedInAt) but not the name attached to that max, and
+    // resolving it afterwards is one extra query per suggestion — on a route
+    // the console hits on every load.
+    const rows = await prisma.checkIn.findMany({
+      where: { deletedAt: null, session: { netId, deletedAt: null } },
+      select: { callsign: true, nameAtCheckIn: true, checkedInAt: true },
+      // id is a tiebreaker so rows written inside the same millisecond keep a
+      // stable order across loads (cuid ids are monotonic within a process),
+      // which is what makes "the first row wins" a deterministic name pick.
+      orderBy: [{ checkedInAt: 'desc' }, { id: 'desc' }],
+    });
+    const byCallsign = new Map<string, RecentCheckIn>();
+    for (const ci of rows) {
+      const seen = byCallsign.get(ci.callsign);
+      if (seen) {
+        seen.count += 1;
+        continue;
+      }
+      byCallsign.set(ci.callsign, {
+        callsign: ci.callsign,
+        name: ci.nameAtCheckIn,
+        lastCheckedInAt: ci.checkedInAt.toISOString(),
+        count: 1,
+      });
+    }
+    // Map iteration is insertion order, which is already the most-recent-first
+    // order the rows arrived in — no re-sort needed before the take.
+    res.json(Array.from(byCallsign.values()).slice(0, parsed.data.limit));
   }));
 
   router.post('/', requireRole('OFFICER'), validateBody(NetInput), asyncHandler(async (req, res) => {
