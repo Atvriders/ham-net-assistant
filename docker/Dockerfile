@@ -83,6 +83,21 @@ RUN npm install --omit=dev --workspace @hna/api --include-workspace-root=false \
 RUN npx -w @hna/api prisma generate \
     && chown -R hna:hna /app/node_modules/.prisma 2>/dev/null || true
 
+# Drop npm from the RUNTIME image. This is the last step that needed it: the
+# entrypoint, the healthcheck and CMD all invoke `node` directly (CMD runs the
+# Prisma CLI as `node .../prisma/build/index.js`, deliberately not `npx`), and
+# no documented operator command uses npm inside the container.
+#
+# WHY: npm vendors its own dependency tree (tar, brace-expansion, ip-address,
+# ...), and that tree — not this application's — was the only thing the CI
+# image scan ever flagged. Waiving those CVEs one id at a time meant
+# re-waiving every few weeks as the libraries got re-patched upstream, which
+# trains everyone to wave the scanner through. Deleting the package manager
+# from a production image removes the finding class for real and takes a
+# sizeable chunk of unused attack surface with it. Rebuilding the image is how
+# you get npm back; nothing at runtime should be installing packages anyway.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # Built artifacts (small) in a tail layer. This is also what puts the operator
 # CLIs in the image: apps/api/dist/cli/backup.js (called by the entrypoint) and
 # apps/api/dist/cli/admin.js (account recovery), e.g.
@@ -110,10 +125,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 ENTRYPOINT ["/usr/local/bin/hna-entrypoint.sh"]
 # Invoke the Prisma CLI through node directly rather than `npx`: npx is npm,
-# and npm's bundled dependencies are the only vulnerable component the image
-# scan finds (see docker/.trivyignore). Keeping npm off the boot path means
-# nothing in the running container executes it, and startup no longer depends
-# on npx's resolution behavior. The fallback covers both possible layouts —
+# which this image deliberately no longer ships (see the removal step above).
+# Startup also stops depending on npx's resolution behavior. The fallback covers both possible layouts —
 # npm hoists `prisma` to /app/node_modules for this workspace, but a future
 # version conflict could nest it under apps/api — and an explicit failure here
 # is far better than a silently unmigrated database.

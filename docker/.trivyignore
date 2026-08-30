@@ -13,29 +13,30 @@
 # Format is one CVE id per line, optionally with an expiry:
 #   CVE-2024-12345 exp:2026-12-31
 #
+
 # ---------------------------------------------------------------------------
-# npm's own bundled dependencies, shipped inside node:24-bookworm-slim at
-# /usr/local/lib/node_modules/npm/node_modules/. NOT application dependencies:
-# the scan reports 0 vulnerabilities for every path under /app and 0 for the
-# Debian package set — these five are entirely the base image's npm CLI.
+# deepmerge-ts (CVE-2026-40345) — HIGH, "stack exhaustion when merging
+# recursive object graphs". Fixed upstream in 8.0.0.
 #
-# Why they do not apply here: all five are denial-of-service vectors that
-# require feeding hostile input to npm (a crafted gzip/tar archive, a crafted
-# brace pattern, an attacker-controlled HTTP response). Nothing in the running
-# container executes npm at all — the CMD invokes the Prisma CLI through node
-# directly and the app never shells out to a package manager. Reaching these
-# code paths would require an attacker who can already run commands in the
-# container, at which point the CVE is irrelevant.
+# Reached only through the Prisma CLI: @prisma/config@6.19.3 depends on
+# deepmerge-ts at an EXACT pin (7.1.5), and that config loader runs once per
+# container start, when CMD executes `prisma migrate deploy` against
+# apps/api/prisma/schema.prisma — a file shipped inside this image. There is no
+# path by which a request, a member, or any network input reaches it, so the
+# denial-of-service it describes would require an attacker who can already
+# execute commands in the container.
 #
-# Why the fix cannot be taken yet: "fixed" here means the upstream library has
-# a patched release, not that npm has shipped a build bundling it. Upgrading
-# npm inside the image would only trade these for whatever the next npm
-# bundles. The real fix is a newer node base image; re-check at expiry.
+# Not fixed by an override, deliberately: forcing a major version of a
+# transitive dependency that Prisma pinned exactly, into the tool that runs
+# database migrations at every boot, risks turning an unreachable DoS into a
+# club whose app will not start. The real fix is a Prisma release whose
+# @prisma/config depends on deepmerge-ts 8 — check at expiry and drop this
+# entry then.
 #
-# exp: 2026-10-31 — re-verify against the then-current node:24-bookworm-slim
-# and delete any entry the base image has resolved.
-CVE-2026-59873 exp:2026-10-31
-CVE-2026-59874 exp:2026-10-31
-CVE-2026-13149 exp:2026-10-31
-CVE-2026-14257 exp:2026-10-31
-CVE-2026-12151 exp:2026-10-31
+# exp: 2026-11-30
+CVE-2026-40345 exp:2026-11-30
+
+# NOTE: the npm-bundled CVEs previously waived here (tar, brace-expansion,
+# undici) are gone for a better reason than a waiver — the runtime image no
+# longer contains npm at all. See the `rm -rf .../node_modules/npm` step in
+# docker/Dockerfile.
