@@ -140,3 +140,75 @@ describe('adding a missed station to a finished log', () => {
     expect(res.body.error.message).toMatch(/net control|officer/i);
   });
 });
+
+describe('the saved order survives every read path', () => {
+  /**
+   * The bug this pins: the order saved correctly, then /stats/participation
+   * re-sorted the check-ins by checkedInAt in JS and handed back the OLD
+   * order. From the operator's side the reorder simply did not save.
+   *
+   * The Stats page, its Edit session dialog, the CSV and the PDF all read that
+   * payload, so one JS sort undid the feature on four screens at once.
+   */
+  it('is reflected by /stats/participation, not re-sorted by time', async () => {
+    const rows = await prisma.checkIn.findMany({
+      where: { sessionId }, orderBy: { sequence: 'asc' },
+    });
+    const [a, b, c] = [rows[0]!.id, rows[1]!.id, rows[2]!.id];
+
+    // Put the LAST-logged station first — the whole point of reordering.
+    const res = await request(app)
+      .patch(`/api/sessions/${sessionId}/checkins/order`)
+      .set('Cookie', officer)
+      .send({ orderedIds: [c, a, b] });
+    expect(res.status).toBe(200);
+
+    const stats = await request(app)
+      .get('/api/stats/participation')
+      .set('Cookie', officer);
+    expect(stats.status).toBe(200);
+    const session = stats.body.sessions.find(
+      (s: { id: string }) => s.id === sessionId,
+    );
+    expect(session, 'session missing from stats payload').toBeDefined();
+    expect(session.checkIns.map((x: { id: string }) => x.id)).toEqual([c, a, b]);
+  });
+
+  it('is reflected by the session summary', async () => {
+    const rows = await prisma.checkIn.findMany({
+      where: { sessionId }, orderBy: { sequence: 'asc' },
+    });
+    const [a, b, c] = [rows[0]!.id, rows[1]!.id, rows[2]!.id];
+    await request(app)
+      .patch(`/api/sessions/${sessionId}/checkins/order`)
+      .set('Cookie', officer)
+      .send({ orderedIds: [b, c, a] });
+
+    const summary = await request(app)
+      .get(`/api/sessions/${sessionId}/summary`)
+      .set('Cookie', officer);
+    expect(summary.status).toBe(200);
+    expect(summary.body.checkIns.map((x: { id: string }) => x.id)).toEqual([b, c, a]);
+  });
+
+  it('is reflected by the CSV export', async () => {
+    const rows = await prisma.checkIn.findMany({
+      where: { sessionId }, orderBy: { sequence: 'asc' },
+    });
+    const [a, b, c] = [rows[0]!.id, rows[1]!.id, rows[2]!.id];
+    const byId = new Map(rows.map((r) => [r.id, r.callsign]));
+    await request(app)
+      .patch(`/api/sessions/${sessionId}/checkins/order`)
+      .set('Cookie', officer)
+      .send({ orderedIds: [c, b, a] });
+
+    const csv = await request(app)
+      .get('/api/stats/export.csv')
+      .set('Cookie', officer);
+    expect(csv.status).toBe(200);
+    const order = [c, b, a].map((id) => byId.get(id)!);
+    const positions = order.map((cs) => csv.text.indexOf(cs));
+    expect(positions.every((n) => n >= 0)).toBe(true);
+    expect([...positions].sort((x, y) => x - y)).toEqual(positions);
+  });
+});

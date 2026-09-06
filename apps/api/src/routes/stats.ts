@@ -32,7 +32,11 @@ async function computeStats(
     where: { startedAt: { gte: from, lte: to }, deletedAt: null },
     include: {
       net: true,
-      checkIns: { where: { deletedAt: null } },
+      // Ordered in the query, not re-sorted below: this payload feeds the
+      // Stats page, its Edit session dialog, and the PDF, and a JS re-sort by
+      // checkedInAt silently threw away an operator's reordering — the log
+      // saved correctly and then came back in the old order.
+      checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_ASC },
       controlOp: { select: { callsign: true, name: true } },
     },
   });
@@ -67,9 +71,8 @@ async function computeStats(
   const sessionList = [...sessions]
     .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
     .map((s) => {
-      const sortedCheckIns = [...s.checkIns].sort(
-        (a, b) => a.checkedInAt.getTime() - b.checkedInAt.getTime(),
-      );
+      // Already in log order from the query above — deliberately not re-sorted.
+      const sortedCheckIns = s.checkIns;
       return {
         id: s.id,
         netId: s.netId,

@@ -4,6 +4,7 @@ import { Modal } from './ui/Modal.js';
 import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { CallsignInput } from './CallsignInput.js';
+import { resolveCallsignName, useDirectory, CALLSIGN_RE } from '../lib/callsignName.js';
 
 export interface AddCheckInModalProps {
   open: boolean;
@@ -32,11 +33,45 @@ export function AddCheckInModal({ open, sessionId, onClose, onAdded }: AddCheckI
   const [mode, setMode] = React.useState<'rf' | 'echolink'>('rf');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const [lookingUp, setLookingUp] = React.useState(false);
+  const directory = useDirectory();
+  /** The last name this dialog filled in — never overwrite the operator's. */
+  const autoFilled = React.useRef('');
 
   React.useEffect(() => {
     if (!open) return;
     setCallsign(''); setName(''); setComment(''); setMode('rf'); setErr(null);
+    autoFilled.current = '';
   }, [open]);
+
+  // Same chain the run-net console uses: club directory, then this station's
+  // own check-in history, then the FCC licence. Debounced, and it never
+  // overwrites a name the operator typed.
+  React.useEffect(() => {
+    if (!open) return;
+    const cs = callsign.trim().toUpperCase();
+    if (!CALLSIGN_RE.test(cs)) return;
+    if (name.trim() !== '' && name !== autoFilled.current) return;
+    const ctrl = new AbortController();
+    setLookingUp(true);
+    const timer = window.setTimeout(() => {
+      void resolveCallsignName({ callsign: cs, directory, signal: ctrl.signal })
+        .then((found) => {
+          if (!found) return;
+          setName((current) => {
+            if (current.trim() !== '' && current !== autoFilled.current) return current;
+            autoFilled.current = found;
+            return found;
+          });
+        })
+        .finally(() => setLookingUp(false));
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+      setLookingUp(false);
+    };
+  }, [callsign, name, directory, open]);
 
   async function save() {
     if (!callsign.trim() || !name.trim()) {
@@ -83,6 +118,15 @@ export function AddCheckInModal({ open, sessionId, onClose, onAdded }: AddCheckI
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          {lookingUp && name.trim() === '' && (
+            <p
+              className="hna-mono"
+              data-testid="add-checkin-looking-up"
+              style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-fg-subtle)' }}
+            >
+              Looking up name…
+            </p>
+          )}
         </div>
         <div className="hna-field" role="group" aria-label="Participation method">
           <span

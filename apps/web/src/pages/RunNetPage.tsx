@@ -1869,11 +1869,11 @@ export function RunNetPage() {
             background: 'var(--color-bg)',
           }}
         >
+          {/* The payload is newest-first in LOG order; reverse it rather than
+              sorting by time, so the review the operator signs off on matches
+              the order they put the log in. */}
           {[...session.checkIns]
-            .sort(
-              (a, b) =>
-                new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
-            )
+            .reverse()
             .map((ci) => (
               <li key={ci.id} style={{ padding: '2px 0' }}>
                 <span className="hna-mono" style={{ color: 'var(--color-fg-muted)' }}>

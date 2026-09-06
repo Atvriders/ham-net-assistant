@@ -36,10 +36,10 @@ export function buildSessionLogText(s: SessionForLog): string {
   lines.push(
     `NET control: ${s.controlOp ? `${s.controlOp.callsign} ${s.controlOp.name}` : '(none)'}`,
   );
-  const sorted = [...s.checkIns].sort(
-    (a, b) => new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime(),
-  );
-  for (const ci of sorted) {
+  // The API returns check-ins in log order (an operator's own ordering, then
+  // check-in time). Re-sorting here by timestamp would make a copied log
+  // disagree with the log on screen.
+  for (const ci of s.checkIns) {
     const tag = ci.mode === 'echolink' ? ' (EchoLink)' : '';
     lines.push(`● ${ci.callsign} ${ci.name}${tag}`);
   }

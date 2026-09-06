@@ -6,6 +6,7 @@ import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { CallsignInput } from './CallsignInput.js';
 import { displayCallsign } from '../lib/format.js';
+import { resolveCallsignName, useDirectory, CALLSIGN_RE } from '../lib/callsignName.js';
 
 type Session = ParticipationStats['sessions'][number];
 type CheckInRow = Session['checkIns'][number];
@@ -51,6 +52,11 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   // for Save would leave the log in a state the operator never asked for if
   // they then hit Cancel.
   const [orderChanged, setOrderChanged] = useState(false);
+  const directory = useDirectory();
+  // Rows whose name this dialog filled in. An operator's own typing is never
+  // overwritten by a later lookup; a name we wrote ourselves is fair game when
+  // the callsign changes again.
+  const autoFilled = React.useRef<Map<string, string>>(new Map());
   const topicId = useId();
   const controlOpFieldId = useId();
   const notesId = useId();
@@ -89,6 +95,50 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   function updateCheckIn(id: string, patch: Partial<EditableCheckIn>) {
     setCheckIns((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
+
+  // Fill in names for rows whose callsign looks complete and whose name is
+  // still empty (or still holds a name we filled in). Debounced so typing a
+  // callsign does not fire a lookup per keystroke, and aborted on unmount.
+  useEffect(() => {
+    const pending = checkIns.filter(
+      (c) =>
+        !c.removed &&
+        CALLSIGN_RE.test(c.callsign.trim().toUpperCase()) &&
+        (c.name.trim() === '' || autoFilled.current.get(c.id) === c.name),
+    );
+    if (pending.length === 0) return;
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => {
+      for (const row of pending) {
+        const cs = row.callsign.trim().toUpperCase();
+        void resolveCallsignName({ callsign: cs, directory, signal: ctrl.signal })
+          .then((name) => {
+            if (!name) return;
+            setCheckIns((rows) =>
+              rows.map((r) => {
+                if (r.id !== row.id) return r;
+                // Re-check at apply time: the operator may have typed a name
+                // (or changed the callsign again) while the lookup was in
+                // flight.
+                if (r.callsign.trim().toUpperCase() !== cs) return r;
+                if (r.name.trim() !== '' && autoFilled.current.get(r.id) !== r.name) {
+                  return r;
+                }
+                autoFilled.current.set(r.id, name);
+                return { ...r, name };
+              }),
+            );
+          })
+          .catch(() => {
+            /* a failed lookup just leaves the field for the operator */
+          });
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [checkIns, directory]);
 
   /** Append a blank row for a station that was heard but never logged. */
   function addRow() {

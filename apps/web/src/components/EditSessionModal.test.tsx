@@ -163,4 +163,21 @@ describe('EditSessionModal: adding and reordering check-ins', () => {
       expect(calls.find((c) => c.method === 'DELETE')).toBeUndefined();
     });
   });
+
+  it('saves a move on its own, with no other change', async () => {
+    const { fn, calls } = stub();
+    vi.stubGlobal('fetch', fn);
+    render(
+      <EditSessionModal open session={editSession as never} onClose={() => {}} onSaved={() => {}} />,
+    );
+    // The exact reported case: open the dialog, move one row, press Save.
+    await userEvent.click(await screen.findByTestId('session-move-down-0'));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      const order = calls.find((c) => c.url.includes('/checkins/order'));
+      expect(order, 'the new order was never sent').toBeDefined();
+      expect(order!.body).toEqual({ orderedIds: ['c2', 'c1'] });
+    });
+  });
 });
