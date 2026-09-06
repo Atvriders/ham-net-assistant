@@ -25,12 +25,18 @@ interface Props {
 }
 
 interface EditableCheckIn {
+  /** Server id, or a local `new-N` placeholder until this row is created. */
   id: string;
   callsign: string;
   name: string;
   removed: boolean;
+  /** Added in this dialog and not yet saved. */
+  isNew: boolean;
   original: { callsign: string; name: string };
 }
+
+/** Local ids for rows that do not exist server-side yet. */
+let newRowCounter = 0;
 
 export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   const [topic, setTopic] = useState('');
@@ -40,6 +46,11 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
   const [checkIns, setCheckIns] = useState<EditableCheckIn[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Whether any row moved. Everything in this dialog is staged and written on
+  // Save, so the order is too — reordering immediately while removals waited
+  // for Save would leave the log in a state the operator never asked for if
+  // they then hit Cancel.
+  const [orderChanged, setOrderChanged] = useState(false);
   const topicId = useId();
   const controlOpFieldId = useId();
   const notesId = useId();
@@ -50,12 +61,14 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
     setTopic(session.topic ?? '');
     setNotes(session.notes ?? '');
     setControlOpId(session.controlOpId ?? '');
+    setOrderChanged(false);
     setCheckIns(
       session.checkIns.map((c: CheckInRow) => ({
         id: c.id,
         callsign: c.callsign,
         name: c.name,
         removed: false,
+        isNew: false,
         original: { callsign: c.callsign, name: c.name },
       })),
     );
@@ -77,6 +90,36 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
     setCheckIns((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
+  /** Append a blank row for a station that was heard but never logged. */
+  function addRow() {
+    newRowCounter += 1;
+    setCheckIns((rows) => [
+      ...rows,
+      {
+        id: `new-${newRowCounter}`,
+        callsign: '',
+        name: '',
+        removed: false,
+        isNew: true,
+        original: { callsign: '', name: '' },
+      },
+    ]);
+    setOrderChanged(true);
+  }
+
+  /** Move a row one place, skipping over rows staged for removal. */
+  function moveRow(index: number, delta: -1 | 1) {
+    setCheckIns((rows) => {
+      const to = index + delta;
+      if (to < 0 || to >= rows.length) return rows;
+      const next = rows.slice();
+      const [moved] = next.splice(index, 1);
+      next.splice(to, 0, moved as EditableCheckIn);
+      return next;
+    });
+    setOrderChanged(true);
+  }
+
   async function save() {
     if (!session) return;
     setErr(null);
@@ -84,7 +127,7 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
     // Validate edited (non-removed) check-ins before any write.
     for (const c of checkIns) {
       if (c.removed) continue;
-      if (!/^[A-Z0-9]{3,7}$/.test(c.callsign)) {
+      if (!/^[A-Z0-9]{3,7}$/.test(c.callsign.trim().toUpperCase())) {
         setErr(`Invalid callsign "${c.callsign}"`);
         return;
       }
@@ -105,9 +148,29 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
         }),
       });
 
+      // Order matters here. Removals and edits first, then creations — so the
+      // order PATCH at the end can send the final, real id of every row that
+      // survives. A new row has only a local `new-N` id until it is created.
+      const finalIds: string[] = [];
       for (const c of checkIns) {
         if (c.removed) {
-          await apiFetch(`/checkins/${c.id}`, { method: 'DELETE' });
+          // A row added and then removed in the same dialog never existed
+          // server-side; deleting it would 404.
+          if (!c.isNew) await apiFetch(`/checkins/${c.id}`, { method: 'DELETE' });
+          continue;
+        }
+        if (c.isNew) {
+          const created = await apiFetch<{ id: string }>(
+            `/sessions/${session.id}/checkins`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                callsign: c.callsign.trim().toUpperCase(),
+                nameAtCheckIn: c.name.trim(),
+              }),
+            },
+          );
+          finalIds.push(created.id);
           continue;
         }
         const changed =
@@ -118,6 +181,17 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
             body: JSON.stringify({ callsign: c.callsign, nameAtCheckIn: c.name.trim() }),
           });
         }
+        finalIds.push(c.id);
+      }
+
+      // Persist the running order last, once every surviving row has a real
+      // id. Skipped when nothing moved: the endpoint rewrites every row's
+      // position, and there is no reason to do that for a topic-only edit.
+      if (orderChanged && finalIds.length > 0) {
+        await apiFetch(`/sessions/${session.id}/checkins/order`, {
+          method: 'PATCH',
+          body: JSON.stringify({ orderedIds: finalIds }),
+        });
       }
 
       onSaved();
@@ -186,7 +260,7 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
       <div style={{ marginTop: 16 }}>
         <strong>Check-ins ({checkIns.filter((c) => !c.removed).length})</strong>
         <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          {checkIns.map((c) => (
+          {checkIns.map((c, idx) => (
             <div
               key={c.id}
               style={{
@@ -196,11 +270,41 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
                 opacity: c.removed ? 0.45 : 1,
               }}
             >
+              {/* The log records the order stations were HEARD, which is not
+                  always the order they were typed. Times are left exactly as
+                  recorded — only the running order changes. */}
+              <span className="hna-log-table__move">
+                <button
+                  type="button"
+                  className="hna-roster__move-btn"
+                  onClick={() => moveRow(idx, -1)}
+                  disabled={idx === 0 || busy}
+                  aria-label={`Move ${c.callsign || 'new check-in'} earlier`}
+                  data-testid={`session-move-up-${idx}`}
+                >
+                  ▲
+                </button>
+                <button
+                  type="button"
+                  className="hna-roster__move-btn"
+                  onClick={() => moveRow(idx, 1)}
+                  disabled={idx === checkIns.length - 1 || busy}
+                  aria-label={`Move ${c.callsign || 'new check-in'} later`}
+                  data-testid={`session-move-down-${idx}`}
+                >
+                  ▼
+                </button>
+              </span>
               <div style={{ flex: '0 0 110px' }}>
+                {/* These rows are a bare grid of inputs with no visible
+                    labels, so each needs its own accessible name — otherwise a
+                    screen-reader user hears "edit text" ten times over with no
+                    way to tell which station they are changing. */}
                 <CallsignInput
                   value={c.callsign}
                   onChange={(v) => updateCheckIn(c.id, { callsign: v })}
                   disabled={c.removed}
+                  aria-label={`Callsign, check-in ${idx + 1}`}
                 />
               </div>
               <Input
@@ -208,6 +312,7 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
                 onChange={(e) => updateCheckIn(c.id, { name: e.target.value })}
                 disabled={c.removed}
                 style={{ flex: 1 }}
+                aria-label={`Name, check-in ${idx + 1}`}
               />
               <Button
                 variant={c.removed ? 'secondary' : 'danger'}
@@ -221,6 +326,22 @@ export function EditSessionModal({ open, session, onClose, onSaved }: Props) {
           {checkIns.length === 0 && (
             <div style={{ opacity: 0.7, fontSize: 13 }}>No check-ins logged.</div>
           )}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <Button
+            variant="secondary"
+            onClick={addRow}
+            disabled={busy}
+            data-testid="session-add-checkin"
+          >
+            Add a missed station
+          </Button>
+          <p
+            className="hna-mono"
+            style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--color-fg-muted)' }}
+          >
+            Check-in times stay as recorded — only the order changes.
+          </p>
         </div>
       </div>
 
