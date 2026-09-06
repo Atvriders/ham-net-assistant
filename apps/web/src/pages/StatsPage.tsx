@@ -20,6 +20,8 @@ import { buildSessionLogText } from '../lib/sessionLog.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { apiFetch } from '../api/client.js';
 import { EditSessionModal } from '../components/EditSessionModal.js';
+import { AddCheckInModal } from '../components/AddCheckInModal.js';
+import { useLogEditing } from '../lib/useLogEditing.js';
 
 type SessionRow = ParticipationStats['sessions'][number];
 
@@ -107,6 +109,13 @@ export function StatsPage() {
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const [editing, setEditing] = useState<SessionRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SessionRow | null>(null);
+  // Which past net's log is open for editing, and which is having a missed
+  // station added. One at a time: this page lists every session in range, and
+  // arrows on all of them at once would be a wall of controls over a view
+  // people mostly read.
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [addToSessionId, setAddToSessionId] = useState<string | null>(null);
+  const logEditing = useLogEditing(editingLogId, refresh);
   // Delete failures render in-page: window.alert is unstyled, blocks the tab,
   // and is invisible in a kiosk browser — the same reason every other native
   // dialog in the app was replaced.
@@ -530,18 +539,94 @@ export function StatsPage() {
                     · {s.controlOp.name}
                   </p>
                 )}
-                {s.checkIns.length > 0 && (
+                {(s.checkIns.length > 0 || isOfficer) && (
                   <details
                     className="hna-disclosure"
                     style={{ marginTop: 'var(--space-3)' }}
                   >
                     <summary>SHOW CHECK-INS ({s.checkIns.length})</summary>
+                    {isOfficer && (
+                      <div className="hna-log-edit-bar" style={{ marginTop: 8 }}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setEditingLogId(editingLogId === s.id ? null : s.id);
+                            logEditing.clearError();
+                          }}
+                          aria-pressed={editingLogId === s.id}
+                          data-testid={`stats-edit-log-${s.id}`}
+                        >
+                          {editingLogId === s.id ? 'Done editing' : 'Edit log'}
+                        </Button>
+                        {editingLogId === s.id && (
+                          <>
+                            <Button
+                              onClick={() => setAddToSessionId(s.id)}
+                              data-testid={`stats-add-checkin-${s.id}`}
+                            >
+                              Add a missed station
+                            </Button>
+                            <p className="hna-mono hna-log-edit-bar__hint">
+                              Check-in times stay as recorded — only the order
+                              changes.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {editingLogId === s.id && logEditing.error && (
+                      <p
+                        className="hna-input-error"
+                        role="alert"
+                        data-testid="stats-log-error"
+                      >
+                        {logEditing.error}
+                      </p>
+                    )}
                     <ol style={{ marginTop: 8, paddingLeft: 22 }}>
-                      {s.checkIns.map((c) => (
+                      {s.checkIns.map((c, idx) => (
                         <li
                           key={c.id}
                           style={{ fontSize: 13, padding: '2px 0' }}
                         >
+                          {editingLogId === s.id && (
+                            <span className="hna-log-table__move">
+                              <button
+                                type="button"
+                                className="hna-roster__move-btn"
+                                onClick={() =>
+                                  void logEditing.move(
+                                    s.checkIns.map((x) => x.id),
+                                    idx,
+                                    -1,
+                                  )
+                                }
+                                disabled={idx === 0 || logEditing.busy}
+                                aria-label={`Move ${c.callsign} earlier`}
+                                data-testid={`stats-move-up-${c.callsign}`}
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                className="hna-roster__move-btn"
+                                onClick={() =>
+                                  void logEditing.move(
+                                    s.checkIns.map((x) => x.id),
+                                    idx,
+                                    1,
+                                  )
+                                }
+                                disabled={
+                                  idx === s.checkIns.length - 1 || logEditing.busy
+                                }
+                                aria-label={`Move ${c.callsign} later`}
+                                data-testid={`stats-move-down-${c.callsign}`}
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          )}
                           <span
                             className="hna-mono"
                             style={{
@@ -610,6 +695,12 @@ export function StatsPage() {
         </p>
       )}
 
+      <AddCheckInModal
+        open={addToSessionId !== null}
+        sessionId={addToSessionId ?? ''}
+        onClose={() => setAddToSessionId(null)}
+        onAdded={() => void refresh()}
+      />
       <EditSessionModal
         open={editing !== null}
         session={editing}

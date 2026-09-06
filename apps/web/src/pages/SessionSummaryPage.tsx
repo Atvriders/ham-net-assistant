@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
-import { apiFetch, errorMessage } from '../api/client.js';
+import { apiFetch } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { ConfirmModal } from '../components/ui/ConfirmModal.js';
@@ -12,7 +12,7 @@ import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { buildSessionLogText } from '../lib/sessionLog.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
 import { AddCheckInModal } from '../components/AddCheckInModal.js';
-import { moveItem } from '../lib/reorder.js';
+import { useLogEditing } from '../lib/useLogEditing.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -62,8 +62,7 @@ export function SessionSummaryPage() {
   // so a page people mostly read does not look like a form.
   const [editingLog, setEditingLog] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [logErr, setLogErr] = useState<string | null>(null);
-  const [logBusy, setLogBusy] = useState(false);
+  const logEditing = useLogEditing(sessionId, refresh);
 
   const canModify = (ci: CheckIn): boolean => {
     if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
@@ -149,25 +148,6 @@ export function SessionSummaryPage() {
     return new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime();
   });
 
-  /** Send the whole order; see the endpoint's note on why not "move to N". */
-  async function moveCheckIn(idx: number, delta: -1 | 1) {
-    const to = idx + delta;
-    if (to < 0 || to >= orderedCheckIns.length) return;
-    setLogBusy(true);
-    setLogErr(null);
-    try {
-      const next = moveItem(orderedCheckIns, idx, to);
-      await apiFetch(`/sessions/${sessionId}/checkins/order`, {
-        method: 'PATCH',
-        body: JSON.stringify({ orderedIds: next.map((c) => c.id) }),
-      });
-      await refresh();
-    } catch (e) {
-      setLogErr(errorMessage(e));
-    } finally {
-      setLogBusy(false);
-    }
-  }
 
   const totalCheckIns = checkIns.length;
 
@@ -356,7 +336,7 @@ export function SessionSummaryPage() {
               variant="secondary"
               onClick={() => {
                 setEditingLog((v) => !v);
-                setLogErr(null);
+                logEditing.clearError();
               }}
               aria-pressed={editingLog}
               data-testid="edit-log-toggle"
@@ -375,9 +355,9 @@ export function SessionSummaryPage() {
             )}
           </div>
         )}
-        {logErr && (
+        {logEditing.error && (
           <p className="hna-input-error" role="alert" data-testid="log-edit-error">
-            {logErr}
+            {logEditing.error}
           </p>
         )}
         <header className="hna-section-caption">
@@ -420,8 +400,8 @@ export function SessionSummaryPage() {
                               <button
                                 type="button"
                                 className="hna-roster__move-btn"
-                                onClick={() => void moveCheckIn(idx, -1)}
-                                disabled={idx === 0 || logBusy}
+                                onClick={() => void logEditing.move(orderedCheckIns.map((c) => c.id), idx, -1)}
+                                disabled={idx === 0 || logEditing.busy}
                                 aria-label={`Move ${ci.callsign} earlier`}
                                 data-testid={`summary-move-up-${ci.callsign}`}
                               >
@@ -430,8 +410,8 @@ export function SessionSummaryPage() {
                               <button
                                 type="button"
                                 className="hna-roster__move-btn"
-                                onClick={() => void moveCheckIn(idx, 1)}
-                                disabled={idx === orderedCheckIns.length - 1 || logBusy}
+                                onClick={() => void logEditing.move(orderedCheckIns.map((c) => c.id), idx, 1)}
+                                disabled={idx === orderedCheckIns.length - 1 || logEditing.busy}
                                 aria-label={`Move ${ci.callsign} later`}
                                 data-testid={`summary-move-down-${ci.callsign}`}
                               >
