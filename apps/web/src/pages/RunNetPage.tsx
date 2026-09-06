@@ -253,6 +253,12 @@ export function RunNetPage() {
   const [dockOpen, setDockOpen] = useState(false);
   const showEntryExtras = !isNarrow || dockOpen;
   const [recent, setRecent] = useState<RecentCallsign[]>([]);
+  // Whether a name lookup is in flight for the callsign currently typed. The
+  // desktop form shows progress implicitly — the Name field is on screen and
+  // fills in. The collapsed dock has no such field, so without this a phone
+  // operator watches a blank line and cannot tell "still looking" from
+  // "nothing found".
+  const [nameLookupPending, setNameLookupPending] = useState(false);
   const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   // One green blink at the PREP -> LIVE moment. Only a transition observed
@@ -561,11 +567,13 @@ export function RunNetPage() {
     const member = directory.find((d) => d.callsign === cs);
     if (member) {
       maybeSetName(member.name);
+      setNameLookupPending(false);
       return;
     }
 
     // 2. Parallel remote lookup with short debounce
     const ctrl = new AbortController();
+    setNameLookupPending(true);
     const timer = setTimeout(() => {
       const history = apiFetch<{ callsign: string; name: string | null }>(
         `/checkins/callsign-history/${cs}`,
@@ -585,16 +593,19 @@ export function RunNetPage() {
         }
         return { name: null, found: false };
       });
-      Promise.all([history, fcc]).then(([h, f]) => {
-        // Priority: history wins, FCC fallback if history has no name
-        const pick = h.name ?? f.name;
-        if (pick) maybeSetName(pick);
-      });
+      Promise.all([history, fcc])
+        .then(([h, f]) => {
+          // Priority: history wins, FCC fallback if history has no name
+          const pick = h.name ?? f.name;
+          if (pick) maybeSetName(pick);
+        })
+        .finally(() => setNameLookupPending(false));
     }, 120);
 
     return () => {
       clearTimeout(timer);
       ctrl.abort();
+      setNameLookupPending(false);
     };
   }, [callsign, directory]);
 
@@ -758,6 +769,11 @@ export function RunNetPage() {
       </div>
     );
   }
+
+  // Same shape the autofill effect requires before it will look anything up,
+  // so the collapsed dock's name line appears exactly when a lookup is
+  // possible — not while a partial callsign is still being typed.
+  const callsignLooksValid = /^[A-Z0-9]{3,7}$/.test(callsign.trim().toUpperCase());
 
   const suggestions =
     callsign.length > 0
@@ -1345,6 +1361,11 @@ export function RunNetPage() {
                 onPick={(entry) => {
                   setCallsign(entry.callsign);
                   setName(entry.name);
+                  // Record it as AUTO-filled, not operator-typed. maybeSetName
+                  // only overwrites a name that is empty or that it wrote
+                  // itself, so without this the chip's name would stick to the
+                  // next callsign the operator types.
+                  lastAutoFilledNameRef.current = entry.name;
                   inputRef.current?.focus();
                 }}
                 disabled={isPrep}
@@ -1461,14 +1482,33 @@ export function RunNetPage() {
                   operator needs before pressing Add, and it costs one line
                   instead of a whole field. Auto-filled from the club
                   directory / FCC lookup, so it is usually already right. */}
-              {isNarrow && !dockOpen && name.trim() !== '' && (
-                <p
+              {isNarrow && !dockOpen && callsignLooksValid && (
+                <button
+                  type="button"
                   className="hna-checkin-form__resolved hna-mono"
                   data-testid="dock-resolved-name"
+                  // Tapping opens the dock with the Name field focused: the
+                  // collapsed view can only SHOW the name, and an operator who
+                  // sees the wrong one (or none) needs a way to fix it that is
+                  // not "guess that [ MORE ] is where names live".
+                  onClick={() => setDockOpen(true)}
+                  aria-live="polite"
                 >
-                  <span aria-hidden="true">→ </span>
-                  {name}
-                </p>
+                  {name.trim() !== '' ? (
+                    <>
+                      <span aria-hidden="true">→ </span>
+                      {name}
+                    </>
+                  ) : nameLookupPending ? (
+                    <span className="hna-checkin-form__resolved--muted">
+                      Looking up name…
+                    </span>
+                  ) : (
+                    <span className="hna-checkin-form__resolved--muted">
+                      No name found — tap to add
+                    </span>
+                  )}
+                </button>
               )}
               <div className="hna-checkin-form__actions">
                 <Button

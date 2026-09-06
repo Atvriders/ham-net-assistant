@@ -1870,12 +1870,29 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 /* Resolved-name confirmation under the collapsed callsign field. */
 .hna-checkin-form__resolved {
   margin: 2px 0 0;
+  padding: 0;
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--color-fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* It is a button (tap to open the dock and edit the name) but must read as
+   * a caption under the field, not as another control competing with Add. */
+  background: none;
+  border: 0;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+}
+.hna-checkin-form__resolved:focus-visible {
+  outline: var(--border-w-strong) solid var(--color-primary);
+  outline-offset: 2px;
+}
+.hna-checkin-form__resolved--muted {
+  color: var(--color-fg-subtle);
+  font-style: italic;
 }
 
 /* [ MORE ] / [ LESS ] — reveals name, mode and comment in the dock. */

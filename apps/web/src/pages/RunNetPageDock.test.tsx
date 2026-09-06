@@ -56,7 +56,11 @@ function stubViewport(narrow: boolean) {
   );
 }
 
-function makeFetch(opts: { live: boolean; recent?: Array<{ callsign: string; name: string }> }) {
+function makeFetch(opts: {
+  live: boolean;
+  recent?: Array<{ callsign: string; name: string }>;
+  directory?: Array<{ callsign: string; name: string }>;
+}) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     const json = (body: unknown) =>
@@ -69,7 +73,7 @@ function makeFetch(opts: { live: boolean; recent?: Array<{ callsign: string; nam
     if (url.includes('/recent-checkins')) return json(opts.recent ?? []);
     if (url.endsWith('/presence/heartbeat')) return json({});
     if (url.includes('/presence')) return json([]);
-    if (url.includes('/users/directory')) return json([]);
+    if (url.includes('/users/directory')) return json(opts.directory ?? []);
     if (url.includes('/topics/recommended')) return json([]);
     if (url.includes('/api/repeaters')) return json([repeater]);
     if (url.includes('/messages')) return json([]);
@@ -194,5 +198,63 @@ describe('recent check-ins rail', () => {
     renderPage();
     await screen.findByLabelText('Callsign');
     expect(screen.queryByTestId('recent-callsigns')).toBeNull();
+  });
+});
+
+describe('name autofill in the collapsed dock', () => {
+  it('replaces a chip-filled name when the callsign changes', async () => {
+    stubViewport(true);
+    vi.stubGlobal(
+      'fetch',
+      makeFetch({
+        live: true,
+        recent: [{ callsign: 'KF0WBD', name: 'Bret Flanders' }],
+        // The directory answers for the SECOND callsign the operator types.
+        directory: [{ callsign: 'W1AW', name: 'Hiram Maxim' }],
+      }),
+    );
+    renderPage();
+
+    // Fill from the rail…
+    await userEvent.click(await screen.findByTestId('recent-chip-KF0WBD'));
+    await waitFor(() =>
+      expect(screen.getByTestId('dock-resolved-name')).toHaveTextContent('Bret Flanders'),
+    );
+
+    // …then type a different callsign. The chip's name must NOT stick: it was
+    // auto-filled, not typed by the operator.
+    const cs = screen.getByLabelText('Callsign');
+    await userEvent.clear(cs);
+    await userEvent.type(cs, 'W1AW');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dock-resolved-name')).toHaveTextContent('Hiram Maxim'),
+    );
+  });
+
+  it('says so when no name could be found, and opens the dock to add one', async () => {
+    stubViewport(true);
+    vi.stubGlobal('fetch', makeFetch({ live: true }));
+    renderPage();
+
+    const cs = await screen.findByLabelText('Callsign');
+    await userEvent.type(cs, 'W9XYZ');
+
+    const line = await screen.findByTestId('dock-resolved-name');
+    await waitFor(() => expect(line).toHaveTextContent(/no name found/i));
+
+    // Tapping it must expose an editable Name field — the collapsed view can
+    // only display a name, never correct one.
+    await userEvent.click(line);
+    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
+  });
+
+  it('shows nothing until the callsign is long enough to look up', async () => {
+    stubViewport(true);
+    vi.stubGlobal('fetch', makeFetch({ live: true }));
+    renderPage();
+    const cs = await screen.findByLabelText('Callsign');
+    await userEvent.type(cs, 'W9');
+    expect(screen.queryByTestId('dock-resolved-name')).toBeNull();
   });
 });
