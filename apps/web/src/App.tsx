@@ -20,6 +20,7 @@ import { Clock } from './components/ui/Clock.js';
 import { ConsoleField } from './components/ConsoleField.js';
 import { NetStatusIndicator } from './components/NetStatusIndicator.js';
 import { displayCallsign } from './lib/format.js';
+import { useAutoHideNav } from './lib/useAutoHideNav.js';
 
 // Lazy-load the StatsPage so the recharts bundle (~300-400 KB) is only fetched
 // when an officer/admin actually navigates to /stats. Most users never hit
@@ -112,6 +113,10 @@ function ColorModeToggle() {
 function NavBar() {
   const { user, logout } = useAuth();
   const { current } = useTheme();
+  // On a phone this bar wraps to several rows and is sticky, so it would sit
+  // on top of a third of the script all night. It slides away as the operator
+  // reads down and returns on the first upward scroll.
+  useAutoHideNav();
   return (
     <header className="hna-shell__nav">
       <div className="hna-shell__nav-inner">

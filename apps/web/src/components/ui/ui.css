@@ -449,10 +449,25 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   flex-direction: column;
   min-height: 100%;
 }
+/* How far down the viewport sticky page chrome must start to clear the nav.
+ * Normally the nav's measured height; zero while the nav is hidden, otherwise
+ * the run-net status strip would pin itself below a bar that is not there and
+ * leave an empty band across the top of the script. */
+:root { --nav-offset: var(--nav-h); }
+:root[data-nav-hidden='true'] { --nav-offset: 0px; }
+:root[data-nav-hidden='true'] .hna-shell__nav {
+  transform: translateY(-100%);
+}
+
 .hna-shell__nav {
   position: sticky;
   top: 0;
   z-index: 30;
+  /* Slid out of view by useAutoHideNav while reading down a long page on a
+   * phone. `transform` and not `display`/`height`: the bar keeps its place in
+   * the flow, so nothing below it jumps as it goes and comes back. The global
+   * prefers-reduced-motion rule flattens this transition to nothing. */
+  transition: transform var(--dur-med, 200ms) ease;
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -1372,7 +1387,7 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
  * operator scrolled. */
 .hna-runnet-status {
   position: sticky;
-  top: var(--nav-h);
+  top: var(--nav-offset, var(--nav-h));
   z-index: 5;
   background: color-mix(in srgb, var(--color-surface) 96%, transparent);
   backdrop-filter: blur(8px);
