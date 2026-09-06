@@ -17,6 +17,19 @@ security policies, real operator documentation) that a public project needs.
 
 ### Added
 
+- **[operators]** Replace stored names with the name on the FCC licence
+  (ADMIN). `GET /api/admin/uls/name-sync/preview` reports exactly what would
+  change — check-ins changing, already matching, and the ones the FCC has no
+  name for — with up to 25 `from → to` examples; `POST /api/admin/uls/name-sync`
+  with `confirm: "REPLACE NAMES"` applies it. It never blanks a name (a
+  callsign the mirror cannot answer for is skipped and counted), refuses an
+  empty mirror or a live net with `409`, leaves the `N0CALL` placeholder alone,
+  and takes a WAL-safe
+  `/data/backups/pre-name-sync-<UTC-timestamp>.db` snapshot **before** the
+  first write, aborting if that snapshot cannot be taken — unlike the
+  boot-time backup, here the snapshot is the only undo. Member account names
+  are left alone unless `includeUsers: true` is asked for. Re-running it
+  changes nothing.
 - **[operators]** Local FCC callsign database. Once a week (Friday 03:00
   container-local by default) the server streams the FCC's complete amateur
   licence dump and keeps its own copy of every active US callsign — name,

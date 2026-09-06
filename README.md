@@ -408,6 +408,48 @@ still live and clears the rest.
   club whose Friday run failed and does not want to wait a week. It answers
   `202` and runs in the background; poll the status endpoint for the outcome.
 
+### Replacing stored names with the FCC name
+
+A log accumulates names typed over the air: nicknames, misspellings, a name from
+before somebody married, the callsign itself where nobody knew the name.
+`GET /api/admin/uls/name-sync/preview` (ADMIN) shows what replacing them all
+with the FCC's own name would do — how many check-ins change, how many already
+match, how many the FCC has no name for, and up to 25 `from → to` examples.
+`POST /api/admin/uls/name-sync` then does it.
+
+This rewrites the club's FCC-facing log in bulk and no button undoes it, so:
+
+- It **never blanks a name.** A callsign the mirror cannot answer for — absent,
+  expired, nameless, blank-named, or a portable/prefixed form like `KB0BOB/M`
+  or `VE3/KB0BOB` — is skipped and counted in `noUlsName` /
+  `skippedNoUlsName`. An out-of-date name is a blemish; a missing one is a hole
+  in the record.
+- It **never renames the `N0CALL` placeholder.** `N0CALL` (and legacy
+  `N0CALL<n>` accounts) is the shared stand-in every unlicensed member
+  registers under, not a station identifier — so whoever the FCC says holds
+  that call is never the person the row is about. Those rows are skipped and
+  counted like any other unanswerable callsign.
+- It **refuses an empty mirror** (`409`). Nobody having run the import yet must
+  not present itself as "the FCC has no name for anybody".
+- It **refuses while a net is live** (`409`). It holds the single SQLite writer
+  in short bursts, and the operator logging check-ins needs it more.
+- The body must carry `confirm: "REPLACE NAMES"` exactly, or it is a `400`.
+- It **snapshots the database first** — the same `VACUUM INTO` as the
+  entrypoint, into the same directory, as
+  `/data/backups/pre-name-sync-<UTC-timestamp>.db` — and **aborts** if that
+  snapshot cannot be taken. That file is the undo. The response returns its
+  path; restore it the same way as any other snapshot (see [Restoring](#restoring)).
+  If a write fails part-way through (a full disk, `SQLITE_BUSY`, the container
+  stopped under it), the `500` names that snapshot file too — that is the
+  moment its path matters most.
+- Member account names (`User.name`) are left alone unless the request asks for
+  them with `includeUsers: true` — a member's account name is their own.
+- Re-running it is a no-op, and reports one: the second run updates nothing and
+  takes no snapshot, because there is nothing to undo.
+
+Chat messages are deliberately out of scope: `SessionMessage.nameAtMessage` is
+a transcript of what was said at the time, not a log entry.
+
 ### Opting out
 
 There is **no global off switch** — all three schedulers start unconditionally
@@ -632,6 +674,9 @@ The container entrypoint snapshots the database **before**
   `/data/backups/pre-migrate-<UTC-timestamp>.db` (override with
   `HNA_BACKUP_DIR`) — anywhere else would evaporate with the container.
 - The newest `HNA_BACKUP_KEEP` (default 5) are kept; older ones are pruned.
+  Retention counts **per prefix**, so the `pre-name-sync-` snapshot taken by
+  the ULS name replacement lives in the same directory and is never pruned away
+  by a run of container restarts.
 - A failed snapshot is loud in the logs but does **not** block boot: the club
   getting its app back matters more, and a half-written file is deleted rather
   than left looking restorable. Watch for

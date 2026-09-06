@@ -25,6 +25,18 @@ import { resolveSqliteFile, prismaDirFrom, isDirectRun } from './sqlitePath.js';
 /** Snapshot filenames start with this so pruning can never eat a foreign file. */
 export const BACKUP_PREFIX = 'pre-migrate-';
 
+/**
+ * Prefix for the snapshot the ULS name-sync admin action takes before it
+ * rewrites every stored name.
+ *
+ * A SEPARATE prefix, not a shared one, because retention prunes within a
+ * prefix family (see {@link pruneOldSnapshots}). Sharing `pre-migrate-` would
+ * let five container restarts prune away the only copy of the log as it was
+ * before an admin replaced every name in it — and that snapshot IS the undo
+ * button for an action that has no other one.
+ */
+export const NAME_SYNC_PREFIX = 'pre-name-sync-';
+
 /** How many snapshots to retain. Older ones are pruned after a successful run. */
 export const DEFAULT_KEEP = 5;
 
@@ -41,6 +53,12 @@ export interface SnapshotOptions {
   now?: Date;
   /** Line sink; defaults to stdout. */
   log?: (line: string) => void;
+  /**
+   * Filename prefix, which is also the retention family. Defaults to
+   * {@link BACKUP_PREFIX}; the name-sync action passes
+   * {@link NAME_SYNC_PREFIX}.
+   */
+  prefix?: string;
 }
 
 export interface SnapshotResult {
@@ -55,12 +73,12 @@ export interface SnapshotResult {
 }
 
 /** `pre-migrate-20260726T224033Z.db` — UTC, and lexically sortable by age. */
-export function snapshotName(now: Date): string {
+export function snapshotName(now: Date, prefix: string = BACKUP_PREFIX): string {
   const iso = now
     .toISOString()
     .replace(/[-:]/g, '')
     .replace(/\.\d{3}Z$/, 'Z');
-  return `${BACKUP_PREFIX}${iso}.db`;
+  return `${prefix}${iso}.db`;
 }
 
 /**
@@ -73,8 +91,8 @@ export function snapshotName(now: Date): string {
  * name sort. A `-NN` suffix would sort BEFORE the unsuffixed name and make
  * pruning delete the newer copy.
  */
-function freeSnapshotPath(dir: string, now: Date): string {
-  const base = snapshotName(now);
+function freeSnapshotPath(dir: string, now: Date, prefix: string): string {
+  const base = snapshotName(now, prefix);
   let candidate = path.join(dir, base);
   for (let n = 1; fs.existsSync(candidate) && n < 100; n += 1) {
     candidate = path.join(dir, base.replace(/\.db$/, `_${String(n).padStart(2, '0')}.db`));
@@ -82,10 +100,15 @@ function freeSnapshotPath(dir: string, now: Date): string {
   return candidate;
 }
 
-function pruneOldSnapshots(dir: string, keep: number): string[] {
+/**
+ * Retention is per PREFIX. Each kind of snapshot keeps its own N: a run of
+ * container restarts must not be able to prune the pre-name-sync copy, and a
+ * burst of admin actions must not prune the pre-migration ones.
+ */
+function pruneOldSnapshots(dir: string, keep: number, prefix: string): string[] {
   const names = fs
     .readdirSync(dir)
-    .filter((f) => f.startsWith(BACKUP_PREFIX) && f.endsWith('.db'))
+    .filter((f) => f.startsWith(prefix) && f.endsWith('.db'))
     // Names embed a UTC timestamp, so lexicographic order IS chronological.
     .sort();
   const doomed = names.slice(0, Math.max(0, names.length - keep));
@@ -115,6 +138,7 @@ function describe(e: unknown): string {
 export async function snapshotDatabase(opts: SnapshotOptions): Promise<SnapshotResult> {
   const log = opts.log ?? ((line: string) => console.log(line));
   const keep = opts.keep ?? DEFAULT_KEEP;
+  const prefix = opts.prefix ?? BACKUP_PREFIX;
 
   const dbFile = resolveSqliteFile(opts.databaseUrl, opts.baseDir);
   if (!dbFile) {
@@ -137,7 +161,7 @@ export async function snapshotDatabase(opts: SnapshotOptions): Promise<SnapshotR
   let dest: string | null = null;
   try {
     fs.mkdirSync(backupDir, { recursive: true });
-    dest = freeSnapshotPath(backupDir, opts.now ?? new Date());
+    dest = freeSnapshotPath(backupDir, opts.now ?? new Date(), prefix);
     const prisma = new PrismaClient({ datasourceUrl: opts.databaseUrl });
     try {
       // Bound parameter, not string interpolation: a database path containing
@@ -148,7 +172,7 @@ export async function snapshotDatabase(opts: SnapshotOptions): Promise<SnapshotR
     }
     const bytes = fs.statSync(dest).size;
     log(`[backup] wrote ${dest} (${Math.round(bytes / 1024)} KiB)`);
-    const pruned = pruneOldSnapshots(backupDir, keep);
+    const pruned = pruneOldSnapshots(backupDir, keep, prefix);
     for (const file of pruned) log(`[backup] pruned old snapshot ${file}`);
     return { status: 'created', file: dest, pruned };
   } catch (e) {
@@ -163,7 +187,7 @@ export async function snapshotDatabase(opts: SnapshotOptions): Promise<SnapshotR
       }
     }
     log(`[backup] *** SNAPSHOT FAILED: ${message}`);
-    log(`[backup] *** the database has NOT been backed up before this migration`);
+    log(`[backup] *** the database has NOT been backed up`);
     return { status: 'failed', pruned: [], message };
   }
 }
@@ -174,18 +198,38 @@ function positiveIntFromEnv(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function main(): Promise<number> {
-  // DATABASE_URL is read directly instead of through src/env.ts on purpose:
-  // env.ts also requires JWT_SECRET, and the backup must still be runnable in
-  // a recovery shell where only the database location is known. The default
-  // mirrors env.ts so dev behaviour cannot drift.
-  const databaseUrl = process.env.DATABASE_URL ?? 'file:./dev.db';
-  const result = await snapshotDatabase({
-    databaseUrl,
+/**
+ * Where this deployment keeps its database and its snapshots, read from the
+ * process environment.
+ *
+ * Exported because the CLI is no longer the only caller: the ADMIN name-sync
+ * action snapshots through the same mechanism, and it must land in the same
+ * directory, honour the same HNA_BACKUP_* overrides, and resolve the same
+ * relative `file:` URL. A second copy of this resolution is exactly how an
+ * admin action ends up writing its only undo into the container's writable
+ * layer while the operator's real backups sit in /data/backups.
+ *
+ * DATABASE_URL is read directly instead of through src/env.ts on purpose:
+ * env.ts also requires JWT_SECRET, and the backup must still be runnable in a
+ * recovery shell where only the database location is known. The default
+ * mirrors env.ts so dev behaviour cannot drift. Reading it at call time (not
+ * at import time) also keeps the API's test harness — which points
+ * DATABASE_URL at a fresh file per suite — working.
+ */
+export function snapshotOptionsFromEnv(
+  overrides: Partial<SnapshotOptions> = {},
+): SnapshotOptions {
+  return {
+    databaseUrl: process.env.DATABASE_URL ?? 'file:./dev.db',
     baseDir: prismaDirFrom(import.meta.url),
     backupDir: process.env.HNA_BACKUP_DIR || undefined,
     keep: positiveIntFromEnv(process.env.HNA_BACKUP_KEEP, DEFAULT_KEEP),
-  });
+    ...overrides,
+  };
+}
+
+async function main(): Promise<number> {
+  const result = await snapshotDatabase(snapshotOptionsFromEnv());
   // Honest exit codes for interactive use (`... node dist/cli/backup.js` as an
   // ad-hoc backup). The decision to boot anyway lives in the entrypoint, where
   // it is visible to whoever reads the logs.

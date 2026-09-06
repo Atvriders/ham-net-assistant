@@ -4,7 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { makeTestDb, cleanupTestDb } from '../helpers.js';
-import { snapshotDatabase, snapshotName, BACKUP_PREFIX } from '../../src/cli/backup.js';
+import {
+  snapshotDatabase,
+  snapshotName,
+  snapshotOptionsFromEnv,
+  BACKUP_PREFIX,
+  NAME_SYNC_PREFIX,
+} from '../../src/cli/backup.js';
 
 // The entrypoint runs `prisma migrate deploy` unattended against the club's
 // only copy of its net logs. These tests cover the pre-migration snapshot that
@@ -147,6 +153,50 @@ describe('pre-migration snapshot', () => {
     expect(lines.join('\n')).toMatch(/SNAPSHOT FAILED/);
     expect(lines.join('\n')).toMatch(/has NOT been backed up/);
     expect(fs.statSync(blocked).isFile()).toBe(true);
+  });
+
+  it('retains each prefix separately, so restarts cannot prune the name-sync undo', async () => {
+    // The pre-name-sync snapshot is the ONLY undo for the ADMIN name replace.
+    // If retention were global, a handful of container restarts (each writing
+    // a pre-migrate- snapshot) would silently delete it.
+    const undo = await snapshotDatabase(
+      opts({ now: new Date(Date.UTC(2026, 6, 26, 12, 0, 0)), prefix: NAME_SYNC_PREFIX, keep: 3 }),
+    );
+    expect(undo.status).toBe('created');
+
+    for (let i = 1; i <= 8; i += 1) {
+      const r = await snapshotDatabase(opts({ now: new Date(Date.UTC(2026, 6, 26, 12, 0, i)), keep: 3 }));
+      expect(r.status).toBe('created');
+      expect(r.pruned).not.toContain(undo.file);
+    }
+
+    expect(fs.existsSync(undo.file!)).toBe(true);
+    expect(fs.readdirSync(backupDir).filter((f) => f.startsWith(BACKUP_PREFIX))).toHaveLength(3);
+    expect(fs.readdirSync(backupDir).filter((f) => f.startsWith(NAME_SYNC_PREFIX))).toHaveLength(1);
+  });
+
+  it('defaults, from the environment alone, to a backups/ dir beside the database', async () => {
+    // In the image DATABASE_URL is file:/data/ham.db and /data is the mounted
+    // volume, so this is what puts the admin action's undo somewhere that
+    // survives `docker compose down && up` rather than in the container layer.
+    const savedUrl = process.env.DATABASE_URL;
+    const savedDir = process.env.HNA_BACKUP_DIR;
+    process.env.DATABASE_URL = `file:${dbFile}`;
+    delete process.env.HNA_BACKUP_DIR;
+    try {
+      const resolved = snapshotOptionsFromEnv({ prefix: NAME_SYNC_PREFIX, log: () => {} });
+      expect(resolved.backupDir).toBeUndefined();
+      const result = await snapshotDatabase(resolved);
+      expect(result.status).toBe('created');
+      expect(path.dirname(result.file!)).toBe(path.join(path.dirname(dbFile), 'backups'));
+      expect(path.basename(result.file!)).toMatch(/^pre-name-sync-/);
+      fs.rmSync(path.join(path.dirname(dbFile), 'backups'), { recursive: true, force: true });
+    } finally {
+      if (savedUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedUrl;
+      if (savedDir === undefined) delete process.env.HNA_BACKUP_DIR;
+      else process.env.HNA_BACKUP_DIR = savedDir;
+    }
   });
 
   it('names snapshots with a sortable UTC timestamp', () => {

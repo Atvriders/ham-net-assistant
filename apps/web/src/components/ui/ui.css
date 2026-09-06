@@ -1975,6 +1975,32 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
  * delete on every line, and four controls per row does not fit a phone.
  * ------------------------------------------------------------------ */
 /* Facts row on the ULS mirror card — label above value, wraps on a phone. */
+/* Before/after sample rows on the ULS name-replacement card. */
+.hna-name-sync__samples {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.hna-name-sync__samples li {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.hna-name-sync__cs { color: var(--color-primary); font-weight: 700; }
+.hna-name-sync__from {
+  color: var(--color-fg-subtle);
+  text-decoration: line-through;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hna-name-sync__to { overflow: hidden; text-overflow: ellipsis; }
+
 .hna-uls-facts {
   display: flex;
   flex-wrap: wrap;

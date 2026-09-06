@@ -12,6 +12,7 @@ import { useTheme } from '../theme/ThemeProvider.js';
 import { displayCallsign } from '../lib/format.js';
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { UlsMirrorCard } from '../components/UlsMirrorCard.js';
+import { UlsNameSyncCard } from '../components/UlsNameSyncCard.js';
 import { usePresence } from '../lib/usePresence.js';
 import { OnlineDot } from '../components/OnlineDot.js';
 import { LogImportModal } from '../components/LogImportModal.js';
@@ -890,6 +891,7 @@ export function AdminPage() {
       {/* TOOLS */}
       <SectionDivider>TOOLS</SectionDivider>
       <UlsMirrorCard />
+      <UlsNameSyncCard />
       <Card>
         <p
           style={{

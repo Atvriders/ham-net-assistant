@@ -7,6 +7,11 @@ import { asyncHandler } from '../middleware/async.js';
 import { lookupCallsignName } from '../lib/callsignNameLookup.js';
 import { dayKeyInTz } from '../lib/sessionDedupe.js';
 import { isUlsImportRunning, runUlsImport } from '../lib/ulsImport.js';
+import {
+  NAME_SYNC_CONFIRM,
+  applyUlsNameSync,
+  previewUlsNameSync,
+} from '../lib/ulsNameSync.js';
 import { env } from '../env.js';
 
 const TRASH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -247,6 +252,19 @@ async function mergeGroup(
 const MergeInput = z.object({
   keepSessionId: z.string().min(1),
   mergeSessionIds: z.array(z.string().min(1)).min(1),
+});
+
+/**
+ * Body of the destructive half of the name sync.
+ *
+ * `confirm` is a literal, not a boolean: this rewrites every name in an
+ * FCC-facing log, and a stray or replayed POST must not be able to trigger it.
+ * `includeUsers` defaults to FALSE — a member's account name belongs to them,
+ * so an admin has to ask for that half explicitly.
+ */
+const NameSyncInput = z.object({
+  includeUsers: z.boolean().optional().default(false),
+  confirm: z.literal(NAME_SYNC_CONFIRM),
 });
 
 const AutoMergeInput = z.object({
@@ -579,6 +597,31 @@ export function adminRouter(prisma: PrismaClient): Router {
       lastSuccess: shape(lastSuccess ?? null),
       recentRuns: runs.map((r) => shape(r)),
     });
+  }));
+
+  // ── Replace stored names with the FCC name ────────────────────────────────
+  // Preview first, then a confirmed, snapshot-backed bulk rewrite. The rules
+  // that make this safe live in lib/ulsNameSync.ts; these two handlers are the
+  // HTTP surface and nothing else.
+
+  router.get('/uls/name-sync/preview', requireRole('ADMIN'), asyncHandler(async (req, res) => {
+    // Absent means false. The preview is what the admin screen shows before
+    // deciding, so defaulting the member-accounts half ON would put a change
+    // nobody asked for in front of the person about to press the button.
+    const includeUsers = req.query.includeUsers === 'true';
+    res.json(await previewUlsNameSync(prisma, includeUsers));
+  }));
+
+  router.post('/uls/name-sync', requireRole('ADMIN'), asyncHandler(async (req, res) => {
+    const parsed = NameSyncInput.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new HttpError(
+        400,
+        'VALIDATION',
+        `This replaces every stored name and cannot be undone by a click. Send confirm: "${NAME_SYNC_CONFIRM}" to run it.`,
+      );
+    }
+    res.json(await applyUlsNameSync(prisma, parsed.data.includeUsers));
   }));
 
   router.post('/uls/import', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
