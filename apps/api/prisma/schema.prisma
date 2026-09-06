@@ -245,12 +245,21 @@ model CheckIn {
   /// VoIP check-ins. Kept as a free-form string (not an enum) so future
   /// modes like 'allstar' / 'irlp' don't require another migration.
   mode          String?
+  /// Position in the session's log, 1-based. The log is a record of the order
+  /// stations were HEARD, which is not always the order they were typed: an
+  /// operator who misses a station adds it later and moves it into place.
+  /// Kept separate from checkedInAt on purpose — that column records when the
+  /// entry was actually made, and rewriting it to fake a sort order would be
+  /// falsifying an FCC-facing log. Nullable only so the column could be added
+  /// to existing rows; every row is assigned one on insert.
+  sequence      Int?
   deletedAt     DateTime?
 
   @@index([sessionId])
   @@index([callsign])
   @@index([checkedInAt])
   @@index([deletedAt])
+  @@index([sessionId, sequence])
 }
 
 /// Local mirror of the FCC ULS amateur licence database (l_amat.zip), refreshed

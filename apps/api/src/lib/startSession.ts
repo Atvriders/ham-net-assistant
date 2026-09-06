@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { postToDiscord } from '../discord/client.js';
+import { CHECKIN_LOG_ORDER_DESC } from './checkInOrder.js';
 
 /**
  * The relation payload the start flow returns — identical to what
@@ -8,7 +9,7 @@ import { postToDiscord } from '../discord/client.js';
  */
 const startedSessionInclude = {
   topic: true,
-  checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+  checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
   net: {
     include: {
       repeater: true,

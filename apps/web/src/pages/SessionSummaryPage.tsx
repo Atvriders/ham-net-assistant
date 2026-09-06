@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { CheckIn, NetSession, Net, Repeater } from '@hna/shared';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, errorMessage } from '../api/client.js';
 import { Card } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { ConfirmModal } from '../components/ui/ConfirmModal.js';
@@ -11,6 +11,8 @@ import { formatFrequency, formatOffset, formatTone, displayCallsign } from '../l
 import { useAutoFetch } from '../lib/useAutoFetch.js';
 import { buildSessionLogText } from '../lib/sessionLog.js';
 import { EditCheckInModal } from '../components/EditCheckInModal.js';
+import { AddCheckInModal } from '../components/AddCheckInModal.js';
+import { moveItem } from '../lib/reorder.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -55,6 +57,13 @@ export function SessionSummaryPage() {
   const [confirmDeleteCheckInId, setConfirmDeleteCheckInId] = useState<string | null>(null);
   const [confirmDeleteSession, setConfirmDeleteSession] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // Editing a FINISHED log: add a station that was heard but missed, and put
+  // the log back into the order it was heard. Officer-only, and behind a mode
+  // so a page people mostly read does not look like a form.
+  const [editingLog, setEditingLog] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [logErr, setLogErr] = useState<string | null>(null);
+  const [logBusy, setLogBusy] = useState(false);
 
   const canModify = (ci: CheckIn): boolean => {
     if (user?.role === 'OFFICER' || user?.role === 'ADMIN') return true;
@@ -130,6 +139,36 @@ export function SessionSummaryPage() {
   if (!data) return <div style={{ padding: 24 }}>Loading summary…</div>;
 
   const { session, net, repeater, checkIns } = data;
+  // The API already returns the log in its recorded order (sequence, then
+  // check-in time). Sorting again here by timestamp would silently undo an
+  // operator's reordering on this page only.
+  const orderedCheckIns = [...checkIns].sort((a, b) => {
+    const sa = a.sequence ?? Number.MAX_SAFE_INTEGER;
+    const sb = b.sequence ?? Number.MAX_SAFE_INTEGER;
+    if (sa !== sb) return sa - sb;
+    return new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime();
+  });
+
+  /** Send the whole order; see the endpoint's note on why not "move to N". */
+  async function moveCheckIn(idx: number, delta: -1 | 1) {
+    const to = idx + delta;
+    if (to < 0 || to >= orderedCheckIns.length) return;
+    setLogBusy(true);
+    setLogErr(null);
+    try {
+      const next = moveItem(orderedCheckIns, idx, to);
+      await apiFetch(`/sessions/${sessionId}/checkins/order`, {
+        method: 'PATCH',
+        body: JSON.stringify({ orderedIds: next.map((c) => c.id) }),
+      });
+      await refresh();
+    } catch (e) {
+      setLogErr(errorMessage(e));
+    } finally {
+      setLogBusy(false);
+    }
+  }
+
   const totalCheckIns = checkIns.length;
 
   return (
@@ -311,6 +350,36 @@ export function SessionSummaryPage() {
       {/* ===== Roster table ===== */}
       <SectionDivider>ROSTER</SectionDivider>
       <Card>
+        {isOfficerOrAdmin && (
+          <div className="hna-log-edit-bar">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditingLog((v) => !v);
+                setLogErr(null);
+              }}
+              aria-pressed={editingLog}
+              data-testid="edit-log-toggle"
+            >
+              {editingLog ? 'Done editing' : 'Edit log'}
+            </Button>
+            {editingLog && (
+              <>
+                <Button onClick={() => setAddOpen(true)} data-testid="add-checkin-button">
+                  Add a missed station
+                </Button>
+                <p className="hna-mono hna-log-edit-bar__hint" data-testid="edit-log-hint">
+                  Check-in times stay as recorded — only the order changes.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+        {logErr && (
+          <p className="hna-input-error" role="alert" data-testid="log-edit-error">
+            {logErr}
+          </p>
+        )}
         <header className="hna-section-caption">
           <h3 className="hna-section-caption__title">
             <span className="hna-cap hna-cap--accent" style={{ margin: 0 }}>
@@ -337,13 +406,7 @@ export function SessionSummaryPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...checkIns]
-                  .sort(
-                    (a, b) =>
-                      new Date(a.checkedInAt).getTime() -
-                      new Date(b.checkedInAt).getTime(),
-                  )
-                  .map((ci, idx) => {
+                {orderedCheckIns.map((ci, idx) => {
                     const recent =
                       Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
                     const canEdit = canModify(ci);
@@ -352,6 +415,30 @@ export function SessionSummaryPage() {
                     return (
                       <tr key={ci.id}>
                         <td className="hna-log-table__idx">
+                          {editingLog && (
+                            <span className="hna-log-table__move">
+                              <button
+                                type="button"
+                                className="hna-roster__move-btn"
+                                onClick={() => void moveCheckIn(idx, -1)}
+                                disabled={idx === 0 || logBusy}
+                                aria-label={`Move ${ci.callsign} earlier`}
+                                data-testid={`summary-move-up-${ci.callsign}`}
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                className="hna-roster__move-btn"
+                                onClick={() => void moveCheckIn(idx, 1)}
+                                disabled={idx === orderedCheckIns.length - 1 || logBusy}
+                                aria-label={`Move ${ci.callsign} later`}
+                                data-testid={`summary-move-down-${ci.callsign}`}
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          )}
                           #{String(idx + 1).padStart(2, '0')}
                         </td>
                         <td className="hna-log-table__cs">
@@ -508,6 +595,12 @@ export function SessionSummaryPage() {
         </>
       )}
 
+      <AddCheckInModal
+        open={addOpen}
+        sessionId={sessionId ?? ''}
+        onClose={() => setAddOpen(false)}
+        onAdded={() => void refresh()}
+      />
       <EditCheckInModal
         open={editingCheckIn !== null}
         checkIn={editingCheckIn}

@@ -157,3 +157,14 @@ export const Net = z.object({
   active: z.boolean(),
 });
 export type Net = z.infer<typeof Net>;
+
+/**
+ * Body of PATCH /api/sessions/:id/checkins/order — the session's complete
+ * live check-in id list, in the order the log should read. Capped because a
+ * single net's log is tens of rows, not thousands, and an unbounded array
+ * would be a free way to make the server build a huge transaction.
+ */
+export const ReorderCheckInsInput = z.object({
+  orderedIds: z.array(z.string().min(1)).min(1).max(1000),
+});
+export type ReorderCheckInsInput = z.infer<typeof ReorderCheckInsInput>;

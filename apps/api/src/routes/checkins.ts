@@ -71,7 +71,21 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       where: { id: sessionId, deletedAt: null },
     });
     if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
-    if (session.endedAt) throw new HttpError(409, 'CONFLICT', 'Session already ended');
+    if (session.endedAt) {
+      // A finished log is still correctable — a station heard on the air but
+      // missed at the time has to be enterable afterwards, or the record is
+      // simply wrong. Reserved to the people who run nets: an ended session is
+      // the club's archived record, not a form anyone may still post to. The
+      // entry's checkedInAt is the real time it was typed, so the log always
+      // shows that it was added after the net closed.
+      if (!req.user || !roleAtLeast(req.user.role, 'NET_CONTROL')) {
+        throw new HttpError(
+          409,
+          'CONFLICT',
+          'This net has ended. Ask a net control operator or officer to add a missed station.',
+        );
+      }
+    }
     // PREP gate: the net has been opened but not yet started — check-ins must
     // wait for the control op to press START NET.
     if (!session.liveAt) {
@@ -86,8 +100,17 @@ export function checkinsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       where: { callsign: body.callsign },
       orderBy: { createdAt: 'asc' },
     });
+    // Append to the end of the log. Computed rather than counted so a session
+    // whose rows were reordered (or partly soft-deleted) still gets a position
+    // after every existing one instead of colliding with a used number.
+    const highest = await prisma.checkIn.aggregate({
+      where: { sessionId, deletedAt: null },
+      _max: { sequence: true },
+    });
+    const nextSequence = (highest._max.sequence ?? 0) + 1;
     const created = await prisma.checkIn.create({
       data: {
+        sequence: nextSequence,
         sessionId, callsign: body.callsign, nameAtCheckIn: body.nameAtCheckIn,
         comment: body.comment ?? null, userId: matched?.id ?? null,
         createdById: req.user!.id,

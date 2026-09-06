@@ -1994,6 +1994,30 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
   font-variant-numeric: tabular-nums;
 }
 
+/* Edit-log controls above the session summary's roster table. */
+.hna-log-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.hna-log-edit-bar__hint {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+/* The arrows sit with the row number, so the log keeps its column layout
+ * while it is being reordered instead of growing a whole extra column. */
+.hna-log-table__move {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+
 .hna-roster__reorder-toggle {
   margin-left: auto;
   background: transparent;

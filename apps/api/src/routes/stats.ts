@@ -7,6 +7,7 @@ import { renderParticipationPdf } from '../lib/pdf.js';
 import { asyncHandler } from '../middleware/async.js';
 import { requireRole } from '../middleware/auth.js';
 import { normalizeCheckInMode } from '../lib/checkinMode.js';
+import { CHECKIN_LOG_ORDER_ASC } from '../lib/checkInOrder.js';
 
 const RangeQuery = z.object({
   from: z.string().datetime().optional(),
@@ -120,7 +121,7 @@ export function statsRouter(prisma: PrismaClient): Router {
         session: { startedAt: { gte: from, lte: to }, deletedAt: null },
       },
       include: { session: { include: { net: true } } },
-      orderBy: { checkedInAt: 'asc' },
+      orderBy: CHECKIN_LOG_ORDER_ASC,
     });
     for (const ci of checkIns) {
       res.write(

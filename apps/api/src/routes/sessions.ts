@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { PrismaClient, CheckIn } from '@prisma/client';
 import { z } from 'zod';
-import { NetSessionUpdate } from '@hna/shared';
+import { NetSessionUpdate,
+  ReorderCheckInsInput,
+} from '@hna/shared';
 import { validateBody } from '../middleware/validate.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
@@ -12,6 +14,7 @@ import { InvalidTimezoneError } from '../discord/reminders.js';
 import { postToDiscord } from '../discord/client.js';
 import { withCheckInMode } from '../lib/checkinMode.js';
 import { startSession } from '../lib/startSession.js';
+import { CHECKIN_LOG_ORDER_ASC, CHECKIN_LOG_ORDER_DESC } from '../lib/checkInOrder.js';
 
 /**
  * Normalize the checkIns array on a session-shaped object so each row carries
@@ -108,7 +111,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
           where: { id: existing.id },
           include: {
             topic: true,
-            checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+            checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
             net: {
               include: {
                 repeater: true,
@@ -151,7 +154,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
         },
         include: {
           topic: true,
-          checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+          checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
           net: {
             include: {
               repeater: true,
@@ -241,7 +244,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
             links: { include: { repeater: true } },
           },
         },
-        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'asc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_ASC },
         controlOp: { select: { callsign: true, name: true } },
       },
     });
@@ -264,7 +267,7 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       where: { id: req.params.id, deletedAt: null },
       include: {
         topic: true,
-        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
         net: {
           include: {
             repeater: true,
@@ -290,6 +293,74 @@ export function sessionsRouter(prisma: PrismaClient): { nested: Router; flat: Ro
       data: { deletedAt: new Date() },
     });
     res.status(204).end();
+  }));
+
+  /**
+   * Re-place the session's check-in log.
+   *
+   * Takes the COMPLETE list of that session's live check-in ids in the order
+   * they should read, and rejects anything else. "Move id X to position 3"
+   * would look simpler, but two operators tidying the same log — or one
+   * retrying after a dropped connection — could interleave into an order
+   * neither of them chose. Sending the whole list makes the write idempotent
+   * and makes a stale tab fail loudly instead of silently reshuffling.
+   *
+   * checkedInAt is deliberately untouched: it records when the entry was
+   * MADE, and rewriting it to fake a sort would falsify an FCC-facing log.
+   */
+  flat.patch('/:id/checkins/order', requireRole('NET_CONTROL'), asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+    const parsed = ReorderCheckInsInput.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new HttpError(400, 'VALIDATION', 'Expected orderedIds: a list of check-in ids');
+    }
+    const { orderedIds } = parsed.data;
+
+    const session = await prisma.netSession.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!session) throw new HttpError(404, 'NOT_FOUND', 'Session not found');
+
+    const live = await prisma.checkIn.findMany({
+      where: { sessionId: id, deletedAt: null },
+      select: { id: true },
+    });
+
+    // The submitted list must be exactly this session's live check-ins: same
+    // count, no duplicates, nothing foreign, nothing missing. Anything else
+    // means the client is working from a log that has since changed (someone
+    // added or removed a station), and applying it would drop or duplicate a
+    // position.
+    const known = new Set(live.map((c) => c.id));
+    const submitted = new Set(orderedIds);
+    const sameSet =
+      submitted.size === orderedIds.length &&
+      orderedIds.length === live.length &&
+      orderedIds.every((cid) => known.has(cid));
+    if (!sameSet) {
+      throw new HttpError(
+        409,
+        'CONFLICT',
+        'The log changed while you were reordering it. Reload and try again.',
+      );
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((cid, index) =>
+        prisma.checkIn.update({ where: { id: cid }, data: { sequence: index + 1 } }),
+      ),
+    );
+
+    const updated = await prisma.netSession.findUnique({
+      where: { id },
+      include: {
+        topic: true,
+        checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
+        controlOp: { select: { id: true, callsign: true, name: true } },
+        net: { include: { repeater: true, links: { include: { repeater: true } } } },
+      },
+    });
+    res.json(updated);
   }));
 
   flat.patch('/:id', requireRole('NET_CONTROL'), validateBody(NetSessionUpdate), asyncHandler(async (req, res) => {

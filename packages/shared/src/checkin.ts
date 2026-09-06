@@ -31,5 +31,9 @@ export const CheckIn = z.object({
   /// so consumers can rely on a concrete enum value.
   mode: CheckInMode,
   createdById: z.string().nullable().optional(),
+  /// Position in the session's log, 1-based — the order stations were HEARD,
+  /// which an operator can correct after the fact. Optional on the wire so a
+  /// client reading an older response still parses.
+  sequence: z.number().int().nullable().optional(),
 });
 export type CheckIn = z.infer<typeof CheckIn>;

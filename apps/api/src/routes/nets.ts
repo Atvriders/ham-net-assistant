@@ -13,6 +13,7 @@ import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { redactScriptsForRole } from '../lib/scriptGate.js';
 import { withCheckInMode } from '../lib/checkinMode.js';
+import { CHECKIN_LOG_ORDER_DESC } from '../lib/checkInOrder.js';
 
 const netInclude = {
   repeater: true,
@@ -169,7 +170,7 @@ export function netsRouter(prisma: PrismaClient): Router {
       include: {
         topic: true,
         net: { include: { repeater: true, links: { include: { repeater: true } } } },
-        checkIns: { where: { deletedAt: null }, orderBy: { checkedInAt: 'desc' } },
+        checkIns: { where: { deletedAt: null }, orderBy: CHECKIN_LOG_ORDER_DESC },
       },
       orderBy: { startedAt: 'desc' },
     });
