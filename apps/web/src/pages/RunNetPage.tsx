@@ -34,6 +34,7 @@ import { NetEditModal, netToInput } from '../components/NetEditModal.js';
 import { RecentCallsigns, type RecentCallsign } from '../components/RecentCallsigns.js';
 import { RepeaterFacts } from '../components/RepeaterFacts.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
+import { moveItem } from '../lib/reorder.js';
 
 interface NetLinkWithRepeater {
   id: string;
@@ -259,6 +260,11 @@ export function RunNetPage() {
   // operator watches a blank line and cannot tell "still looking" from
   // "nothing found".
   const [nameLookupPending, setNameLookupPending] = useState(false);
+  // Reorder is a MODE, not a control on every row: the log already carries an
+  // edit and a delete per line, and adding two more arrows to each would crowd
+  // the roster on a phone for something used a few times a night.
+  const [reordering, setReordering] = useState(false);
+  const [reorderErr, setReorderErr] = useState<string | null>(null);
   const prevCheckInCountRef = useRef<number | null>(null);
   const lastAutoFilledNameRef = useRef<string>('');
   // One green blink at the PREP -> LIVE moment. Only a transition observed
@@ -608,6 +614,39 @@ export function RunNetPage() {
       setNameLookupPending(false);
     };
   }, [callsign, directory]);
+
+  /**
+   * Persist a new check-in order.
+   *
+   * Sends the COMPLETE oldest-first id list rather than "move this one to
+   * index N": the whole list is idempotent and self-describing, so a retry or
+   * a second operator reordering at the same time cannot interleave into a
+   * sequence nobody chose. The server rejects a list that is not exactly this
+   * session's live check-ins, which is what makes a stale tab safe.
+   */
+  const reorderAction = useAsyncAction(async (orderedIds: string[]) => {
+    if (!session) return;
+    setReorderErr(null);
+    await apiFetch(`/sessions/${session.id}/checkins/order`, {
+      method: 'PATCH',
+      body: JSON.stringify({ orderedIds }),
+    });
+    await refresh();
+  });
+
+  /** Move the row at `displayIdx` (oldest-first) by one place and save. */
+  async function moveCheckIn(displayIdx: number, delta: -1 | 1) {
+    if (!session) return;
+    const oldestFirst = [...session.checkIns].reverse();
+    const to = displayIdx + delta;
+    if (to < 0 || to >= oldestFirst.length) return;
+    const next = moveItem(oldestFirst, displayIdx, to);
+    try {
+      await reorderAction.run(next.map((c) => c.id));
+    } catch (e) {
+      setReorderErr(errorMessage(e));
+    }
+  }
 
   // Undo the most recent check-in. Captures the target id inside the action so
   // a slow refresh can't shift `checkIns[0]` under a rapid second press.
@@ -1321,8 +1360,41 @@ export function RunNetPage() {
               >
                 [ {totalCheckIns} CHECKED IN ]
               </span>
+              {canRunNet && totalCheckIns > 1 && (
+                <button
+                  type="button"
+                  className="hna-roster__reorder-toggle hna-mono"
+                  onClick={() => {
+                    setReordering((v) => !v);
+                    setReorderErr(null);
+                  }}
+                  aria-pressed={reordering}
+                  data-testid="reorder-toggle"
+                  title={
+                    reordering
+                      ? 'Finish reordering'
+                      : 'Reorder check-ins — for a station logged out of the order it was heard'
+                  }
+                >
+                  {reordering ? '[ DONE ]' : '[ REORDER ]'}
+                </button>
+              )}
             </header>
 
+            {reordering && (
+              <p
+                className="hna-mono hna-roster__reorder-hint"
+                data-testid="reorder-hint"
+              >
+                Move a station to the position it was heard. Check-in times are
+                kept as recorded — only the order changes.
+              </p>
+            )}
+            {reorderErr && (
+              <p className="hna-input-error" role="alert" data-testid="reorder-error">
+                {reorderErr}
+              </p>
+            )}
             {isPrep && (
               <p
                 className="hna-mono"
@@ -1577,11 +1649,39 @@ export function RunNetPage() {
                   Date.now() - new Date(ci.checkedInAt).getTime() < 5 * 60 * 1000;
                 const canEdit = canModify(ci);
                 const showDisabledHint = !canEdit && ownsRow(ci) && !recent;
+                const isFirst = displayIdx === 0;
+                const isLast = displayIdx === checkInsOldestFirst.length - 1;
                 return (
                   <li
                     key={ci.id}
-                    className="hna-roster__row"
+                    className={
+                      reordering ? 'hna-roster__row is-reordering' : 'hna-roster__row'
+                    }
                   >
+                    {reordering ? (
+                      <span className="hna-roster__move">
+                        <button
+                          type="button"
+                          className="hna-roster__move-btn"
+                          onClick={() => void moveCheckIn(displayIdx, -1)}
+                          disabled={isFirst || reorderAction.pending}
+                          aria-label={`Move ${ci.callsign} earlier`}
+                          data-testid={`move-up-${ci.callsign}`}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          className="hna-roster__move-btn"
+                          onClick={() => void moveCheckIn(displayIdx, 1)}
+                          disabled={isLast || reorderAction.pending}
+                          aria-label={`Move ${ci.callsign} later`}
+                          data-testid={`move-down-${ci.callsign}`}
+                        >
+                          ▼
+                        </button>
+                      </span>
+                    ) : null}
                     <span className="hna-roster__idx">#{String(ord).padStart(2, '0')}</span>
                     <span className="hna-roster__cs">
                       <span className="hna-roster__cs-line">
@@ -1616,7 +1716,7 @@ export function RunNetPage() {
                         hour12: true,
                       })}
                     </span>
-                    <span className="hna-roster__actions">
+                    <span className="hna-roster__actions" hidden={reordering}>
                       <button
                         type="button"
                         onClick={() => canEdit && setEditingCheckIn(ci)}

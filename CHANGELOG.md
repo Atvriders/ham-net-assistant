@@ -17,6 +17,17 @@ security policies, real operator documentation) that a public project needs.
 
 ### Added
 
+- **[operators]** Local FCC callsign database. Once a week (Friday 03:00
+  container-local by default) the server streams the FCC's complete amateur
+  licence dump and keeps its own copy of every active US callsign — name,
+  operator class, city/state — so callsign lookups during a net are answered
+  offline in well under a millisecond instead of costing an outbound request to
+  callook.info per check-in. callook remains the fallback for anything the
+  mirror does not hold. Measured against the real dump: ~152 MB downloaded,
+  823,953 callsigns, ~163 MB of database, ~4 minutes, and no failed application
+  writes while it runs. Off with `ULS_IMPORT_ENABLED=false`; retry a failed
+  refresh from `POST /api/admin/uls/import` and read `GET /api/admin/uls`.
+  See `ULS_*` in `.env.example`.
 - **[operators]** Pre-migration database snapshots. The container entrypoint
   takes a WAL-safe SQLite `VACUUM INTO` snapshot into `/data/backups/` (inside
   the volume) before `prisma migrate deploy` runs, keeping the newest

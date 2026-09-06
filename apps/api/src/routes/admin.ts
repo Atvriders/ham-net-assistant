@@ -6,6 +6,8 @@ import { HttpError } from '../middleware/error.js';
 import { asyncHandler } from '../middleware/async.js';
 import { lookupCallsignName } from '../lib/callsignNameLookup.js';
 import { dayKeyInTz } from '../lib/sessionDedupe.js';
+import { isUlsImportRunning, runUlsImport } from '../lib/ulsImport.js';
+import { env } from '../env.js';
 
 const TRASH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -523,6 +525,85 @@ export function adminRouter(prisma: PrismaClient): Router {
       res.json({ scanned, updated, lookedUp, capped });
     }),
   );
+
+  // ── FCC ULS mirror ────────────────────────────────────────────────────────
+  // The weekly import (lib/ulsScheduler.ts) runs unattended in the small hours.
+  // When Friday's run fails — the FCC was down, the club's uplink dropped mid
+  // transfer — the club would otherwise wait a week for another attempt with no
+  // way to see why. These two endpoints are that visibility and that retry.
+
+  router.get('/uls', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
+    const [tableRows, runs] = await Promise.all([
+      prisma.ulsLicense.count(),
+      prisma.ulsImportRun.findMany({ orderBy: { startedAt: 'desc' }, take: 5 }),
+    ]);
+    const lastSuccess = runs.find((r) => r.outcome === 'success')
+      ?? await prisma.ulsImportRun.findFirst({
+        where: { outcome: 'success' },
+        orderBy: { startedAt: 'desc' },
+      });
+
+    const shape = (r: (typeof runs)[number] | null) =>
+      r === null
+        ? null
+        : {
+            id: r.id,
+            generation: r.generation,
+            outcome: r.outcome,
+            trigger: r.trigger,
+            startedAt: r.startedAt.toISOString(),
+            finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
+            sourceUrl: r.sourceUrl,
+            sourceFileDate: r.sourceFileDate,
+            rowsRead: r.rowsRead,
+            callsigns: r.callsigns,
+            malformedRows: r.malformedRows,
+            removedRows: r.removedRows,
+            unnamedCallsigns: r.unnamedCallsigns,
+            bytesRead: r.bytesRead,
+            error: r.error,
+          };
+
+    res.json({
+      enabled: env.ULS_IMPORT_ENABLED,
+      sourceUrl: env.ULS_SOURCE_URL,
+      // 0 = Sunday. Container-local time, which is UTC unless TZ is set.
+      dayOfWeek: env.ULS_IMPORT_DAY,
+      hour: env.ULS_IMPORT_HOUR,
+      running: isUlsImportRunning(),
+      /// Rows in the table, published or not. A number well above the last
+      /// run's `callsigns` means an import is in flight or was interrupted:
+      /// the extra rows are unpublished and invisible to lookups.
+      tableRows,
+      lastRun: shape(runs[0] ?? null),
+      lastSuccess: shape(lastSuccess ?? null),
+      recentRuns: runs.map((r) => shape(r)),
+    });
+  }));
+
+  router.post('/uls/import', requireRole('ADMIN'), asyncHandler(async (_req, res) => {
+    if (!env.ULS_IMPORT_ENABLED) {
+      // The switch belongs to whoever runs the container and pays for the
+      // bandwidth, not to whoever holds ADMIN in the app.
+      throw new HttpError(
+        409,
+        'CONFLICT',
+        'The FCC ULS import is disabled on this server (ULS_IMPORT_ENABLED=false).',
+      );
+    }
+    if (isUlsImportRunning()) {
+      throw new HttpError(409, 'CONFLICT', 'A ULS import is already running.');
+    }
+    // Deliberately not awaited: a full import streams ~155 MB and takes
+    // minutes, and no browser will hold a request open that long. The client
+    // polls GET /api/admin/uls for progress and the outcome.
+    void runUlsImport(prisma, { url: env.ULS_SOURCE_URL, trigger: 'manual' }).catch(
+      (e: unknown) => {
+        console.warn('[uls] manual import failed', e);
+      },
+    );
+    res.status(202).json({ started: true });
+  }));
 
   return router;
 }

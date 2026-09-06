@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import type { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/async.js';
 import { HttpError } from '../middleware/error.js';
+import { findUlsLicense, ulsAddressLine, type UlsLookupRow } from '../lib/ulsLookup.js';
 
 const CALLSIGN_RE = /^[A-Z0-9]{3,7}$/;
 
@@ -92,7 +94,51 @@ export async function fetchCallookLookup(callsign: string): Promise<LookupResult
   }
 }
 
-export function callsignLookupRouter(): Router {
+/**
+ * Render a local FCC ULS row in the wire shape the SPA already consumes.
+ *
+ * `gridSquare`, `latitude` and `longitude` are null because the FCC's bulk
+ * amateur licence data does not contain coordinates at all — callook derives
+ * them by geocoding the street address, which is a service, not a dataset.
+ * See the `location` query flag on the route for how callers that need a grid
+ * square still get one.
+ */
+export function ulsToLookupResult(row: UlsLookupRow): LookupResult {
+  return {
+    callsign: row.callsign,
+    name: row.name,
+    licenseClass: row.operatorClass,
+    country: 'US',
+    found: true,
+    gridSquare: null,
+    latitude: null,
+    longitude: null,
+    address: ulsAddressLine(row.city, row.state),
+  };
+}
+
+/**
+ * Callsign lookup: the local FCC mirror first, callook.info second.
+ *
+ * Local first because the mirror is the same FCC data callook republishes, it
+ * answers in one indexed read with no network at all, and during a net this
+ * route is called once per check-in. callook remains the fallback for every
+ * miss — a club that has never imported (empty table), a callsign issued since
+ * the last Friday, a non-US call, or one of the handful of rows the importer
+ * published without a name because it could not prove whose it was.
+ *
+ * The response shape is byte-for-byte what it was before the mirror existed;
+ * apps/web's RegisterPage, RunNetPage and RepeatersPage all keep working
+ * untouched.
+ *
+ * `?location=1` additionally asks callook for the fields the FCC bulk data
+ * cannot carry (grid square and coordinates) and merges them onto the local
+ * answer. It exists for RepeatersPage's "use my callsign's grid" button, which
+ * is the one caller that needs coordinates; leaving it off is what keeps the
+ * hot path — resolving names during a net — entirely offline. A callook failure
+ * here is not an error: the local answer is still returned, just without a grid.
+ */
+export function callsignLookupRouter(prisma: PrismaClient): Router {
   const router = Router();
 
   router.get(
@@ -102,6 +148,26 @@ export function callsignLookupRouter(): Router {
       if (!CALLSIGN_RE.test(raw)) {
         throw new HttpError(400, 'VALIDATION', 'Invalid callsign format');
       }
+
+      const local = await findUlsLicense(prisma, raw);
+      if (local) {
+        const result = ulsToLookupResult(local);
+        const wantsLocation = req.query.location === '1' || req.query.location === 'true';
+        if (wantsLocation) {
+          const remote = await fetchCallookLookup(raw);
+          if (remote.found) {
+            result.gridSquare = remote.gridSquare;
+            result.latitude = remote.latitude;
+            result.longitude = remote.longitude;
+            // callook's address line carries the ZIP, which the mirror does
+            // not store; prefer it when we went to the trouble of asking.
+            result.address = remote.address ?? result.address;
+          }
+        }
+        res.json(result);
+        return;
+      }
+
       const result = await fetchCallookLookup(raw);
       res.json(result);
     }),

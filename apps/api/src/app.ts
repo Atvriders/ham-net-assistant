@@ -171,7 +171,7 @@ export function buildApp(prisma: PrismaClient): Express {
   app.use('/api', loadUser(prisma));
 
   app.use('/api/auth', authRouter(prisma));
-  app.use('/api/callsign-lookup', callsignLookupRouter());
+  app.use('/api/callsign-lookup', callsignLookupRouter(prisma));
   app.use('/api/repeaters', repeatersRouter(prisma));
   app.use('/api/nets', netsRouter(prisma));
   const sessions = sessionsRouter(prisma);

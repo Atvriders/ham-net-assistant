@@ -1,10 +1,21 @@
 import type { PrismaClient } from '@prisma/client';
+import { findUlsLicense } from './ulsLookup.js';
 
 /**
  * Resolve a name for a callsign. Order:
- *   1. Existing User row (callsign field).
- *   2. callook.info FCC lookup.
+ *   1. Existing User row (callsign field) — a club member's own preferred name
+ *      beats anything the FCC holds.
+ *   2. The local FCC ULS mirror (see lib/ulsImport.ts) — free, offline, and the
+ *      same data callook republishes.
+ *   3. callook.info, for anything the mirror cannot answer: a club that has
+ *      never imported, a licence issued since the last refresh, a non-US call.
  * Returns null when nothing found.
+ *
+ * Step 2 is what makes the bulk paths here viable. `enrichEmptyNames` below is
+ * called by the log importer and the admin name-backfill on hundreds of
+ * callsigns at a time; before the mirror existed that was hundreds of outbound
+ * requests to a third party, throttled to four at a time. Now it is hundreds of
+ * indexed reads against the club's own database.
  *
  * Caches results in-memory for the lifetime of the caller (passed cache map).
  */
@@ -27,7 +38,14 @@ export async function lookupCallsignName(
     return user.name;
   }
 
-  // 2. callook.info
+  // 2. Local FCC ULS mirror
+  const local = await findUlsLicense(prisma, key);
+  if (local) {
+    cache.set(key, local.name);
+    return local.name;
+  }
+
+  // 3. callook.info
   try {
     const remote = await fetch(`https://callook.info/${key}/json`, {
       signal: AbortSignal.timeout(4000),
@@ -70,7 +88,9 @@ function titleCase(s: string): string {
 /**
  * Enrich a list of (callsign, name) entries by filling in names that are
  * empty using lookupCallsignName. Concurrency-bounded so we don't hammer
- * callook with hundreds of parallel requests on a big import.
+ * callook with hundreds of parallel requests on a big import — the bound still
+ * matters, because any callsign the local mirror misses still falls through to
+ * callook.
  *
  * Pass a shared `cache` map across multiple invocations (e.g. one per
  * session in the same import) to avoid duplicate lookups.

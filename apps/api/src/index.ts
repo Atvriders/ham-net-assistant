@@ -11,6 +11,7 @@ import { startReminderScheduler } from './discord/reminders.js';
 import { startAutoOpenScheduler } from './lib/autoOpenScheduler.js';
 import { startAutoStartScheduler } from './lib/autoStartScheduler.js';
 import { startStaleSessionReaper } from './lib/staleSessionReaper.js';
+import { startUlsImportScheduler } from './lib/ulsScheduler.js';
 
 /**
  * How long the shutdown sequence gets before we stop being polite. A hung
@@ -51,6 +52,19 @@ const stopAutoStart = startAutoStartScheduler(prisma);
 // pressing END, so a forgotten net would stay LIVE forever and pile up on the
 // Dashboard. Ends sessions that have been live for more than 4 hours.
 const stopReaper = startStaleSessionReaper(prisma);
+// Weekly FCC ULS import: refreshes the local amateur-licence mirror so callsign
+// lookups during a net are answered from the club's own database instead of
+// depending on callook.info being up. Streams ~155 MB once a week (Friday 03:00
+// container-local by default) in ~2,000-row transactions that yield between
+// batches, so it never locks a live net out of the database. Returns a no-op
+// stop function when ULS_IMPORT_ENABLED=false. Kept out of buildApp like its
+// siblings so tests drive ulsImportTick with a fixed clock instead.
+const stopUlsImport = startUlsImportScheduler(prisma, {
+  enabled: env.ULS_IMPORT_ENABLED,
+  url: env.ULS_SOURCE_URL,
+  day: env.ULS_IMPORT_DAY,
+  hour: env.ULS_IMPORT_HOUR,
+});
 
 // Kick off the Discord bridge asynchronously so the HTTP server is never
 // blocked on Discord's gateway login.
@@ -104,6 +118,13 @@ async function shutdown(signal: string): Promise<void> {
     stopAutoOpen();
     stopAutoStart();
     stopReaper();
+    // An import in flight is NOT waited for: it can have minutes of streaming
+    // left and the whole shutdown budget is 8s. Stopping the timer means no new
+    // one starts; the in-flight run dies with the process and its 'running' row
+    // is reconciled to 'failed' on the next boot (markInterruptedRuns), while
+    // the table itself is left in a state every lookup still answers correctly
+    // — see the interruption notes in lib/ulsImport.ts.
+    stopUlsImport();
     console.log('[shutdown] schedulers stopped');
 
     await destroyDiscordClient();

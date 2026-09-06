@@ -252,3 +252,92 @@ model CheckIn {
   @@index([checkedInAt])
   @@index([deletedAt])
 }
+
+/// Local mirror of the FCC ULS amateur licence database (l_amat.zip), refreshed
+/// weekly by `lib/ulsScheduler.ts`. It exists so that resolving a callsign to a
+/// name during a net does not depend on callook.info (or anything else) being
+/// reachable: the FCC bulk data is the same source callook itself republishes,
+/// it is free, and once imported it answers offline in a single indexed read.
+///
+/// Deliberately narrow: only what a lookup renders. Street address, ZIP, FRN,
+/// grant/expiry dates, trustee and previous-callsign history are all present in
+/// the source files and are all thrown away while streaming — storing them
+/// would multiply the table size for fields nothing in this app displays.
+///
+/// `status` doubles as the publish flag; see `statusGeneration` and the
+/// interruption-safety notes at the top of lib/ulsImport.ts.
+model UlsLicense {
+  /// Uppercase callsign. Primary key, so a lookup is one index seek.
+  callsign         String  @id
+  /// unique_system_identifier of the licence these fields were read from.
+  ///
+  /// This is NOT decoration. 9.2% of active callsigns (75,967 of 823,953 in
+  /// the 2026-08-30 dump) also carry an expired or cancelled licence row for a
+  /// PREVIOUS holder, and EN.dat/AM.dat contain a row for each. Keying the
+  /// import on callsign alone therefore lets whichever row happens to stream
+  /// last decide the name — putting the previous holder's name on roughly one
+  /// active callsign in eleven. Every write is guarded on this column instead,
+  /// and the authoritative value is the one HD.dat marks ACTIVE.
+  /// Max observed value is 5,352,429, comfortably inside Int.
+  usi              Int
+  /// "First Last" for a person, the full organisation name for a club.
+  /// Null when EN.dat carried no usable name, or when the name we held turned
+  /// out to belong to a different licence than the active one (see usi).
+  name             String?
+  /// callook-compatible wording (EXTRA / ADVANCED / GENERAL / TECHNICIAN /
+  /// TECHNICIAN PLUS / NOVICE) so the SPA renders local and remote hits
+  /// identically. Null for club stations, which have no operator class.
+  operatorClass    String?
+  /// FCC licence status from HD.dat. Only 'A' (active) is ever published;
+  /// NULL means "this row was created by the EN/AM pass and HD.dat has not
+  /// confirmed it active", which is exactly the half-imported state a lookup
+  /// must not answer from. Every lookup filters on status = 'A'.
+  status           String?
+  city             String?
+  /// Two-letter state/territory code as it appears in EN.dat.
+  state            String?
+  /// The import generation that last saw this callsign ACTIVE in HD.dat.
+  /// Used only by the post-import sweep (delete anything the newest completed
+  /// import did not confirm); never read on the lookup path.
+  statusGeneration Int?
+
+  @@index([statusGeneration])
+}
+
+model UlsImportRun {
+  id             String    @id @default(cuid())
+  /// Monotonic import counter. Rows in UlsLicense are stamped with the
+  /// generation that confirmed them active.
+  generation     Int
+  startedAt      DateTime
+  finishedAt     DateTime?
+  /// 'running' | 'success' | 'failed'. A 'running' row whose process died is
+  /// marked 'failed' by the next import (see markInterruptedRuns).
+  outcome        String
+  /// 'schedule' | 'manual' | 'startup'
+  trigger        String
+  sourceUrl      String
+  /// "File Creation Date" as printed inside the archive's `counts` member —
+  /// the FCC's own stamp for the dump, not our download time.
+  sourceFileDate String?
+  /// Data lines read across AM/EN/HD.
+  rowsRead       Int       @default(0)
+  /// Callsigns confirmed ACTIVE by this run (the published row count).
+  callsigns      Int       @default(0)
+  /// Lines skipped because they had too few pipe-separated fields.
+  malformedRows  Int       @default(0)
+  /// Rows deleted by the post-import sweep (licences that lapsed).
+  removedRows    Int       @default(0)
+  /// Compressed bytes pulled from the network.
+  bytesRead      Int       @default(0)
+  /// Active callsigns left without a name. Expected to be a double-digit
+  /// number: it is dominated by the handful of callsigns whose newest licence
+  /// row is not the active one, where the importer deliberately drops a name
+  /// it cannot prove belongs to the current holder. A sudden jump means the
+  /// FCC changed EN.dat.
+  unnamedCallsigns Int      @default(0)
+  /// Failure reason, truncated. Null on success.
+  error          String?
+
+  @@index([startedAt])
+}

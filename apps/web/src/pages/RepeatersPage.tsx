@@ -257,8 +257,12 @@ export function RepeatersPage() {
     setGridBusy(true);
     setCoordErr(null);
     try {
+      // `location=1` asks the server to also consult callook for a grid
+      // square. The server answers callsign lookups from its local FCC ULS
+      // mirror by default, and the FCC's bulk data carries no coordinates at
+      // all — without this flag every grid autofill would come back empty.
       const result = await apiFetch<CallsignLookupResponse>(
-        `/callsign-lookup/${encodeURIComponent(user.callsign)}`,
+        `/callsign-lookup/${encodeURIComponent(user.callsign)}?location=1`,
       );
       if (result.gridSquare) {
         handleGridChange(result.gridSquare);

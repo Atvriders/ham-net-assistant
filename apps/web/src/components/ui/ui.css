@@ -1969,6 +1969,103 @@ textarea.hna-input { min-height: 96px; padding: var(--space-3); line-height: 1.5
 }
 .hna-recent__chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ------------------------------------------------------------------
+ * Reorder mode — for a station heard early but logged late.
+ * A mode rather than per-row arrows: the log already carries an edit and a
+ * delete on every line, and four controls per row does not fit a phone.
+ * ------------------------------------------------------------------ */
+/* Facts row on the ULS mirror card — label above value, wraps on a phone. */
+.hna-uls-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-3) 0;
+}
+.hna-uls-facts dt {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+.hna-uls-facts dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.hna-roster__reorder-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 6px 8px;
+  min-height: 32px;
+  cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.hna-roster__reorder-toggle:hover,
+.hna-roster__reorder-toggle[aria-pressed='true'] {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.hna-roster__reorder-hint {
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+/* The moving row keeps its own column so the numbers stay aligned as rows
+ * swap — a list that reflows sideways while you reorder it is unreadable. */
+.hna-roster__row.is-reordering {
+  /* Five tracks: move | # | callsign | name | time. The move column is new
+   * width the row did not previously carry, so the name gives up its 96px
+   * floor here — while reordering the operator is matching callsigns to
+   * positions, not reading names, and the recorded time is what shows that
+   * reordering did not rewrite it.
+   *
+   * Below 640px `.hna-roster__time` is display:none (a pre-existing choice —
+   * a phone row has no room for it), so only four items are placed and the
+   * trailing track simply collapses. That is why the last track is
+   * max-content and not a fixed width. */
+  grid-template-columns:
+    auto
+    auto
+    minmax(72px, max-content)
+    minmax(0, 1fr)
+    max-content;
+  column-gap: var(--space-2);
+  align-items: center;
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+.hna-roster__move {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hna-roster__move-btn {
+  /* 28px stacked pairs to a 56px target for the row — a thumb hits it while
+   * holding a microphone, which is the actual operating position. */
+  min-width: 32px;
+  min-height: 28px;
+  padding: 0;
+  line-height: 1;
+  font-size: 12px;
+  background: transparent;
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+.hna-roster__move-btn:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.hna-roster__move-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
 .hna-roster {
   list-style: none;
   padding: 0;

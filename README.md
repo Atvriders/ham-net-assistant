@@ -354,6 +354,60 @@ forever and keep mirroring Discord chatter. Any session live for more than
 so a weekend outage can't record a three-day net). PREP sessions are never
 touched, and no Discord message is posted for a reaped session.
 
+### Weekly FCC callsign refresh
+
+Every callsign lookup in the app used to cost an outbound request to
+callook.info — during a net that is one request per check-in, on the club's
+uplink, against a service nobody here runs. The FCC publishes the same data as a
+weekly bulk dump, so the server can keep its own copy.
+
+Once a week (Friday at 03:00 container-local by default) the API streams
+`l_amat.zip` from data.fcc.gov and refreshes a local table of every **active**
+US amateur licence: callsign, licensee name, operator class, city and state.
+Lookups then read that table first and only fall back to callook.info for
+callsigns it does not hold — a licence issued since the last refresh, a non-US
+call, or a club that has never run the import at all.
+
+Measured against the real dump (2026-08-30, 823,953 active licences):
+
+| | |
+|---|---|
+| Downloaded | ~152 MB of the ~189 MB archive (the transfer stops after the last file we need) |
+| Rows read | 5,081,682 across `AM.dat`, `EN.dat` and `HD.dat` |
+| Published | 823,953 callsigns |
+| Database growth | ~163 MB, plus a write-ahead log that peaks near 150 MB and is checkpointed back down |
+| Peak memory | ~360 MB RSS, inside the 768 MB container limit |
+| Duration | ~4 minutes |
+| Lookup cost afterwards | ~0.6 ms, no network |
+
+It is designed not to get in the club's way. Nothing is buffered — the archive
+is never written to disk and no file is ever held in memory. Writes go in
+2,000-row transactions that hand the event loop back between batches, so the app
+keeps serving throughout: measured against a client writing continuously for the
+whole run, **no write failed**, the median took 52 ms and the worst 1.8 s.
+
+An interrupted run cannot leave the table answering wrongly, and it can never
+leave it empty. Rows are only published once the FCC's own status file confirms
+the licence is active, and a run that fails — a dropped download, a truncated
+archive, an implausibly small dump — **deletes nothing**: the previous week's
+licences stay published and keep answering until a refresh actually succeeds.
+Whatever the failed run had already confirmed active before it died stays
+published too, so the table ends up holding a mix of this week's and last
+week's confirmed records. Both are genuine FCC data, so every lookup is still
+right; some are merely a week old. The next successful run re-stamps what is
+still live and clears the rest.
+
+**Operator controls**
+
+- `ULS_IMPORT_ENABLED=false` turns the whole thing off; lookups then behave
+  exactly as they did before it existed. See `ULS_*` in `.env.example` for the
+  day, hour and source URL.
+- `GET /api/admin/uls` (ADMIN) reports the last run, the last *successful* run,
+  the dump's own date stamp and the failure reason if there was one.
+- `POST /api/admin/uls/import` (ADMIN) starts a refresh immediately, for the
+  club whose Friday run failed and does not want to wait a week. It answers
+  `202` and runs in the background; poll the status endpoint for the outcome.
+
 ### Opting out
 
 There is **no global off switch** — all three schedulers start unconditionally
@@ -536,6 +590,10 @@ Full annotated list with placeholder values: **[.env.example](.env.example)**.
 | `DISCORD_ENABLED` | no | `true`/`false` master switch. Overrides the DB setting when set. |
 | `DISCORD_BOT_TOKEN` | no | Discord bot token. Overrides the DB setting when set. |
 | `DISCORD_CHANNEL_ID` | no | Channel id for chat bridge, reminders, and net notifications. |
+| `ULS_IMPORT_ENABLED` | no | `true`/`false` master switch for the weekly FCC callsign refresh, default **true**. Each run streams ~152 MB and adds ~163 MB to the database — set `false` on a metered connection or a small disk. |
+| `ULS_SOURCE_URL` | no | Override the archive URL. Blank = `https://data.fcc.gov/download/pub/uls/complete/l_amat.zip`. Goes through the SSRF guard, so the host must be publicly routable — a LAN mirror is refused. |
+| `ULS_IMPORT_DAY` | no | Refresh day, `0` = Sunday … `6` = Saturday. Default `5` (Friday). Container-local time. |
+| `ULS_IMPORT_HOUR` | no | Hour of that day, 0–23, at or after which the refresh may start. Default `3`. Container-local time. |
 | `HNA_BACKUP_DIR` | no | Where pre-migration snapshots are written. Default: `backups/` beside the database file (`/data/backups` in Docker). |
 | `HNA_BACKUP_KEEP` | no | How many snapshots to retain (default 5); older ones are pruned. |
 | `HNA_SKIP_PRE_MIGRATE_BACKUP` | no | Any non-empty value skips the pre-migration snapshot. Dev containers only. |
@@ -825,7 +883,13 @@ Repeater discovery tries these sources in order, showing the source used:
 RepeaterBook is unavailable — their API was gated behind approved tokens
 in March 2026 and their policy prohibits public-facing derived APIs.
 
-Callsign-to-name lookup uses **callook.info** (US FCC ULS proxy).
+Callsign-to-name lookup reads the club's own copy of the **FCC ULS** amateur
+licence database first — refreshed weekly from
+`data.fcc.gov/download/pub/uls/complete/l_amat.zip`, US public domain, ~824,000
+active callsigns — and falls back to **callook.info** (a US FCC ULS proxy) for
+anything that copy does not hold. See
+[Weekly FCC callsign refresh](#weekly-fcc-callsign-refresh); the refresh can be
+turned off entirely, in which case every lookup goes to callook.info as before.
 
 ## Discord setup
 
